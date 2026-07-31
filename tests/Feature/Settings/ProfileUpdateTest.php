@@ -1,5 +1,20 @@
 <?php
 
+/**
+ * ==========================================================
+ * MODUL       : ProfileUpdateTest
+ * KLASIFIKASI : UTIL
+ * TUJUAN      : Verifikasi alur update profil & hapus akun sendiri, termasuk
+ *               F-16 (soft delete — baris user tetap ada demi data KPI).
+ * DIPANGGIL   : php artisan test (Pest)
+ * MEMANGGIL   : User::factory(), route /settings/profile
+ * DATA MASUK  : -
+ * DATA KELUAR : Assertion pass/fail
+ * RISIKO      : Kalau test 'user can delete their account' lolos padahal baris
+ *               ter-hard-delete, itu bug F-16 (data KPI hilang) yang lolos tanpa terdeteksi.
+ * ==========================================================
+ */
+
 use App\Models\User;
 
 test('profile page is displayed', function () {
@@ -64,7 +79,8 @@ test('user can delete their account', function () {
         ->assertRedirect('/');
 
     $this->assertGuest();
-    expect($user->fresh())->toBeNull();
+    // F-16: users pakai soft delete — baris tetap ada (data KPI), deleted_at terisi.
+    expect($user->fresh()->trashed())->toBeTrue();
 });
 
 test('correct password must be provided to delete account', function () {

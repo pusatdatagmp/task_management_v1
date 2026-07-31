@@ -17,6 +17,12 @@ return Application::configure(basePath: dirname(__DIR__))
             HandleInertiaRequests::class,
             AddLinkHeadersForPreloadedAssets::class,
         ]);
+
+        // F-90/RBAC §D4: alias 'admin' (EnsureUserIsAdmin) DIHAPUS — semua route
+        // admin-only sudah pindah ke middleware bawaan Laravel `can:xxx`
+        // (routes/admin.php), digerbangi Gate::before -> User::hasPermission()
+        // (AppServiceProvider). Tidak ada lagi konsep "admin blanket", murni
+        // permission per aksi.
     })
     ->withExceptions(function (Exceptions $exceptions) {
         //

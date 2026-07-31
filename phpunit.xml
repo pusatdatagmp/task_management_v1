@@ -11,6 +11,16 @@
         <testsuite name="Feature">
             <directory>tests/Feature</directory>
         </testsuite>
+        <!-- F-83/C4 (Hari-7): SearchTest dipindah KELUAR dari tests/Feature (bukan
+             cuma sub-folder) supaya Pest.php bisa mendaftarkan test case class yang
+             beda (DatabaseMigrations, bukan RefreshDatabase) tanpa tabrakan binding.
+             Pest menolak 2 registrasi Tests\TestCase::class yang overlap untuk file
+             yang sama, dan RefreshDatabase+DatabaseMigrations tidak bisa dipakai
+             bersamaan di 1 class: keduanya redeclare refreshTestDatabase(), jadi
+             fatal trait method collision. Lihat tests/Pest.php. -->
+        <testsuite name="Search">
+            <directory>tests/Search</directory>
+        </testsuite>
     </testsuites>
     <source>
         <include>
@@ -22,8 +32,13 @@
         <env name="APP_MAINTENANCE_DRIVER" value="file"/>
         <env name="BCRYPT_ROUNDS" value="4"/>
         <env name="CACHE_STORE" value="array"/>
-        <env name="DB_CONNECTION" value="sqlite"/>
-        <env name="DB_DATABASE" value=":memory:"/>
+        <!-- F-83 (Hari-7): MySQL, BUKAN sqlite. sqlite lenient (LIKE fallback,
+             enum jadi TEXT, tanpa FULLTEXT) menyembunyikan bug yang cuma muncul di
+             produksi (MATCH AGAINST, collation, FIELD(), json). Host/port/user/pass
+             TIDAK dioverride di sini -> ikut .env (server MySQL dev yang sama),
+             cuma DB_DATABASE beda supaya data test tidak pernah menyentuh DB dev. -->
+        <env name="DB_CONNECTION" value="mysql"/>
+        <env name="DB_DATABASE" value="task_management_test"/>
         <env name="MAIL_MAILER" value="array"/>
         <env name="PULSE_ENABLED" value="false"/>
         <env name="QUEUE_CONNECTION" value="sync"/>

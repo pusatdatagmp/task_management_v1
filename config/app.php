@@ -59,13 +59,15 @@ return [
     | Application Timezone
     |--------------------------------------------------------------------------
     |
-    | Here you may specify the default timezone for your application, which
-    | will be used by the PHP date and date-time functions. The timezone
-    | is set to "UTC" by default as it is suitable for most use cases.
+    | F-69: WIB (Asia/Jakarta), BUKAN UTC. Semua timestamp di DB dan tampilan
+    | pakai zona ini, TANPA konversi di mana pun — retrofit TZ deterministik
+    | (WIB = UTC+7 selalu, Indonesia tanpa DST), beda dengan F-5 (organization_id)
+    | yang kalau telat dicatat datanya hilang selamanya. Fallback default juga
+    | diubah (bukan cuma .env) supaya clone baru tanpa .env tetap benar.
     |
     */
 
-    'timezone' => env('APP_TIMEZONE', 'UTC'),
+    'timezone' => env('APP_TIMEZONE', 'Asia/Jakarta'),
 
     /*
     |--------------------------------------------------------------------------

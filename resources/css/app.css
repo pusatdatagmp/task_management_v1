@@ -56,6 +56,24 @@
     --color-sidebar-accent-foreground: var(--sidebar-accent-foreground);
     --color-sidebar-border: var(--sidebar-border);
     --color-sidebar-ring: var(--sidebar-ring);
+
+    /* F-144/F-143: palet TEMPO — dipetakan dari --tempo-* (bukan langsung
+       nilai) supaya DS-3 (editor tema, belum dibangun) bisa override lewat
+       document.documentElement.style.setProperty('--tempo-*', ...) per-org
+       tanpa menyentuh file ini lagi. */
+    --color-tempo-ink: var(--tempo-ink);
+    --color-tempo-ink2: var(--tempo-ink2);
+    --color-tempo-paper: var(--tempo-paper);
+    --color-tempo-card: var(--tempo-card);
+    --color-tempo-amber: var(--tempo-amber);
+    --color-tempo-emerald: var(--tempo-emerald);
+    --color-tempo-rose: var(--tempo-rose);
+    --color-tempo-blue: var(--tempo-blue);
+    --color-tempo-violet: var(--tempo-violet);
+    --color-tempo-slate: var(--tempo-slate);
+    --color-tempo-tx: var(--tempo-tx);
+    --color-tempo-tx2: var(--tempo-tx2);
+    --color-tempo-tx3: var(--tempo-tx3);
 }
 
 /*
@@ -77,14 +95,18 @@
 }
 
 :root {
-    --background: hsl(0, 0%, 100%);
-    --foreground: hsl(0, 0%, 3.9%);
-    --card: hsl(0, 0%, 100%);
-    --card-foreground: hsl(0, 0%, 3.9%);
-    --popover: hsl(0, 0%, 100%);
-    --popover-foreground: hsl(0, 0%, 3.9%);
-    --primary: hsl(0, 0%, 9%);
-    --primary-foreground: hsl(0, 0%, 98%);
+    /* F-144: workspace terang ("paper") + aksen amber — §12.1. Hanya blok
+       :root (mode terang default) yang diarahkan ke TEMPO; blok .dark di
+       bawah SENGAJA tidak disentuh supaya toggle dark/light existing tetap
+       hidup penuh (F-121 — fitur lama tak dihapus). */
+    --background: var(--tempo-paper);
+    --foreground: var(--tempo-ink);
+    --card: var(--tempo-card);
+    --card-foreground: var(--tempo-ink);
+    --popover: var(--tempo-card);
+    --popover-foreground: var(--tempo-ink);
+    --primary: var(--tempo-amber);
+    --primary-foreground: var(--tempo-ink);
     --secondary: hsl(0, 0%, 96.1%);
     --secondary-foreground: hsl(0, 0%, 9%);
     --muted: hsl(0, 0%, 96.1%);
@@ -102,14 +124,36 @@
     --chart-4: hsl(43, 74%, 66%);
     --chart-5: hsl(27, 87%, 67%);
     --radius: 0.5rem;
-    --sidebar-background: hsl(0, 0%, 98%);
-    --sidebar-foreground: hsl(240, 5.3%, 30%);
-    --sidebar-primary: hsl(0, 0%, 10%);
-    --sidebar-primary-foreground: hsl(0, 0%, 98%);
-    --sidebar-accent: hsl(0, 0%, 94%);
-    --sidebar-accent-foreground: hsl(0, 0%, 30%);
-    --sidebar-border: hsl(0, 0%, 91%);
-    --sidebar-ring: hsl(217.2, 91.2%, 59.8%);
+
+    /* F-144/F-143: palet TEMPO default (sidebar navy gelap + workspace terang
+       + aksen amber — BLUEPRINT-UIUX-v1.7.md §12.1). Ditaruh di :root (BUKAN
+       di dalam .dark) karena sidebar TEMPO selalu navy terlepas dari toggle
+       dark/light workspace — dua sumbu tema yang independen. */
+    --tempo-ink: #0f1523;
+    --tempo-ink2: #161d30;
+    --tempo-paper: #f5f6f9;
+    --tempo-card: #ffffff;
+    --tempo-amber: #e0a012;
+    --tempo-emerald: #0ea371;
+    --tempo-rose: #e8385a;
+    --tempo-blue: #2f6bde;
+    --tempo-violet: #6d4bd8;
+    --tempo-slate: #64748b;
+    --tempo-tx: #f8fafc;
+    --tempo-tx2: #cbd5e1;
+    --tempo-tx3: #94a3b8;
+
+    /* SUMBER: --tempo-ink/ink2 (§12.1) — sidebar primitive (ui/sidebar.tsx)
+       sudah pakai --sidebar-* lewat bg-sidebar dkk, jadi alias di sini cukup
+       supaya seluruh sidebar ikut navy TANPA refactor primitive. */
+    --sidebar-background: var(--tempo-ink);
+    --sidebar-foreground: var(--tempo-tx2);
+    --sidebar-primary: var(--tempo-amber);
+    --sidebar-primary-foreground: var(--tempo-ink);
+    --sidebar-accent: var(--tempo-ink2);
+    --sidebar-accent-foreground: var(--tempo-tx);
+    --sidebar-border: var(--tempo-ink2);
+    --sidebar-ring: var(--tempo-amber);
 }
 
 .dark {
@@ -137,14 +181,9 @@
     --chart-3: hsl(30, 80%, 55%);
     --chart-4: hsl(280, 65%, 60%);
     --chart-5: hsl(340, 75%, 55%);
-    --sidebar-background: hsl(0, 0%, 7%);
-    --sidebar-foreground: hsl(0, 0%, 80%);
-    --sidebar-primary: hsl(360, 100%, 100%);
-    --sidebar-primary-foreground: hsl(0, 0%, 100%);
-    --sidebar-accent: hsl(0, 0%, 15.9%);
-    --sidebar-accent-foreground: hsl(240, 4.8%, 95.9%);
-    --sidebar-border: hsl(0, 0%, 15.9%);
-    --sidebar-ring: hsl(217.2, 91.2%, 59.8%);
+    /* F-144: --sidebar-* SENGAJA tidak di-override di sini — sidebar TEMPO
+       navy adalah identitas tetap (§12.1), independen dari toggle dark/light
+       workspace. Alias di :root (var(--tempo-ink) dkk) tetap berlaku. */
 }
 
 @layer base {

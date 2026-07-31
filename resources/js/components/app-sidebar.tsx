@@ -2,40 +2,109 @@ import { NavFooter } from '@/components/nav-footer';
 import { NavMain } from '@/components/nav-main';
 import { NavUser } from '@/components/nav-user';
 import { Sidebar, SidebarContent, SidebarFooter, SidebarHeader, SidebarMenu, SidebarMenuButton, SidebarMenuItem } from '@/components/ui/sidebar';
-import { type NavItem } from '@/types';
-import { Link } from '@inertiajs/react';
-import { BookOpen, Folder, LayoutGrid } from 'lucide-react';
+import { type NavItem, type SharedData } from '@/types';
+import { Link, usePage } from '@inertiajs/react';
+import {
+    BookOpen,
+    CalendarClock,
+    CalendarOff,
+    CheckSquare,
+    Clock,
+    Folder,
+    History,
+    Hourglass,
+    LayoutGrid,
+    ListChecks,
+    Repeat,
+    Settings,
+    Trophy,
+    Users,
+} from 'lucide-react';
 import AppLogo from './app-logo';
 
-const mainNavItems: NavItem[] = [
-    {
-        title: 'Dashboard',
-        url: '/dashboard',
-        icon: LayoutGrid,
-    },
-];
 
-const footerNavItems: NavItem[] = [
-    {
-        title: 'Repository',
-        url: 'https://github.com/laravel/react-starter-kit',
-        icon: Folder,
-    },
-    {
-        title: 'Documentation',
-        url: 'https://laravel.com/docs/starter-kits',
-        icon: BookOpen,
-    },
-];
 
 export function AppSidebar() {
+    // F-90: sembunyikan menu per PERMISSION (03-BUSINESS-FLOW §6), bukan boolean
+    // isAdmin — role custom dengan user.manage tapi bukan workschedule.manage
+    // (mis.) akan lihat menu User tapi bukan Jam Kerja. Ini HANYA gating
+    // tampilan — penegakan sebenarnya di middleware `can:xxx` server-side.
+    const { auth } = usePage<SharedData>().props;
+    const can = (permission: string) => auth.permissions.includes(permission);
+
+    // F-144 §12.2: pembagi grup admin (RINGKASAN/KERJA/ORGANISASI) vs member
+    // (KERJA SAYA saja). Reuse `dashboard.view` — SUDAH jadi batas admin/member
+    // yang sama dipakai `homeUrl` di bawah (F-95), bukan konsep role baru.
+    const isAdminNav = can('dashboard.view');
+
+    // v1.2 H4 (F-121): nav "Dashboard" mengarah ke Command Center baru
+    // ('dashboard/overview') yang MENAMBAH widget agregasi di sekitar dashboard
+    // 3-angka lama (section "Beban Tim") -- halaman lama di URL '/dashboard'
+    // TETAP hidup (tidak dihapus), cuma tidak lagi jadi target nav utama.
+    const ringkasanItems: NavItem[] = [
+        ...(can('dashboard.view') ? [{ title: 'Dashboard', url: '/dashboard/overview', icon: LayoutGrid }] : []),
+        // v1.2/v1.5 (F-134/F-141): Leaderboard MANAGEMENT-ONLY — permission
+        // leaderboard.view NOL default (admin TERMASUK, lihat RolePermissionSeeder).
+        // Item ini TIDAK tampil sampai Boss assign manual lewat Role Management
+        // (F-135) — member/admin biasa tidak boleh tahu menu ini ada.
+        ...(can('leaderboard.view') ? [{ title: 'Leaderboard', url: '/leaderboard', icon: Trophy }] : []),
+    ];
+
+    // F-144 §12.2 KERJA (admin): item pribadi (Tugas Saya/Perpanjangan Saya)
+    // diselipkan di sini, BUKAN dihilangkan dari nav admin — admin juga bisa
+    // jadi assignee task (lihat Task::assignees(), DatabaseSeeder), kalau nav-nya
+    // dihapus itu regresi (F-121 ADD-DON'T-DELETE). Dikonfirmasi Boss saat LANJUT.
+    const kerjaItems: NavItem[] = [
+        { title: 'Proyek', url: '/projects', icon: Folder },
+        { title: 'Tugas Saya', url: '/my-tasks', icon: CheckSquare },
+        // F-140/F-144: belum ada halaman tugas lintas-proyek (celah blueprint
+        // diakui) — tampil sesuai §12.2 tapi non-klik sampai dibangun.
+        { title: 'Semua Tugas', url: '#', icon: ListChecks, disabled: true },
+        { title: 'Tugas Berulang', url: '#', icon: Repeat, disabled: true },
+        ...(can('task.approve') ? [{ title: 'Perpanjangan', url: '/pengaturan/perpanjangan', icon: CalendarClock }] : []),
+        // v0.8 H6 (F-50): "ajukan" tersedia admin & member (matriks BF §6), jadi
+        // link ini SELALU tampil, tidak digerbangi permission (F-95 — gating
+        // assignee, bukan RBAC).
+        { title: 'Perpanjangan Saya', url: '/my-extensions', icon: Hourglass },
+    ];
+
+    const organisasiItems: NavItem[] = [
+        ...(can('user.manage') ? [{ title: 'Pengguna & Peran', url: '/pengaturan/users', icon: Users }] : []),
+        ...(can('workschedule.manage')
+            ? [
+                  { title: 'Jam Kerja', url: '/pengaturan/jam-kerja', icon: Clock },
+                  { title: 'Hari Libur', url: '/pengaturan/hari-libur', icon: CalendarOff },
+              ]
+            : []),
+        // v1.0 H4 (F-116): log GLOBAL — permission activity.view (admin default),
+        // BUKAN ditampilkan ke member biasa.
+        ...(can('activity.view') ? [{ title: 'Log Activity', url: '/pengaturan/activity-log', icon: History }] : []),
+        // F-142/F-144: Setelan (branding+tema) = DS-2/DS-3, belum dibangun sesi
+        // ini — placeholder non-klik saja.
+        { title: 'Setelan', url: '#', icon: Settings, disabled: true },
+    ];
+
+    // F-95: member = nol permission → hanya lihat tugas/proyek/perpanjangan
+    // miliknya sendiri (gating assignee/membership di controller, BUKAN RBAC).
+    const kerjaSayaItems: NavItem[] = [
+        { title: 'Tugas Saya', url: '/my-tasks', icon: CheckSquare },
+        { title: 'Proyek Saya', url: '/projects', icon: Folder },
+        { title: 'Perpanjangan Saya', url: '/my-extensions', icon: Hourglass },
+    ];
+
+    // SUMBER: klik logo = "pulang" ke landing masing-masing role, sama seperti
+    // AuthenticatedSessionController::store() setelah login (F-95) -- member
+    // tidak boleh diarahkan ke /dashboard (403), jadi ikut /my-tasks. Admin ikut
+    // nav "Dashboard" (v1.2 H4) -- /dashboard/overview, bukan /dashboard lama.
+    const homeUrl = isAdminNav ? '/dashboard/overview' : '/my-tasks';
+
     return (
         <Sidebar collapsible="icon" variant="inset">
             <SidebarHeader>
                 <SidebarMenu>
                     <SidebarMenuItem>
                         <SidebarMenuButton size="lg" asChild>
-                            <Link href="/dashboard" prefetch>
+                            <Link href={homeUrl} prefetch>
                                 <AppLogo />
                             </Link>
                         </SidebarMenuButton>
@@ -44,11 +113,19 @@ export function AppSidebar() {
             </SidebarHeader>
 
             <SidebarContent>
-                <NavMain items={mainNavItems} />
+                {isAdminNav ? (
+                    <>
+                        {ringkasanItems.length > 0 && <NavMain label="Overview" items={ringkasanItems} />}
+                        <NavMain label="Task" items={kerjaItems} />
+                        <NavMain label="Setting" items={organisasiItems} />
+                    </>
+                ) : (
+                    <NavMain label="Kerja Saya" items={kerjaSayaItems} />
+                )}
             </SidebarContent>
 
             <SidebarFooter>
-                <NavFooter items={footerNavItems} className="mt-auto" />
+              
                 <NavUser />
             </SidebarFooter>
         </Sidebar>

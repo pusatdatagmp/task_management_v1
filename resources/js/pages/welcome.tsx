@@ -1,9 +1,12 @@
 import { type SharedData } from '@/types';
 import { Head, Link, usePage } from '@inertiajs/react';
+import { type CSSProperties } from 'react';
+import { useMobileNavigation } from '@/hooks/use-mobile-navigation';
+import { LogOut } from 'lucide-react';
 
 export default function Welcome() {
     const { auth } = usePage<SharedData>().props;
-
+    const cleanup = useMobileNavigation();
     return (
         <>
             <Head title="Welcome">
@@ -21,20 +24,12 @@ export default function Welcome() {
                                 Dashboard
                             </Link>
                         ) : (
-                            <>
-                                <Link
-                                    href={route('login')}
-                                    className="inline-block rounded-sm border border-transparent px-5 py-1.5 text-sm leading-normal text-[#1b1b18] hover:border-[#19140035] dark:text-[#EDEDEC] dark:hover:border-[#3E3E3A]"
-                                >
-                                    Log in
-                                </Link>
-                                <Link
-                                    href={route('register')}
-                                    className="inline-block rounded-sm border border-[#19140035] px-5 py-1.5 text-sm leading-normal text-[#1b1b18] hover:border-[#1915014a] dark:border-[#3E3E3A] dark:text-[#EDEDEC] dark:hover:border-[#62605b]"
-                                >
-                                    Register
-                                </Link>
-                            </>
+                            <Link
+                                href={route('login')}
+                                className="inline-block rounded-sm border border-transparent px-5 py-1.5 text-sm leading-normal text-[#1b1b18] hover:border-[#19140035] dark:text-[#EDEDEC] dark:hover:border-[#3E3E3A]"
+                            >
+                                Log in
+                            </Link>
                         )}
                     </nav>
                 </header>
@@ -120,6 +115,10 @@ export default function Welcome() {
                                     >
                                         Deploy now
                                     </a>
+                                    <Link className="block w-full" method="post" href={route('logout')} as="button" onClick={cleanup}>
+                                        <LogOut className="mr-2" />
+                                        Log out
+                                    </Link>
                                 </li>
                             </ul>
                         </div>
@@ -218,7 +217,7 @@ export default function Welcome() {
                                     />
                                 </g>
                                 <g
-                                    style={{ mixBlendMode: 'plus-darker' }}
+                                    style={{ mixBlendMode: 'plus-darker' as CSSProperties['mixBlendMode'] }}
                                     className="translate-y-0 opacity-100 transition-all delay-300 duration-750 starting:translate-y-4 starting:opacity-0"
                                 >
                                     <path

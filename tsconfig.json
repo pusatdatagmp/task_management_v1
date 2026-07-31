@@ -114,5 +114,13 @@
         },
         "jsx": "react-jsx"
     },
-    "include": ["resources/js/**/*.ts", "resources/js/**/*.tsx"]
+    "include": ["resources/js/**/*.ts", "resources/js/**/*.tsx"],
+    // F-99: *.test.ts(x) dijalankan via `node --test` (Node 24 type-stripping bawaan,
+    // lihat use-live-counter.test.ts), BUKAN toolchain tsc/Vite -- import "node:test",
+    // "node:assert/strict", dan ekstensi ".ts" eksplisit di situ SAH untuk Node tapi
+    // ditolak tsc app-wide ini (moduleResolution "bundler", tanpa @types/node/
+    // allowImportingTsExtensions). Dikeluarkan dari type-check app, bukan ditambal
+    // pakai dependency baru (@types/node) atau @ts-nocheck per file yang gampang lupa
+    // di file baru berikutnya (pola sama F-67/F-76 -- aturan struktural, bukan manual).
+    "exclude": ["resources/js/**/*.test.ts", "resources/js/**/*.test.tsx"]
 }

@@ -25,7 +25,12 @@ class AuthenticatedSessionController extends Controller
     }
 
     /**
-     * Handle an incoming authentication request.
+     * BUSINESS RULE: 03-BUSINESS-FLOW §7 — diagram alur auth sejak Hari-1 sudah
+     * menetapkan tujuan landing BEDA per role: admin -> Dashboard, member -> My
+     * Tasks (halaman kerja utama mereka, F-29 member tidak punya dashboard tim).
+     * Hari-5 §D5 baru mengimplementasikannya. intended() tetap diprioritaskan —
+     * kalau user coba akses URL spesifik sebelum diarahkan ke login, redirect_to
+     * situ dulu, bukan ke landing default.
      */
     public function store(LoginRequest $request): RedirectResponse
     {
@@ -33,7 +38,12 @@ class AuthenticatedSessionController extends Controller
 
         $request->session()->regenerate();
 
-        return redirect()->intended(route('dashboard', absolute: false));
+        // F-90/v0.8 H3: dashboard.view (bukan project.viewAll lagi, F-99 rekonsiliasi
+        // H2->H3) — sekarang permission itu ADA dan persis menjawab "boleh landing di
+        // Dashboard", jadi dipakai langsung, bukan proxy permission lain.
+        $landing = $request->user()->can('dashboard.view') ? 'dashboard' : 'tasks.my';
+
+        return redirect()->intended(route($landing, absolute: false));
     }
 
     /**

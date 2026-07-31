@@ -2,22 +2,36 @@ import { SidebarGroup, SidebarGroupLabel, SidebarMenu, SidebarMenuButton, Sideba
 import { type NavItem } from '@/types';
 import { Link, usePage } from '@inertiajs/react';
 
-export function NavMain({ items = [] }: { items: NavItem[] }) {
+// F-144 §12.2: satu <NavMain> = satu grup sidebar berlabel (RINGKASAN/KERJA/
+// ORGANISASI/KERJA SAYA). app-sidebar.tsx merender beberapa instance ini.
+export function NavMain({ label, items = [] }: { label: string; items: NavItem[] }) {
     const page = usePage();
     return (
         <SidebarGroup className="px-2 py-0">
-            <SidebarGroupLabel>Platform</SidebarGroupLabel>
+            <SidebarGroupLabel>{label}</SidebarGroupLabel>
             <SidebarMenu>
-                {items.map((item) => (
-                    <SidebarMenuItem key={item.title}>
-                        <SidebarMenuButton asChild isActive={item.url === page.url}>
-                            <Link href={item.url} prefetch>
+                {items.map((item) =>
+                    item.disabled ? (
+                        // F-140/F-144: route/halamannya belum dibangun (celah blueprint
+                        // diakui) -- tampil sesuai §12.2 tapi non-klik, nol route baru.
+                        <SidebarMenuItem key={item.title}>
+                            <SidebarMenuButton disabled aria-disabled="true" className="cursor-not-allowed opacity-50">
                                 {item.icon && <item.icon />}
                                 <span>{item.title}</span>
-                            </Link>
-                        </SidebarMenuButton>
-                    </SidebarMenuItem>
-                ))}
+                                <span className="ml-auto text-[10px] tracking-wide text-sidebar-foreground/60 uppercase">Segera</span>
+                            </SidebarMenuButton>
+                        </SidebarMenuItem>
+                    ) : (
+                        <SidebarMenuItem key={item.title}>
+                            <SidebarMenuButton asChild isActive={item.url === page.url}>
+                                <Link href={item.url} prefetch>
+                                    {item.icon && <item.icon />}
+                                    <span>{item.title}</span>
+                                </Link>
+                            </SidebarMenuButton>
+                        </SidebarMenuItem>
+                    ),
+                )}
             </SidebarMenu>
         </SidebarGroup>
     );
