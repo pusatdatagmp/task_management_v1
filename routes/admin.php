@@ -64,6 +64,21 @@ Route::middleware(['auth', 'can:leaderboard.view'])->group(function () {
     Route::get('leaderboard', [LeaderboardController::class, 'index'])->name('leaderboard.index');
 });
 
+// v1.2 H7b (F-140/F-144/F-139) — "Semua Tugas": flat lintas SEMUA project, admin
+// oversight. Permission project.viewAll (SAMA dipakai TaskController::index() untuk
+// bedakan "lihat semua project" vs member biasa, F-90) — bukan permission baru.
+// Flat, TIDAK butuh scopeBindings ({project}/{task} tidak ada di URL ini).
+Route::middleware(['auth', 'can:project.viewAll'])->group(function () {
+    Route::get('tasks', [TaskController::class, 'all'])->name('tasks.all');
+});
+
+// v1.2 H7b (F-140/F-144) — "Tugas Berulang": flat lintas SEMUA project, listing
+// murni (CRUD tetap project-scoped, F-46 utuh). Permission task.manage SAMA
+// dengan CRUD template biasa (routes/admin.php grup task-templates.* di bawah).
+Route::middleware(['auth', 'can:task.manage'])->group(function () {
+    Route::get('task-templates', [TaskTemplateController::class, 'allProjects'])->name('task-templates.all');
+});
+
 // v1.0 H4 (F-116) — log aktivitas GLOBAL lintas project, permission activity.view
 // (admin default, assignable ke role lain lewat UI Role Management, F-90). BUKAN
 // F-95 membership — ini data pengawasan, beda dari timeline per-task (TaskController::show()).

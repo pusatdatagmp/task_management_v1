@@ -57,10 +57,11 @@ export function AppSidebar() {
     const kerjaItems: NavItem[] = [
         { title: 'Proyek', url: '/projects', icon: Folder },
         { title: 'Tugas Saya', url: '/my-tasks', icon: CheckSquare },
-        // F-140/F-144: belum ada halaman tugas lintas-proyek (celah blueprint
-        // diakui) — tampil sesuai §12.2 tapi non-klik sampai dibangun.
-        { title: 'Semua Tugas', url: '#', icon: ListChecks, disabled: true },
-        { title: 'Tugas Berulang', url: '#', icon: Repeat, disabled: true },
+        // v1.2 H7b (F-140/F-144/F-147): halaman lintas-proyek sudah dibangun —
+        // digerbangi permission KONKRET (F-90), sama seperti route-nya di
+        // routes/admin.php, BUKAN blanket "admin boleh semua".
+        ...(can('project.viewAll') ? [{ title: 'Semua Tugas', url: '/tasks', icon: ListChecks }] : []),
+        ...(can('task.manage') ? [{ title: 'Tugas Berulang', url: '/task-templates', icon: Repeat }] : []),
         ...(can('task.approve') ? [{ title: 'Perpanjangan', url: '/pengaturan/perpanjangan', icon: CalendarClock }] : []),
         // v0.8 H6 (F-50): "ajukan" tersedia admin & member (matriks BF §6), jadi
         // link ini SELALU tampil, tidak digerbangi permission (F-95 — gating

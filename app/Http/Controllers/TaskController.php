@@ -27,6 +27,7 @@
 namespace App\Http\Controllers;
 
 use App\Http\Requests\Task\ApproveTaskRequest;
+use App\Http\Requests\Task\FilterAllTasksRequest;
 use App\Http\Requests\Task\FilterTaskRequest;
 use App\Http\Requests\Task\StoreTaskRequest;
 use App\Http\Requests\Task\UpdateTaskRequest;
@@ -35,6 +36,7 @@ use App\Models\ActivityLog;
 use App\Models\Project;
 use App\Models\Task;
 use App\Models\TaskStatus;
+use App\Models\User;
 use App\Services\LiveTaskCounter;
 use App\Services\TaskTransitionService;
 use App\Support\ActivityLogPresenter;
@@ -292,6 +294,109 @@ class TaskController extends Controller
                 'today' => $tasks->filter(fn (Task $t) => $t->due_date->gte($now) && $t->due_date->lte($todayEnd))->values(),
                 'this_week' => $tasks->filter(fn (Task $t) => $t->due_date->gt($todayEnd) && $t->due_date->lte($weekEnd))->values(),
                 'later' => $tasks->filter(fn (Task $t) => $t->due_date->gt($weekEnd))->values(),
+            ],
+        ]);
+    }
+
+    /**
+     * BUSINESS RULE: v1.2 H7b (F-140/F-144/F-139) — "Semua Tugas": List lintas SEMUA
+     * project (admin oversight, permission project.viewAll di route). BEDA dari
+     * myTasks() (cuma task assignee sendiri) dan index() (1 project). Filter/sort
+     * prioritas pakai priority_quadrant (F-139), BUKAN enum priority lama.
+     *
+     * SUMBER Kanban: task_statuses PER-PROJECT (beda project bisa beda status) —
+     * toggle Board cuma valid kalau `project_id` sudah dipilih (keputusan Boss,
+     * lihat CATATAN sesi), makanya endpoint ini TIDAK mengirim kolom board sama
+     * sekali. Frontend arahkan ke route('tasks.board', project_id) yang SUDAH ADA
+     * (F-109, nol kode board baru) begitu project_id filter aktif.
+     */
+    public function all(FilterAllTasksRequest $request): Response
+    {
+        $user = $request->user();
+        $filters = $request->validated();
+
+        // SUMBER: 'project.taskStatuses' (BUKAN cuma 'project:id,name') supaya
+        // TaskStatusCell per baris (F-45/F-28) bisa bangun dropdown status project
+        // MASING-MASING task — pola sama myTasks(), status TIDAK seragam lintas project.
+        $query = Task::query()
+            ->with(['taskStatus', 'assignees:id,name', 'project:id,name', 'project.taskStatuses', 'parent:id,title']);
+
+        if (! empty($filters['project_id'])) {
+            $query->where('project_id', $filters['project_id']);
+        }
+
+        // F-44: status difilter lewat FLAG (is_work_state/is_review/is_completed),
+        // bukan task_status_id mentah — id status TIDAK seragam lintas project.
+        if (! empty($filters['status_flag'])) {
+            $query->whereHas('taskStatus', function ($statusQuery) use ($filters) {
+                $statusQuery->where(function ($group) use ($filters) {
+                    foreach ($filters['status_flag'] as $flag) {
+                        $group->orWhere(function ($branch) use ($flag) {
+                            match ($flag) {
+                                'completed' => $branch->where('is_completed', true),
+                                'review' => $branch->where('is_review', true),
+                                'in_progress' => $branch->where('is_work_state', true),
+                                default => $branch->where('is_work_state', false)
+                                    ->where('is_review', false)
+                                    ->where('is_completed', false),
+                            };
+                        });
+                    }
+                });
+            });
+        }
+
+        if (! empty($filters['assignee'])) {
+            $query->whereHas('assignees', fn ($q) => $q->whereIn('users.id', $filters['assignee']));
+        }
+
+        if (! empty($filters['task_type'])) {
+            $query->whereIn('task_type', $filters['task_type']);
+        }
+
+        if (! empty($filters['priority_quadrant'])) {
+            $query->whereIn('priority_quadrant', $filters['priority_quadrant']);
+        }
+
+        match ($filters['due'] ?? 'all') {
+            'today' => $query->whereDate('due_date', Carbon::today()),
+            'this_week' => $query->whereBetween('due_date', [Carbon::now()->startOfWeek(), Carbon::now()->endOfWeek()]),
+            'overdue' => $query->where('due_date', '<', Carbon::now())
+                ->whereHas('taskStatus', fn ($q) => $q->where('is_completed', false)),
+            default => null,
+        };
+
+        $sort = $filters['sort'] ?? 'due_date';
+        $direction = $filters['direction'] ?? 'asc';
+
+        if ($sort === 'priority_quadrant') {
+            // F-139: p1 (bobot 4, paling mendesak) -> p4, sama pola FIELD() dengan
+            // sort priority enum lama, cuma daftarnya diganti quadrant.
+            $query->orderByRaw("FIELD(priority_quadrant, 'p1','p2','p3','p4') ".($direction === 'desc' ? 'desc' : 'asc'));
+        } else {
+            $query->orderBy($sort, $direction);
+        }
+
+        $tasks = $query->paginate(25)->withQueryString();
+
+        $liveCounters = (new LiveTaskCounter)->forTasks($tasks->getCollection(), $user);
+        $tasks->getCollection()->each(function (Task $task) use ($liveCounters) {
+            $task->live_counter = $liveCounters[$task->id] ?? null;
+        });
+
+        return Inertia::render('tasks/all', [
+            'tasks' => $tasks,
+            'projects' => Project::orderBy('name')->get(['id', 'name']),
+            'members' => User::orderBy('name')->get(['id', 'name']),
+            'filters' => [
+                'project_id' => $filters['project_id'] ?? null,
+                'status_flag' => $filters['status_flag'] ?? [],
+                'assignee' => $filters['assignee'] ?? [],
+                'task_type' => $filters['task_type'] ?? [],
+                'priority_quadrant' => $filters['priority_quadrant'] ?? [],
+                'due' => $filters['due'] ?? 'all',
+                'sort' => $sort,
+                'direction' => $direction,
             ],
         ]);
     }

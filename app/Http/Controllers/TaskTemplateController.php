@@ -41,6 +41,23 @@ class TaskTemplateController extends Controller
         ]);
     }
 
+    /**
+     * BUSINESS RULE: v1.2 H7b (F-140/F-144) — "Tugas Berulang" flat lintas SEMUA
+     * project (nav sebelumnya disabled, F-147). CRUD asli TETAP per-project (F-46
+     * tidak berubah) — halaman ini MURNI listing+navigasi baru, link Edit/Aktifkan
+     * mengarah ke route project-scoped yang sudah ada, nol endpoint baru.
+     */
+    public function allProjects(): Response
+    {
+        return Inertia::render('task-templates/all', [
+            'templates' => TaskTemplate::with('project:id,name')
+                ->orderBy('project_id')
+                ->orderBy('title')
+                ->get(),
+            'projects' => Project::orderBy('name')->get(['id', 'name']),
+        ]);
+    }
+
     public function create(Project $project): Response
     {
         return Inertia::render('task-templates/create', [

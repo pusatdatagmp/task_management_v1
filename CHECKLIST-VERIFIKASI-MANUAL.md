@@ -517,9 +517,73 @@ widget Status Project tampil rapi + sortable + kecualikan proyek arsip.
 
 ---
 
+## 16. "Semua Tugas" + "Tugas Berulang" — nav diaktifkan (v1.2 H7b, F-140/F-144/F-147/F-139)
+
+> Chrome extension **masih absen** sesi ini juga (percobaan connect gagal lagi) —
+> 2 halaman BARU ini (flat lintas-project, sebelumnya `disabled` di sidebar sejak
+> item 14/DS-1) cuma lulus 11 test otomatis HTTP (MySQL) + `tsc`/build/pint bersih,
+> **belum pernah dilihat mata manusia**. Ini SUPERSEDE item 14 langkah 3 — 2 dari
+> 3 item placeholder di situ ("Semua Tugas", "Tugas Berulang") **TIDAK LAGI**
+> redup/disabled, sekarang aktif & mengarah ke halaman sungguhan. "Setelan" TETAP
+> disabled (DS-2/DS-3, di luar scope sesi ini).
+
+1. Login **admin**. Sidebar kiri, grup **Kerja** — klik **"Semua Tugas"**. Harus
+   mendarat di `/tasks` (bukan lagi redup/"SEGERA"), tabel task dari **LEBIH DARI
+   1 project sekaligus** tampil di satu halaman (bandingkan kolom "Project" di
+   tabel — harus ada nama project yang berbeda-beda pada baris berbeda, kalau
+   organisasi Boss punya >1 project aktif).
+2. Coba filter **Project** (dropdown) — pilih 1 project. Tabel harus menyempit ke
+   task project itu saja, DAN tombol **"Board View"** yang tadinya tidak ada/redup
+   sekarang **muncul**. Klik tombol itu — harus membuka halaman Board (Kanban)
+   project itu, TAMPILANNYA SAMA PERSIS dengan Board yang sudah ada sebelumnya
+   (kolom TODO/IN PROGRESS/REVIEW/DONE, drag-drop, dst — F-109, nol kode board baru).
+3. Kembali ke `/tasks`, kosongkan filter Project ("Semua Project") — tombol
+   **"Board View"** harus **hilang lagi**, diganti keterangan kecil "Pilih 1
+   project untuk lihat Board View" (Kanban memang sengaja tidak tersedia lintas
+   banyak project sekaligus — tiap project bisa punya susunan status berbeda).
+4. Coba filter **Status** (checkbox Belum dikerjakan/Dikerjakan/Review/Selesai) —
+   pastikan hasil filter masuk akal biarpun dicoba lintas project yang punya nama
+   status berbeda-beda (filter ini pakai kategori umum, bukan nama status project
+   tertentu).
+5. Coba filter **Prioritas (Eisenhower)** — badge warna P1-P4 di kolom Prioritas
+   tabel harus konsisten dengan badge yang sama di halaman List/Board project biasa.
+6. Coba ubah **Urutkan** ke "Prioritas (Quadrant)" — urutan baris harus mengikuti
+   P1 di atas → P4 di bawah (atau sebaliknya kalau diklik Turun/Naik).
+7. Klik **"Ubah status..."** pada salah satu baris (kolom Aksi) — pastikan
+   dropdown-nya berisi status MILIK PROJECT TASK ITU (bukan status project lain),
+   dan perubahan tersimpan (refresh, status baru bertahan).
+8. Klik judul salah satu task — harus membuka halaman detail task yang sudah
+   dikenal (`/projects/{id}/tasks/{taskId}`).
+9. Login sebagai **member** (mis. `member1@deevatech.test`) — menu **"Semua Tugas"**
+   **HARUS TIDAK ADA** di sidebar (member cuma lihat "Tugas Saya"). Coba akses
+   langsung `/tasks` di address bar — harus kena **403**.
+10. Kembali login **admin**. Sidebar grup **Kerja** — klik **"Tugas Berulang"**.
+    Harus mendarat di `/task-templates`, daftar TEMPLATE dari **beberapa project**
+    tampil sekaligus (kolom Project berbeda-beda per baris).
+11. Pilih project dari dropdown di pojok kanan atas, klik **"Template Baru"** —
+    harus membuka form create template project itu (halaman yang SUDAH ADA
+    sebelumnya, bukan form baru).
+12. Klik **Edit** pada salah satu baris — harus membuka form edit template yang
+    sudah ada, terisi data lama dengan benar (title/jadwal/estimasi cocok dengan
+    yang tampil di tabel listing).
+13. Klik **Aktifkan/Nonaktifkan** pada salah satu baris — badge status harus
+    berubah di tempat (tanpa pindah halaman), refresh — perubahan bertahan.
+14. Login sebagai **member** — menu **"Tugas Berulang"** **HARUS TIDAK ADA**.
+    Akses langsung `/task-templates` — harus **403**.
+
+**Hasil diharapkan:** kedua halaman render tanpa blank page/error React, listing
+benar-benar lintas-project, Board View cuma muncul saat 1 project dipilih dan
+sama persis dengan Board lama, filter status pakai kategori umum bukan nama status
+mentah, member 403 di keduanya, CRUD template tetap lewat halaman project-scoped
+lama (nol endpoint baru tersentuh).
+
+[ ] LULUS — dicoret Boss tanggal: ______
+
+---
+
 ## SETELAH SEMUA DICORET
 
-Kabari Jarvis "F-97 tutup, X/15 lulus" + status tiap item (atau sebutkan
+Kabari Jarvis "F-97 tutup, X/16 lulus" + status tiap item (atau sebutkan
 item mana yang gagal) supaya status finding **F-97** di `docs/04-FINDING-REGISTRY.md`
 bisa diupdate dari 🟡 TERBUKA ke 🟢. Jarvis tidak akan mengubah dokumen ini sendiri
 tanpa konfirmasi.
