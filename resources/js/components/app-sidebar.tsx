@@ -5,16 +5,19 @@ import { Sidebar, SidebarContent, SidebarFooter, SidebarHeader, SidebarMenu, Sid
 import { type NavItem, type SharedData } from '@/types';
 import { Link, usePage } from '@inertiajs/react';
 import {
-    BookOpen,
     CalendarClock,
     CalendarOff,
     CheckSquare,
     Clock,
+    Facebook,
     Folder,
     History,
     Hourglass,
+    Instagram,
     LayoutGrid,
+    Linkedin,
     ListChecks,
+    MessageCircle,
     Repeat,
     Settings,
     Trophy,
@@ -29,8 +32,18 @@ export function AppSidebar() {
     // isAdmin — role custom dengan user.manage tapi bukan workschedule.manage
     // (mis.) akan lihat menu User tapi bukan Jam Kerja. Ini HANYA gating
     // tampilan — penegakan sebenarnya di middleware `can:xxx` server-side.
-    const { auth } = usePage<SharedData>().props;
+    const { auth, branding } = usePage<SharedData>().props;
     const can = (permission: string) => auth.permissions.includes(permission);
+
+    // F-142 (v1.2 DS-2): link sosmed/wa Branding org -- reuse NavFooter (sudah
+    // ADA di codebase, sebelumnya tak pernah dipakai) alih-alih komponen baru.
+    // Cuma link yang DIISI Boss yang muncul (bukan 4 slot kosong).
+    const brandingFooterItems: NavItem[] = [
+        ...(branding?.wa_number ? [{ title: 'WhatsApp', url: `https://wa.me/${branding.wa_number.replace(/\D/g, '')}`, icon: MessageCircle }] : []),
+        ...(branding?.facebook_url ? [{ title: 'Facebook', url: branding.facebook_url, icon: Facebook }] : []),
+        ...(branding?.instagram_url ? [{ title: 'Instagram', url: branding.instagram_url, icon: Instagram }] : []),
+        ...(branding?.linkedin_url ? [{ title: 'LinkedIn', url: branding.linkedin_url, icon: Linkedin }] : []),
+    ];
 
     // F-144 §12.2: pembagi grup admin (RINGKASAN/KERJA/ORGANISASI) vs member
     // (KERJA SAYA saja). Reuse `dashboard.view` — SUDAH jadi batas admin/member
@@ -80,9 +93,9 @@ export function AppSidebar() {
         // v1.0 H4 (F-116): log GLOBAL — permission activity.view (admin default),
         // BUKAN ditampilkan ke member biasa.
         ...(can('activity.view') ? [{ title: 'Log Activity', url: '/pengaturan/activity-log', icon: History }] : []),
-        // F-142/F-144: Setelan (branding+tema) = DS-2/DS-3, belum dibangun sesi
-        // ini — placeholder non-klik saja.
-        { title: 'Setelan', url: '#', icon: Settings, disabled: true },
+        // v1.2 DS-2 (F-142/F-147): branding aktif (tab Tema DS-3 menyusul di
+        // halaman yang sama) — tidak lagi placeholder, F-147 tutup penuh.
+        ...(can('settings.manage') ? [{ title: 'Setelan', url: '/pengaturan/setelan', icon: Settings }] : []),
     ];
 
     // F-95: member = nol permission → hanya lihat tugas/proyek/perpanjangan
@@ -126,7 +139,12 @@ export function AppSidebar() {
             </SidebarContent>
 
             <SidebarFooter>
-              
+                {/* F-142: alamat = teks (bukan link), sosmed/wa = NavFooter (link,
+                    buka tab baru). Cuma tampil kalau Boss sudah isi Setelan. */}
+                {branding?.address && (
+                    <p className="px-2 pb-1 text-xs text-sidebar-foreground/70 group-data-[collapsible=icon]:hidden">{branding.address}</p>
+                )}
+                {brandingFooterItems.length > 0 && <NavFooter items={brandingFooterItems} className="mt-0" />}
                 <NavUser />
             </SidebarFooter>
         </Sidebar>

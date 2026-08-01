@@ -20,6 +20,7 @@ use App\Models\Concerns\SerializesDatesInAppTimezone;
 use Illuminate\Database\Eloquent\Factories\HasFactory;
 use Illuminate\Database\Eloquent\Model;
 use Illuminate\Database\Eloquent\Relations\HasMany;
+use Illuminate\Support\Facades\Storage;
 
 class Organization extends Model
 {
@@ -28,6 +29,16 @@ class Organization extends Model
     protected $fillable = [
         'name',
         'slug',
+        // F-142 (v1.2 DS-2): custom branding, org-scoped (F-5) sejak tabel akar —
+        // company_name SENGAJA terpisah dari `name` (identitas tenant internal,
+        // dipakai Role::firstOrCreate dkk, tak pernah tampil di UI mana pun).
+        'logo_path',
+        'company_name',
+        'address',
+        'wa_number',
+        'facebook_url',
+        'instagram_url',
+        'linkedin_url',
     ];
 
     public function users(): HasMany
@@ -48,5 +59,15 @@ class Organization extends Model
     public function projects(): HasMany
     {
         return $this->hasMany(Project::class);
+    }
+
+    /**
+     * KONTRAK: satu sumber derivasi URL logo (F-142) -- dipakai SettingsController
+     * (form edit) DAN HandleInertiaRequests (share global tiap halaman, F-85),
+     * supaya aturan "disk public, null kalau belum upload" tidak drift di 2 tempat.
+     */
+    public function logoUrl(): ?string
+    {
+        return $this->logo_path ? Storage::disk('public')->url($this->logo_path) : null;
     }
 }

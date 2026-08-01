@@ -581,9 +581,65 @@ lama (nol endpoint baru tersentuh).
 
 ---
 
+## 17. Setelan — custom Branding (v1.2 DS-2, F-142/F-147/F-104/F-105)
+
+> Chrome extension **masih absen** sesi ini juga (percobaan connect gagal lagi) —
+> halaman BARU ini (nav "Setelan" ke-3/terakhir dari F-147, sebelumnya `disabled`
+> sejak item 14/DS-1) cuma lulus 10 test otomatis HTTP (MySQL) + `tsc`/build/lint
+> bersih (LINT SEKARANG 0 ERROR — 2 error pre-existing ikut terperbaiki sebagai
+> efek samping wajar, bukan dikejar sengaja), **belum pernah dilihat mata manusia**.
+> Ini SUPERSEDE sisa item 14 langkah 3 — 3 dari 3 item placeholder di situ
+> ("Semua Tugas", "Tugas Berulang", "Setelan") **TIDAK ADA LAGI** yang disabled
+> (F-147 **TUTUP PENUH**).
+
+1. Login **admin**. Sidebar kiri, grup **Organisasi** — klik **"Setelan"**. Harus
+   mendarat di `/pengaturan/setelan` (bukan lagi redup/"SEGERA"), halaman dengan
+   2 tab: **"Branding"** (aktif) dan **"Tema (Segera)"** (redup, tak bisa diklik —
+   slot DS-3, BUKAN bug).
+2. Di tab Branding, isi **Nama perusahaan** (mis. "DEEVATECH Nusantara"),
+   **Alamat**, **Nomor WhatsApp** (format `628...` tanpa spasi), **Facebook/
+   Instagram/LinkedIn** (URL lengkap `https://...`). Klik **Simpan** — teks
+   **"Tersimpan"** harus muncul sebentar lalu hilang (fade, pola sama halaman
+   Settings→Profile personal yang sudah ada).
+3. **Upload logo**: pilih file gambar (JPG/PNG/WEBP) di field Logo — preview
+   gambar harus **langsung muncul** di sebelah field (sebelum klik Simpan). Klik
+   Simpan — refresh halaman, logo yang baru diupload harus **tetap tampil** sebagai
+   "Logo saat ini".
+4. Coba upload **file BUKAN gambar** (mis. PDF/ZIP) atau **file SVG** ke field
+   Logo — **HARUS DITOLAK**, pesan error muncul di bawah field (SVG sengaja
+   ditolak juga — celah XSS, F-104/105 gaya validasi isi-file).
+5. **Cek sidebar SETELAH simpan** (halaman manapun, bukan cuma Setelan): logo di
+   pojok kiri atas sidebar **HARUS BERGANTI** ke logo baru, teks di sampingnya
+   **HARUS BERGANTI** ke nama perusahaan yang baru diisi (bukan lagi "DEEVATECH"
+   hardcode).
+6. **Cek footer sidebar** (scroll ke bawah sidebar, di atas menu user/avatar):
+   alamat harus tampil sebagai teks kecil, dan ikon **WhatsApp/Facebook/Instagram/
+   LinkedIn** harus muncul sebagai link (klik salah satu — harus buka tab baru ke
+   URL yang diisi, WhatsApp ke `https://wa.me/<nomor>`).
+7. **Kosongkan** semua field branding (hapus isi Nama perusahaan, dst — TANPA
+   hapus logo), Simpan — sidebar **HARUS KEMBALI** ke fallback default: teks
+   "TEMPO" + logo default (`/real.webp`), footer sosmed/alamat **hilang** (bukan
+   tampil kosong/rusak).
+8. Login sebagai **member** (mis. `member1@deevatech.test`) — menu **"Setelan"**
+   **HARUS TIDAK ADA** di sidebar. Coba akses langsung `/pengaturan/setelan` di
+   address bar — harus kena **403**. Sidebar member (logo/nama/footer sosmed)
+   tetap ikut branding org yang sama (dishare global, bukan admin-only tampil).
+9. (Opsional, teknis) Cek folder `storage/app/public/branding/` di server — pastikan
+   HANYA ADA 1 file logo tersisa (yang terbaru) setelah beberapa kali ganti logo di
+   langkah 3 — file lama harus **terhapus otomatis**, tidak menumpuk jadi sampah.
+
+**Hasil diharapkan:** tab Branding render + simpan berhasil, upload logo
+tervalidasi (gambar diterima, non-gambar & SVG ditolak), sidebar (logo+nama+
+footer sosmed/alamat) berubah dinamis di SEMUA halaman setelah simpan, fallback
+default TEMPO saat kosong, member 403, tab Tema tetap slot kosong (DS-3 nanti).
+
+[ ] LULUS — dicoret Boss tanggal: ______
+
+---
+
 ## SETELAH SEMUA DICORET
 
-Kabari Jarvis "F-97 tutup, X/16 lulus" + status tiap item (atau sebutkan
+Kabari Jarvis "F-97 tutup, X/17 lulus" + status tiap item (atau sebutkan
 item mana yang gagal) supaya status finding **F-97** di `docs/04-FINDING-REGISTRY.md`
 bisa diupdate dari 🟡 TERBUKA ke 🟢. Jarvis tidak akan mengubah dokumen ini sendiri
 tanpa konfirmasi.

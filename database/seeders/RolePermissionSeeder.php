@@ -91,6 +91,10 @@ class RolePermissionSeeder extends Seeder
             // Boss assign manual per role lewat UI Role Management yang SUDAH ADA
             // (F-135, form ini otomatis dapat grup "leaderboard" baru, nol kode UI).
             ['permission_name' => 'leaderboard.view', 'module' => 'leaderboard', 'default_admin' => false],
+            // v1.2 DS-2 (F-142): kelola Setelan org (branding sekarang, tema DS-3
+            // menyusul di tab yang sama) -- default_admin TRUE (beda dari
+            // leaderboard.view), sama pola user.manage/task.manage dkk di atas.
+            ['permission_name' => 'settings.manage', 'module' => 'settings'],
         ];
     }
 

@@ -8,6 +8,7 @@ use App\Http\Controllers\HolidayController;
 use App\Http\Controllers\LeaderboardController;
 use App\Http\Controllers\ProjectController;
 use App\Http\Controllers\RoleController;
+use App\Http\Controllers\SettingsController;
 use App\Http\Controllers\TaskController;
 use App\Http\Controllers\TaskStatusController;
 use App\Http\Controllers\TaskTemplateController;
@@ -85,6 +86,15 @@ Route::middleware(['auth', 'can:task.manage'])->group(function () {
 // READ-ONLY MUTLAK — index() satu-satunya method, tidak ada route lain sama sekali.
 Route::middleware(['auth', 'can:activity.view'])->group(function () {
     Route::get('pengaturan/activity-log', [ActivityLogController::class, 'index'])->name('activity-logs.index');
+});
+
+// v1.2 DS-2 (F-142) — halaman "Setelan" org-level, permission settings.manage
+// BARU (default_admin TRUE, beda dari leaderboard.view yang opt-in). POST
+// (bukan PATCH) untuk updateBranding() -- form membawa file logo opsional,
+// PHP tidak parse body multipart di method PATCH/PUT tanpa method-spoofing.
+Route::middleware(['auth', 'can:settings.manage'])->group(function () {
+    Route::get('pengaturan/setelan', [SettingsController::class, 'edit'])->name('settings.index');
+    Route::post('pengaturan/setelan/branding', [SettingsController::class, 'updateBranding'])->name('settings.branding.update');
 });
 
 // RBAC §C2/E1/E2 — CRUD user + kelola role, permission user.manage. 'create'

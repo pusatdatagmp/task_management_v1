@@ -41,12 +41,27 @@ class HandleInertiaRequests extends Middleware
         // F-90/RBAC §D3: eager-load SEKALI per request (F-85 — preventLazyLoading
         // akan melempar exception kalau ->role->permissions diakses tanpa ini,
         // dan share() ini jalan di SETIAP request Inertia).
-        $request->user()?->loadMissing('role.permissions');
+        $request->user()?->loadMissing('role.permissions', 'organization');
+
+        $organization = $request->user()?->organization;
 
         return array_merge(parent::share($request), [
             ...parent::share($request),
             'name' => config('app.name'),
             'quote' => ['message' => trim($message), 'author' => trim($author)],
+            // F-142 (v1.2 DS-2): dishare GLOBAL (bukan cuma halaman Setelan) --
+            // sidebar (AppLogo, NavFooter sosmed/wa) butuh ini di SETIAP halaman,
+            // pola sama unreadNotificationsCount di bawah. Fallback null biarkan
+            // FRONTEND yang render default TEMPO, DB tidak dipaksa isi placeholder.
+            'branding' => $organization ? [
+                'company_name' => $organization->company_name,
+                'address' => $organization->address,
+                'wa_number' => $organization->wa_number,
+                'facebook_url' => $organization->facebook_url,
+                'instagram_url' => $organization->instagram_url,
+                'linkedin_url' => $organization->linkedin_url,
+                'logo_url' => $organization->logoUrl(),
+            ] : null,
             // DIPAKAI: sidebar/tombol gating di frontend (F-90) — daftar NAMA
             // permission (string[]), BUKAN boolean isAdmin/role string. Frontend
             // cek `auth.permissions.includes('task.manage')`, TIDAK PERNAH
