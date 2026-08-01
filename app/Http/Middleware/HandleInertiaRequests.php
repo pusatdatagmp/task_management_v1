@@ -62,6 +62,12 @@ class HandleInertiaRequests extends Middleware
                 'linkedin_url' => $organization->linkedin_url,
                 'logo_url' => $organization->logoUrl(),
             ] : null,
+            // F-143 (v1.2 DS-3): dishare GLOBAL -- app.tsx apply token override
+            // SEKALI saat boot (pola sama initializeTheme() appearance, F-144
+            // "editor ubah token, komponen mewarisi"), bukan cuma halaman Setelan.
+            // null = org belum kustom tema, FRONTEND diam (CSS default TEMPO
+            // dari app.css yang berlaku, F-145 fallback aman).
+            'theme' => $organization?->theme_config,
             // DIPAKAI: sidebar/tombol gating di frontend (F-90) — daftar NAMA
             // permission (string[]), BUKAN boolean isAdmin/role string. Frontend
             // cek `auth.permissions.includes('task.manage')`, TIDAK PERNAH

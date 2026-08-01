@@ -1,3 +1,4 @@
+import { type ThemeConfig } from '@/lib/theme-tokens';
 import { LucideIcon } from 'lucide-react';
 
 // F-90/RBAC §D3: daftar NAMA permission (mis. 'task.manage'), BUKAN boolean
@@ -50,6 +51,9 @@ export interface SharedData {
     auth: Auth;
     unreadNotificationsCount: number;
     branding: Branding | null;
+    // F-143 (v1.2 DS-3): null = org belum kustom tema -- CSS default TEMPO
+    // (app.css) yang berlaku, F-145 fallback aman.
+    theme: ThemeConfig | null;
     [key: string]: unknown;
 }
 

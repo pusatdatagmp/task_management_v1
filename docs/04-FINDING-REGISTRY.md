@@ -85,7 +85,7 @@
 | **F-61** | `last_generated_date` = idempotency guard | 🟢 | BF §3 |
 | **F-62** | Jumlah extension per user = metrik KPI v1.5 | 🟢 | BF §4 |
 | **F-63** | **Multi-assignee: realisasi & poin dibagi atau digandakan?** | 🟡 **sebelum v0.8** | BF §12 |
-| **F-64** | Finding baru mulai dari F-150 | 🟢 | CLAUDE §2 |
+| **F-64** | Finding baru mulai dari F-151 | 🟢 | CLAUDE §2 |
 | **F-65** | **Laravel 12 bug-fix berakhir ±Agu 2026** — keputusan Boss tetap L12. Upgrade ke L13 wajib dijadwalkan | 🟡 **AKTIF** | Tutorial §0 |
 | **F-66** | **Segmen menyeberang perubahan `work_schedules`** → v0.5 pakai config aktif saat `started_at`. Resolusi per-hari → v0.8 | 🟢 | H2 §C2 |
 | **F-67** | **Guard FULLTEXT harus EXCLUDE sqlite, bukan INCLUDE mysql** — driver `mariadb` bikin search mati diam-diam | 🟢 | H2 §B1 |
@@ -168,9 +168,10 @@
 | **F-144** | **FONDASI DESIGN SYSTEM DULU** sebelum lanjut fitur task-mgmt (Boss): token TEMPO (ink navy/amber/emerald/rose + workspace terang) sebagai default overridable, sidebar bergrup (RINGKASAN/KERJA/ORGANISASI) role-appropriate + gated, komponen bersama adopsi token. Re-theme visual RBAC BOLEH (F-135 lindungi fungsi bukan tema) | 🟢 | v1.2 DS-1 |
 | **F-145** | 🔵 **`--primary` = AMBER, DITERIMA Boss** (verifikasi browser DS-1: "sudah sesuai"). Tombol default app amber = pilihan sadar Boss (beda dari mockup btn-pri=ink, tapi Boss suka). Tak dikoreksi | 🔵 **selesai** | v1.2 DS |
 | **F-146** | 🟡 **Bug laten PRE-EXISTING `ui/sidebar.tsx` ~404:** `hsl(var(--sidebar-border))` nesting hsl() ganda (invalid sebelum sesi ini) → shadow rail tak render. Tak disentuh DS-1 (di luar scope). Fix saat sentuh sidebar.tsx | 🟡 **TERBUKA** | v1.2 debt |
-| **F-147** | ⚠️ **3 item nav DISABLED "SEGERA"** (Semua Tugas, Tugas Berulang, Setelan) = janji visual. Semua Tugas/Tugas Berulang mungkin sudah ada halamannya (v0.5/v0.8) tapi belum di-wire; Setelan = DS-2/DS-3. WAJIB di-enable saat dibangun, jangan jadi dead-end permanen | 🟡 **TERBUKA** | v1.2 |
-| **F-148** | 🟡 **Filter `*_user_id` divalidasi tapi TIDAK di-cast** → balik ke frontend sbg STRING padahal TS `number\|null`. Nol dampak fungsional, tapi kontrak tipe API bohong. FIX: cast ke int di backend (rekomendasi Jarvis, kontrak jujur). Boss putuskan | 🟡 **TERBUKA** | v1.2 DS-4 |
+| **F-147** | 🔵 **SELESAI — 3 nav disabled semua AKTIF** (Semua Tugas+Tugas Berulang 5f245fe, Setelan c972b04). Nol dead-end tersisa | 🔵 **selesai** | v1.2 |
+| **F-148** | 🔵 **DIPERBAIKI (DS-4b)** — 7 param `*_user_id` di-cast ke int di backend, kontrak API jujur | 🔵 **selesai** | v1.2 |
 | **F-149** | 🔴 **PROTOKOL COMMIT WAJIB.** Setiap sesi Claude Code selesai → `git add -A && git commit` (kode + docs) sebagai LANGKAH TERAKHIR, sebelum lapor. Kerja uncommitted = RAPUH: 2× hilang (docs untracked, lalu kode filter DS-4 lenyap dari working tree). Prompt ke depan sertakan langkah commit wajib. Registry hanya boleh klaim "ada" untuk yang SUDAH di-commit | 🟢 | v1.2 |
+| **F-150** | 🔵 **BERSIH (DS-2)** — lint error DS-1 (app-logo/NavFooter) hilang saat file ditulis ulang untuk branding. Lint 0 error/warning | 🔵 **selesai** | v1.2 |
 
 ---
 
@@ -1017,3 +1018,62 @@ Lanjut: DS-4 (Status Project widget + filter per-widget + dedup warna F-137) —
 Boss lapor: fitur filter per-widget HILANG dari dashboard. Diagnosis Jarvis: kode filter belum pernah di-commit (dibangun di luar loop, cuma working tree) → rapuh, kemungkinan lenyap oleh operasi git/reset. **F-137 (dedup) sempat ditandai selesai atas laporan Claude Code — kalau ikut hilang, statusnya ikut dipertanyakan** (registry berbohong soal yang uncommitted — persis bahaya yang diflag).
 
 **F-149 PROTOKOL COMMIT WAJIB** ditetapkan. DS-4b digabung: diagnosa+pulihkan filter → fix F-148 → widget Status Project → COMMIT wajib.
+
+---
+
+## CATATAN — 2026-07-28 — v1.2 DS-4b lulus + SELURUH BACKLOG DI-COMMIT
+
+**LULUS.** 330 test. 🎯 **COMMIT PERTAMA NYATA** (172603e, 303 file) — seluruh proyek v0.5→DS-4b tersimpan permanen. F-149 berbuah.
+
+**Misteri filter: TIDAK hilang** — utuh sejak LANGKAH 0 (backend+9test+frontend selector+tombol global). "Menghilang" = kemungkinan BUILD BASI (kode di tree, belum di-build ke bundle tersaji). Kini npm run build sukses + committed → muncul di serve segar. F-137 dedup ikut utuh (committed).
+
+**F-148 SELESAI** (7 param cast int). **Status Project widget** (counts, top-5 by task_total DESC, sortable, arsip dikecualikan). Deviasi #1: sort task_total = asumsi (Boss boleh ganti mis. deadline terdekat). Bug test self-caught (actingAs).
+
+**F-150:** 3 lint error DS-1 (app-sidebar/app-logo) — bersihkan saat DS-2/3.
+
+**F-97 kini 15 item.** Boss belum jawab cakupan verifikasi.
+
+---
+
+## CATATAN — 2026-07-28 — aktivasi Semua Tugas + Tugas Berulang lulus
+
+**LULUS, deviasi NOL, committed 5f245fe.** 341 test (+11). git diff 4 file backend (+142/-4), NOL sentuh engine recurring/transisi/observer (grep buktikan) — wiring/UI murni. Semua Tugas: toggle List/Kanban (kanban per-project, keputusan Boss), filter quadrant F-139, gated project.viewAll. Tugas Berulang: gated task.manage, aktif.
+
+**F-147: 2 dari 3 nav aktif** (Setelan tersisa → DS-2/DS-3). **H7b terserap** (kanban toggle + F-139 selesai di sini). **F-150** lint DS-1 dikonfirmasi pre-existing (git stash), tak diperbaiki (scope).
+
+**F-97 kini 16 item, MASIH BLOCKED** (Chrome extension tak konek 16 item beruntun). Claude Code tawarkan Opsi B: koneksikan ulang extension → Claude Code verifikasi sendiri. Ini momen genting — 16 item UI belum pernah dilihat mata.
+
+---
+
+## CATATAN — 2026-07-28 — scope Setelan dikonfirmasi Boss: Branding + Tema penuh
+
+Boss pilih branding "PENUH" + custom warna tema (tombol & komponen). Dibangun 2 sesi di menu Setelan:
+- **DS-2** = halaman Setelan (struktur tab) + Branding (logo/nama/alamat/wa/sosmed, org-scoped, permission settings.manage default-admin). Aktifkan menu Setelan (F-147 menu terakhir).
+- **DS-3** = tab Tema (editor warna TOKEN inti → komponen ikot otomatis berkat fondasi DS-1, + gradasi, live preview, reset default). F-143.
+
+Kunci: editor tema mengubah nilai TOKEN (F-144/DS-1), komponen mewarisi — bukan edit per-komponen. Fondasi token DS-1 berbuah di sini.
+
+Setelah Setelan lengkap: H7 model waktu → H8 meeting → H9 tutup. Verifikasi browser 16 item tetap tergantung (Boss belum pilih jalur).
+
+---
+
+## CATATAN — 2026-07-28 — v1.2 DS-2 (Setelan + branding) lulus
+
+**LULUS, deviasi NOL, committed c972b04.** 351 test (+10). 7 kolom branding di organizations (aditif F-121), logoUrl() satu sumber, settings.manage (default_admin TRUE), sidebar dinamis + fallback default, org isolasi (F-5). Self-correct: tab manual (React state) krn @radix tabs bukan dependency — nol dependency baru.
+
+**F-147 TUTUP** (3 nav semua aktif). **F-150 BERSIH** (lint 0). Keputusan Boss: storage kolom organizations, 1 URL+tab client-side (siap DS-3), sosmed di footer sidebar. **Logo storage PUBLIC** (trade-off sadar performa, disetujui).
+
+🔴 **Registry+tracker belum ter-commit di repo** (Claude Code benar tak menyentuh). Celah protokol: Boss WAJIB commit docs saat menyalin (bukan cuma kode). Solusi: `git add -A` di commit final atau Boss commit docs manual.
+
+**Berikutnya DS-3 (editor tema) — slot tab sudah siap.** Verifikasi browser 17 item tetap tergantung.
+
+---
+
+## CATATAN — 2026-07-28 — menu Setelan HILANG dari sidebar (diagnosa)
+
+Boss lapor Setelan hilang. DS-2 SUDAH committed (c972b04) → kode kemungkinan utuh. Dugaan Jarvis (urut kemungkinan):
+1. BUILD BASI (pola sama filter — kode ada, bundle belum di-build ulang) → npm run build + restart serve.
+2. Permission settings.manage tak ter-assign admin (gating F-90 sembunyikan menu) → re-seed/assign.
+3. Git revert (dicek).
+
+Prompt FIX-SETELAN dibuat: diagnosa 3 kemungkinan → perbaiki → COMMIT wajib (F-149). Pola berulang "UI hilang" = hampir selalu build/serve basi ATAU permission belum seed — BUKAN kode hilang (karena sudah commit).

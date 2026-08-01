@@ -95,6 +95,9 @@ Route::middleware(['auth', 'can:activity.view'])->group(function () {
 Route::middleware(['auth', 'can:settings.manage'])->group(function () {
     Route::get('pengaturan/setelan', [SettingsController::class, 'edit'])->name('settings.index');
     Route::post('pengaturan/setelan/branding', [SettingsController::class, 'updateBranding'])->name('settings.branding.update');
+    // v1.2 DS-3 (F-143) -- tab Tema, permission SAMA settings.manage (reuse DS-2,
+    // 1 halaman 1 gate walau 2 tab -- F-143 "Gate settings.manage (reuse DS-2)").
+    Route::post('pengaturan/setelan/tema', [SettingsController::class, 'updateTheme'])->name('settings.theme.update');
 });
 
 // RBAC §C2/E1/E2 — CRUD user + kelola role, permission user.manage. 'create'

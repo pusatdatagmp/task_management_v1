@@ -1,23 +1,28 @@
 // ==========================================================
 // MODUL       : org-settings/index
 // KLASIFIKASI : UI
-// TUJUAN      : Halaman "Setelan" org-level (F-142, v1.2 DS-2) — tab Branding
-//               sekarang, slot tab Tema (DS-3) menyusul di halaman yang SAMA
-//               (1 URL, tab client-side — nol route baru saat DS-3 dibangun).
-//               Tab manual (useState), BUKAN shadcn <Tabs> — @radix-ui/react-tabs
+// TUJUAN      : Halaman "Setelan" org-level — tab Branding (F-142, v1.2 DS-2) +
+//               tab Tema (F-143, v1.2 DS-3, token+gradasi). 1 URL, tab
+//               client-side (useState) — BUKAN shadcn <Tabs>, @radix-ui/react-tabs
 //               belum jadi dependency project ini (cek package.json), pasang
 //               primitive baru tanpa approval eksplisit melanggar aturan proyek.
 // DIPANGGIL   : SettingsController::edit()
 // MEMANGGIL   : route('settings.branding.update') — POST (file logo opsional,
-//               PHP tak parse multipart di method PATCH/PUT tanpa method-spoofing)
-// DATA MASUK  : branding {company_name, address, wa_number, facebook_url,
-//               instagram_url, linkedin_url, logo_url} — null-able, org belum tentu
-//               pernah isi (F-142, fallback default TEMPO ditangani AppLogo, BUKAN di sini)
-// DATA KELUAR : POST FormData -> organizations.* (SettingsController::updateBranding)
-// RISIKO      : SUMBER : preview logo pilihan BARU pakai URL.createObjectURL —
-//               WAJIB revokeObjectURL saat file diganti/unmount, atau blob URL bocor
-//               memory selama tab browser terbuka (cleanup di useEffect return + tiap
-//               ganti file, bukan cuma unmount).
+//               PHP tak parse multipart di method PATCH/PUT tanpa method-spoofing).
+//               route('settings.theme.update') — POST token+gradasi.
+//               lib/theme-tokens (applyThemeTokens, F-144 — editor ubah TOKEN,
+//               komponen mewarisi via CSS var, TIDAK PERNAH edit warna langsung).
+// DATA MASUK  : branding {..., logo_url} + theme {tokens, gradient} — keduanya
+//               null-able, org belum tentu pernah isi (fallback default TEMPO)
+// DATA KELUAR : POST FormData -> organizations.* (branding), organizations.
+//               theme_config (tema)
+// RISIKO      : SUMBER (Branding): preview logo pilihan BARU pakai
+//               URL.createObjectURL — WAJIB revokeObjectURL saat file diganti/
+//               unmount, atau blob URL bocor memory selama tab browser terbuka.
+//               SUMBER (Tema): live preview men-set CSS var LANGSUNG di :root
+//               tiap picker berubah (lihat ThemeTab) — WAJIB di-reset ke nilai
+//               tersimpan server saat pindah tab/unmount TANPA Simpan, atau
+//               draft yang batal keliru terlihat permanen sampai reload.
 // ==========================================================
 
 import HeadingSmall from '@/components/heading-small';
@@ -28,6 +33,7 @@ import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
 import { Textarea } from '@/components/ui/textarea';
 import AppLayout from '@/layouts/app-layout';
+import { applyThemeTokens, DEFAULT_GRADIENT, GRADIENT_DIRECTIONS, TEMPO_TOKENS, type GradientConfig, type ThemeConfig, type TokenKey } from '@/lib/theme-tokens';
 import { type BreadcrumbItem } from '@/types';
 import { Transition } from '@headlessui/react';
 import { Head, useForm } from '@inertiajs/react';
@@ -47,7 +53,7 @@ const breadcrumbs: BreadcrumbItem[] = [{ title: 'Setelan', href: '/pengaturan/se
 
 type TabKey = 'branding' | 'tema';
 
-export default function OrgSettingsIndex({ branding }: { branding: Branding }) {
+export default function OrgSettingsIndex({ branding, theme }: { branding: Branding; theme: ThemeConfig | null }) {
     const [activeTab, setActiveTab] = useState<TabKey>('branding');
 
     return (
@@ -57,8 +63,7 @@ export default function OrgSettingsIndex({ branding }: { branding: Branding }) {
             <div className="flex flex-col gap-4 p-4">
                 <h1 className="text-xl font-semibold">Setelan</h1>
 
-                {/* Tab manual (bukan shadcn <Tabs>, lihat header file) -- slot Tema
-                    (DS-3) sudah disiapkan di sini, tinggal isi TabsContent-nya nanti. */}
+                {/* Tab manual (bukan shadcn <Tabs>, lihat header file). */}
                 <div className="flex gap-1 border-b">
                     <button
                         type="button"
@@ -71,15 +76,17 @@ export default function OrgSettingsIndex({ branding }: { branding: Branding }) {
                     </button>
                     <button
                         type="button"
-                        disabled
-                        title="Segera — DS-3"
-                        className="cursor-not-allowed border-b-2 border-transparent px-3 py-2 text-sm font-medium text-muted-foreground/50"
+                        onClick={() => setActiveTab('tema')}
+                        className={`border-b-2 px-3 py-2 text-sm font-medium ${
+                            activeTab === 'tema' ? 'border-primary text-foreground' : 'border-transparent text-muted-foreground'
+                        }`}
                     >
-                        Tema (Segera)
+                        Tema
                     </button>
                 </div>
 
                 {activeTab === 'branding' && <BrandingTab branding={branding} />}
+                {activeTab === 'tema' && <ThemeTab theme={theme} />}
             </div>
         </AppLayout>
     );
@@ -235,6 +242,165 @@ function BrandingTab({ branding }: { branding: Branding }) {
 
                     <div className="flex items-center gap-4">
                         <Button disabled={processing}>Simpan</Button>
+
+                        <Transition show={recentlySuccessful} enter="transition ease-in-out" enterFrom="opacity-0" leave="transition ease-in-out" leaveTo="opacity-0">
+                            <p className="text-sm text-muted-foreground">Tersimpan</p>
+                        </Transition>
+                    </div>
+                </form>
+            </CardContent>
+        </Card>
+    );
+}
+
+function ThemeTab({ theme }: { theme: ThemeConfig | null }) {
+    // SUMBER: TANPA anotasi tipe/generic eksplisit -- inline object literal
+    // (pola sama task-templates/create.tsx useForm({...})), supaya TypeScript
+    // infer "fresh" object type yang lolos constraint FormDataType Inertia.
+    // Interface bernama (mis. ThemeDraft) TIDAK punya index signature dan
+    // GAGAL constraint check kalau dipakai sebagai anotasi/generic eksplisit di sini.
+    const { data, setData, post, processing, recentlySuccessful, errors, reset, setDefaults } = useForm({
+        tokens: theme?.tokens ?? {},
+        gradient: theme?.gradient ?? DEFAULT_GRADIENT,
+    });
+    const formErrors = errors as unknown as Record<string, string | undefined>;
+
+    // RISIKO (lihat header file): baseline "diketahui benar" untuk cleanup saat
+    // unmount TANPA Simpan (pindah tab/halaman) -- diperbarui ke `data` SETELAH
+    // Simpan berhasil (bukan cuma nilai awal mount), supaya tab lain tidak
+    // "mewarisi" draft yang batal ATAUPUN kehilangan hasil simpan barusan.
+    const lastKnownGoodRef = useRef(data);
+
+    // Live preview (F-143): SETIAP perubahan draft langsung terlihat, sebelum Simpan.
+    useEffect(() => {
+        applyThemeTokens(data);
+    }, [data]);
+
+    // Unmount safety net: pindah ke tab Branding/keluar halaman TANPA Simpan
+    // TIDAK boleh meninggalkan draft warna nempel di :root untuk halaman lain.
+    useEffect(() => {
+        return () => applyThemeTokens(lastKnownGoodRef.current);
+         
+    }, []);
+
+    const setToken = (key: TokenKey, value: string) => {
+        setData('tokens', { ...data.tokens, [key]: value });
+    };
+
+    const setGradientField = <K extends keyof GradientConfig>(key: K, value: GradientConfig[K]) => {
+        setData('gradient', { ...data.gradient, [key]: value });
+    };
+
+    const submit: FormEventHandler = (e) => {
+        e.preventDefault();
+
+        post(route('settings.theme.update'), {
+            preserveScroll: true,
+            onSuccess: () => {
+                lastKnownGoodRef.current = data;
+                setDefaults();
+            },
+        });
+    };
+
+    const batal = () => reset();
+
+    const resetDefault = () => setData({ tokens: {}, gradient: DEFAULT_GRADIENT });
+
+    return (
+        <Card className="max-w-2xl">
+            <CardHeader>
+                <CardTitle>Tema</CardTitle>
+            </CardHeader>
+            <CardContent>
+                <form onSubmit={submit} className="space-y-6">
+                    <HeadingSmall
+                        title="Token warna"
+                        description="Ubah nilai token inti — semua komponen bersama (tombol, kartu, sidebar) otomatis mewarisi, bukan diedit satu-satu (F-144)."
+                    />
+
+                    <div className="grid grid-cols-1 gap-4 sm:grid-cols-2">
+                        {TEMPO_TOKENS.map((token) => {
+                            const value = data.tokens[token.key] ?? token.defaultHex;
+
+                            return (
+                                <div key={token.key} className="grid gap-1">
+                                    <Label htmlFor={`token-${token.key}`}>{token.label}</Label>
+                                    <div className="flex items-center gap-2">
+                                        <input
+                                            type="color"
+                                            id={`token-${token.key}`}
+                                            value={value}
+                                            onChange={(e) => setToken(token.key, e.target.value)}
+                                            className="h-9 w-12 shrink-0 cursor-pointer rounded border"
+                                        />
+                                        <Input value={value} onChange={(e) => setToken(token.key, e.target.value)} className="font-mono text-xs" />
+                                    </div>
+                                    <p className="text-xs text-muted-foreground">{token.hint}</p>
+                                    <InputError message={formErrors[`tokens.${token.key}`]} />
+                                </div>
+                            );
+                        })}
+                    </div>
+
+                    <HeadingSmall title="Gradasi" description="Opsional — diterapkan ke tombol utama & sidebar sekaligus (bukan per-elemen)." />
+
+                    <label className="flex items-center gap-2 text-sm">
+                        <input
+                            type="checkbox"
+                            checked={data.gradient.enabled}
+                            onChange={(e) => setGradientField('enabled', e.target.checked)}
+                        />
+                        Aktifkan gradasi
+                    </label>
+
+                    {data.gradient.enabled && (
+                        <div className="grid grid-cols-1 gap-4 sm:grid-cols-3">
+                            <div className="grid gap-1">
+                                <Label>Warna awal</Label>
+                                <input
+                                    type="color"
+                                    value={data.gradient.from}
+                                    onChange={(e) => setGradientField('from', e.target.value)}
+                                    className="h-9 w-full cursor-pointer rounded border"
+                                />
+                                <InputError message={formErrors['gradient.from']} />
+                            </div>
+                            <div className="grid gap-1">
+                                <Label>Warna akhir</Label>
+                                <input
+                                    type="color"
+                                    value={data.gradient.to}
+                                    onChange={(e) => setGradientField('to', e.target.value)}
+                                    className="h-9 w-full cursor-pointer rounded border"
+                                />
+                                <InputError message={formErrors['gradient.to']} />
+                            </div>
+                            <div className="grid gap-1">
+                                <Label>Arah</Label>
+                                <select
+                                    className="h-9 rounded-md border border-input bg-background px-2 text-sm"
+                                    value={data.gradient.direction}
+                                    onChange={(e) => setGradientField('direction', e.target.value as GradientConfig['direction'])}
+                                >
+                                    {GRADIENT_DIRECTIONS.map((d) => (
+                                        <option key={d.value} value={d.value}>
+                                            {d.label}
+                                        </option>
+                                    ))}
+                                </select>
+                            </div>
+                        </div>
+                    )}
+
+                    <div className="flex flex-wrap items-center gap-3">
+                        <Button disabled={processing}>Simpan</Button>
+                        <Button type="button" variant="outline" onClick={batal}>
+                            Batal
+                        </Button>
+                        <Button type="button" variant="ghost" onClick={resetDefault}>
+                            Reset ke default TEMPO
+                        </Button>
 
                         <Transition show={recentlySuccessful} enter="transition ease-in-out" enterFrom="opacity-0" leave="transition ease-in-out" leaveTo="opacity-0">
                             <p className="text-sm text-muted-foreground">Tersimpan</p>

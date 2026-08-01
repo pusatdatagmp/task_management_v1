@@ -39,7 +39,17 @@ class Organization extends Model
         'facebook_url',
         'instagram_url',
         'linkedin_url',
+        // F-143 (v1.2 DS-3): override token warna + gradasi, SATU blob JSON
+        // (bukan kolom per-token seperti branding) -- selalu dibaca/ditulis utuh.
+        'theme_config',
     ];
+
+    protected function casts(): array
+    {
+        return [
+            'theme_config' => 'array',
+        ];
+    }
 
     public function users(): HasMany
     {

@@ -637,9 +637,72 @@ default TEMPO saat kosong, member 403, tab Tema tetap slot kosong (DS-3 nanti).
 
 ---
 
+## 18. Setelan — editor Tema + gradasi (v1.2 DS-3, F-143/F-144/F-145)
+
+> Chrome extension **masih absen** sesi ini juga (percobaan connect gagal lagi) —
+> tab Tema (slot yang disiapkan item 17) cuma lulus 9 test otomatis HTTP (MySQL)
+> + `tsc`/build/pint/lint bersih, **belum pernah dilihat mata manusia**. Ini item
+> **PALING butuh mata manusia** dari semua — live preview & gradasi murni visual,
+> nol cara membuktikannya lewat test HTTP.
+
+1. Login **admin**. Buka `/pengaturan/setelan`, klik tab **"Tema"** (di sebelah
+   Branding). 8 color-picker harus tampil (Latar Sidebar, Warna Teks Utama, Aksen
+   Sidebar, Latar Workspace, Latar Kartu, Warna Aksi/Primary, Teks Sidebar aktif,
+   Teks Sidebar default) — masing-masing punya swatch warna + input hex teks.
+2. **LIVE PREVIEW**: ganti warna **"Warna Aksi (Primary)"** ke warna lain (mis.
+   biru terang) — SEBELUM klik Simpan, tombol-tombol primary di halaman (termasuk
+   tombol "Simpan" itu sendiri) harus **LANGSUNG berubah warna** saat itu juga.
+3. Ganti **"Latar Sidebar"** ke warna lain (mis. hijau tua) — sidebar kiri harus
+   ikut berubah **LANGSUNG**, TAPI teks/warna lain di halaman (body, kartu)
+   **HARUS TETAP** (buktikan token sidebar_bg sudah TERPISAH dari ink, F-143 —
+   bukan lagi 1 warna dobel peran).
+4. Ganti **"Warna Teks Utama"** — teks di area workspace (bukan sidebar) harus
+   ikut berubah, sidebar TIDAK ikut berubah (kebalikan dari langkah 3, buktikan
+   pemisahan token bekerja 2 arah).
+5. Klik **"Batal"** (tanpa Simpan) — SEMUA warna yang barusan diubah **HARUS
+   KEMBALI** ke kondisi sebelumnya (baik itu default TEMPO atau tema tersimpan
+   sebelumnya).
+6. Ubah lagi beberapa warna, kali ini klik **"Simpan"** — teks **"Tersimpan"**
+   muncul sebentar. **Refresh halaman (F5)** — warna yang disimpan **HARUS
+   BERTAHAN** (bukan cuma live preview yang hilang saat reload).
+7. **Buka halaman LAIN** (mis. Dashboard, Proyek) di tab yang sama — token yang
+   baru disimpan **HARUS ikut** di halaman itu juga (dishare global, bukan cuma
+   halaman Setelan).
+8. **Gradasi**: centang "Aktifkan gradasi", pilih warna awal & akhir yang kontras
+   (mis. amber → navy), pilih arah "Kiri → Kanan". Live preview: tombol primary
+   & sidebar **HARUS** menampilkan gradasi (bukan warna solid) SEBELUM Simpan.
+   Klik Simpan, refresh — gradasi bertahan.
+9. Matikan gradasi (uncheck "Aktifkan gradasi"), Simpan — tombol & sidebar
+   **HARUS KEMBALI ke warna solid** (token biasa, bukan gradasi lagi).
+10. Klik **"Reset ke default TEMPO"** — semua 8 color-picker harus kembali ke
+    nilai default (sidebar navy #0f1523, amber #e0a012, dst — cocokkan dengan
+    tampilan DS-1 di item 14), gradasi nonaktif. Klik Simpan — refresh, halaman
+    tampil PERSIS seperti sebelum tema pernah dikustom sama sekali.
+11. Coba isi input hex dengan nilai **ngawur** (mis. ketik "merah" atau
+    "javascript:alert(1)" di kotak teks hex, bukan lewat color-picker) lalu klik
+    Simpan — **HARUS DITOLAK** dengan pesan error, TIDAK boleh tersimpan / tidak
+    boleh merusak tampilan halaman.
+12. Login sebagai **member** — tab Tema (dan seluruh halaman Setelan) **HARUS
+    TIDAK ADA di nav**, akses langsung `/pengaturan/setelan` → **403**. Tapi
+    tampilan sidebar member **HARUS tetap ikut** tema yang admin simpan (tema
+    milik org, bukan admin-only tampilannya).
+13. Cek **kartu (Card)** di berbagai halaman (Dashboard, daftar Proyek, dst) —
+    background-nya **HARUS TETAP ikut token "Latar Kartu"**, TAPI headernya
+    **TIDAK ikut gradasi** (keputusan Boss: gradasi cuma tombol+sidebar, kartu
+    header sengaja di luar target — ini benar, BUKAN bug).
+
+**Hasil diharapkan:** live preview instan di semua 8 token, sidebar & teks utama
+kini independen (F-143), Simpan/Batal/Reset semuanya bekerja sesuai nama,
+gradasi cuma di tombol+sidebar, validasi hex ngawur ditolak, tema ikut ke SEMUA
+halaman (bukan cuma Setelan), member tetap 403 tapi ikut lihat tema org.
+
+[ ] LULUS — dicoret Boss tanggal: ______
+
+---
+
 ## SETELAH SEMUA DICORET
 
-Kabari Jarvis "F-97 tutup, X/17 lulus" + status tiap item (atau sebutkan
+Kabari Jarvis "F-97 tutup, X/18 lulus" + status tiap item (atau sebutkan
 item mana yang gagal) supaya status finding **F-97** di `docs/04-FINDING-REGISTRY.md`
 bisa diupdate dari 🟡 TERBUKA ke 🟢. Jarvis tidak akan mengubah dokumen ini sendiri
 tanpa konfirmasi.
