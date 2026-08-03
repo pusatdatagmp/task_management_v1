@@ -209,3 +209,77 @@ test('member cannot create a task (F-29)', function () {
 
     $response->assertForbidden();
 });
+
+/**
+ * PERMINTAAN BOSS (audit): subtask HANYA boleh dibuat task.manage (admin by
+ * default) -- member SELAIN itu cuma boleh update progres lewat checklist
+ * (lihat ChecklistItemCrudTest -- assignee boleh toggle/tambah item, TIDAK
+ * boleh ubah teks/hapus). Store() SATU jalur untuk task & subtask (parent_task_id
+ * cuma field opsional di form yang sama), gate-nya SUDAH task.manage-only
+ * (StoreTaskRequest::authorize(), F-90) -- test ini KHUSUS mengunci skenario
+ * parent_task_id terisi (subtask), bukan cuma task biasa yang sudah dites di atas.
+ */
+test('member selain task.manage TIDAK bisa membuat subtask (audit F-90)', function () {
+    $admin = User::factory()->admin()->create();
+    $project = createTaskProject($admin);
+    $member = User::factory()->create(['organization_id' => $admin->organization_id]);
+    $project->members()->sync([$admin->id, $member->id]);
+    $todo = TaskStatus::where('project_id', $project->id)->orderBy('position')->firstOrFail();
+
+    $parent = Task::create([
+        'organization_id' => $admin->organization_id,
+        'project_id' => $project->id,
+        'task_status_id' => $todo->id,
+        'title' => 'Parent audit',
+        'task_type' => 'tentative',
+        'estimated_minutes' => 60,
+        'due_date' => now()->addWeek(),
+        'created_by' => $admin->id,
+    ]);
+
+    // Sengaja assign member sebagai assignee parent -- membuktikan bahkan
+    // assignee task itu SENDIRI tidak otomatis dapat hak buat subtask (beda
+    // dari checklist item yang MEMANG boleh ditambah assignee).
+    $parent->assignees()->sync([$member->id]);
+
+    $response = $this->actingAs($member)->post(route('tasks.store', $project), [
+        'title' => 'Subtask oleh member',
+        'task_type' => 'tentative',
+        'estimated_minutes' => 30,
+        'points' => 0,
+        'due_date' => now()->addWeek()->toDateTimeString(),
+        'parent_task_id' => $parent->id,
+    ]);
+
+    $response->assertForbidden();
+    expect(Task::where('title', 'Subtask oleh member')->count())->toBe(0);
+});
+
+test('task.manage bisa membuat subtask (audit F-90 -- kontrol positif)', function () {
+    $admin = User::factory()->admin()->create();
+    $project = createTaskProject($admin);
+    $todo = TaskStatus::where('project_id', $project->id)->orderBy('position')->firstOrFail();
+
+    $parent = Task::create([
+        'organization_id' => $admin->organization_id,
+        'project_id' => $project->id,
+        'task_status_id' => $todo->id,
+        'title' => 'Parent audit 2',
+        'task_type' => 'tentative',
+        'estimated_minutes' => 60,
+        'due_date' => now()->addWeek(),
+        'created_by' => $admin->id,
+    ]);
+
+    $response = $this->actingAs($admin)->post(route('tasks.store', $project), [
+        'title' => 'Subtask oleh admin',
+        'task_type' => 'tentative',
+        'estimated_minutes' => 30,
+        'points' => 0,
+        'due_date' => now()->addWeek()->toDateTimeString(),
+        'parent_task_id' => $parent->id,
+    ]);
+
+    $response->assertRedirect(route('tasks.index', $project));
+    expect(Task::where('title', 'Subtask oleh admin')->where('parent_task_id', $parent->id)->exists())->toBeTrue();
+});
