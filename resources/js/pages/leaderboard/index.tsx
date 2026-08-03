@@ -8,9 +8,16 @@
 //               Kolom konteks (Rating/Revisi/Ditolak/On-time%) ditampilkan
 //               BERDAMPINGAN dengan Point, TIDAK PERNAH dijumlahkan/dicampur ke
 //               Point (F-62 — konteks bukan hukuman tersembunyi terhadap ranking).
+//               Permintaan Boss (ref. docs/task-fixx.html VIEWS.leaderboard,
+//               stateLeaderboard.highlight): 3 kartu sorotan DINAMIS di atas tabel
+//               -- filter "Sorotan" (Top 3 / Bottom 3, MURNI client-side, F-109)
+//               menukar ISI 3 kartu yang SAMA antara 3 Point tertinggi vs 3 Point
+//               terendah. Cuma SATU set 3 kartu tampil sekaligus (bukan 6) --
+//               MURNI slice/reverse dari rows[] yang SUDAH urut Point desc, nol
+//               angka baru dihitung di FE.
 // DIPANGGIL   : LeaderboardController::index() (route 'leaderboard', can:leaderboard.view)
 // MEMANGGIL   : todayRange/thisWeekRange/thisMonthRange (lib/leaderboard-period,
-//               MURNI tanggal, F-109)
+//               MURNI tanggal, F-109), useInitials (hooks, REUSE F-avatar sama UserInfo)
 // DATA MASUK  : from, to (string 'Y-m-d'), rows[] (sudah urut Point desc)
 // DATA KELUAR : router.get (filter periode, tercermin URL — pola sama activity-logs/index.tsx)
 // RISIKO      : SUMBER F-4/F-134 — halaman ini SKOR RANKING, BUKAN nominal uang.
@@ -20,14 +27,17 @@
 //               tidak salah anggap ini sudah final.
 // ==========================================================
 
+import { Avatar, AvatarFallback } from '@/components/ui/avatar';
 import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import { Input } from '@/components/ui/input';
+import { useInitials } from '@/hooks/use-initials';
 import AppLayout from '@/layouts/app-layout';
 import { thisMonthRange, thisWeekRange, todayRange } from '@/lib/leaderboard-period';
 import { type BreadcrumbItem } from '@/types';
 import { Head, router } from '@inertiajs/react';
+import { useState } from 'react';
 
 interface LeaderboardRow {
     id: number;
@@ -48,6 +58,48 @@ interface LeaderboardProps {
 const breadcrumbs: BreadcrumbItem[] = [{ title: 'Leaderboard', href: '/leaderboard' }];
 
 const MEDAL = ['🥇', '🥈', '🥉'];
+const MEDAL_BORDER = ['border-t-yellow-400', 'border-t-slate-400', 'border-t-amber-700'];
+
+// SUMBER (permintaan Boss, ref. docs/task-fixx.html .leader-card): kartu sorotan
+// Top-3/Bottom-3 -- MURNI presentasi dari 1 baris `rows[]` yang SUDAH final dari
+// backend (nol Point/Rating dihitung ulang di sini, F-109). `rank` cuma indeks
+// tampilan (medali/label), BUKAN dipakai untuk urutan (rows[] SUDAH urut Point desc).
+function LeaderCard({ row, rank, variant }: { row: LeaderboardRow; rank: number; variant: 'top' | 'bottom' }) {
+    const getInitials = useInitials();
+    const isTop = variant === 'top';
+
+    return (
+        <Card className={`border-t-4 text-center ${isTop ? MEDAL_BORDER[rank] : 'border-t-rose-500'}`}>
+            <CardContent className="flex flex-col items-center gap-1 pt-6">
+                <span className="text-3xl">{isTop ? MEDAL[rank] : '⚠️'}</span>
+                <Avatar className="mt-1 h-16 w-16">
+                    <AvatarFallback className="bg-neutral-200 text-lg dark:bg-neutral-700">{getInitials(row.name)}</AvatarFallback>
+                </Avatar>
+                <p className="mt-2 text-base font-bold">{row.name}</p>
+                {/* F-62: label NETRAL -- ini rem Goodhart (F-4), bukan papan malu member.
+                    "Terbawah N" (bukan "terburuk"/"gagal") -- pola sama task-fixx.html. */}
+                <p className="text-xs text-muted-foreground">{isTop ? `Peringkat ${rank + 1}` : `Terbawah ${rank + 1}`}</p>
+                <p className={`mt-1 text-2xl font-bold ${isTop ? '' : 'text-rose-600'}`}>
+                    {row.point} <span className="text-sm font-normal text-muted-foreground">pts</span>
+                </p>
+                <div className="mt-3 grid w-full grid-cols-3 gap-2 border-t pt-3">
+                    <div>
+                        <p className="text-lg font-semibold">{row.rating !== null ? `⭐ ${row.rating.toFixed(1)}` : '-'}</p>
+                        <p className="text-[11px] text-muted-foreground">Rating</p>
+                    </div>
+                    <div>
+                        <p className="text-lg font-semibold">{row.revisi}</p>
+                        <p className="text-[11px] text-muted-foreground">Revisi</p>
+                    </div>
+                    <div>
+                        <p className="text-lg font-semibold">{row.ditolak}</p>
+                        <p className="text-[11px] text-muted-foreground">Ditolak</p>
+                    </div>
+                </div>
+            </CardContent>
+        </Card>
+    );
+}
 
 export default function LeaderboardIndex({ from, to, rows }: LeaderboardProps) {
     const applyRange = (range: { from: string; to: string }) => {
@@ -64,6 +116,14 @@ export default function LeaderboardIndex({ from, to, rows }: LeaderboardProps) {
     };
 
     const bottomStartIndex = Math.max(rows.length - 3, 3);
+
+    // Permintaan Boss (ref. task-fixx.html stateLeaderboard.highlight): filter
+    // "Sorotan" MURNI client-side -- switch antara 3 Point tertinggi vs 3 Point
+    // terendah, tanpa round-trip server (rows[] sudah punya SEMUA data periode
+    // terpilih). Bottom-3 di-reverse supaya kartu pertama = Point PALING rendah
+    // (pola SAMA template: "Terbawah 1" = user paling perlu dibantu).
+    const [highlight, setHighlight] = useState<'top' | 'bottom'>('top');
+    const cardRows = highlight === 'top' ? rows.slice(0, 3) : [...rows].reverse().slice(0, 3);
 
     return (
         <AppLayout breadcrumbs={breadcrumbs}>
@@ -94,7 +154,32 @@ export default function LeaderboardIndex({ from, to, rows }: LeaderboardProps) {
                             Bulan ini
                         </Button>
                     </div>
+
+                    <label className="flex flex-col gap-1">
+                        <span className="font-medium">Sorotan</span>
+                        <select
+                            value={highlight}
+                            onChange={(e) => setHighlight(e.target.value as 'top' | 'bottom')}
+                            className="h-8 rounded-md border border-input bg-background px-2 text-sm"
+                        >
+                            <option value="top">🏆 Top 3</option>
+                            <option value="bottom">📉 Bottom 3</option>
+                        </select>
+                    </label>
                 </div>
+
+                {/* Permintaan Boss (ref. docs/task-fixx.html): SATU set 3 kartu, isinya
+                    dinamis ikut filter "Sorotan" di atas -- bukan 6 kartu sekaligus. */}
+                {cardRows.length > 0 && (
+                    <div className="flex flex-col gap-2">
+                        <p className="text-sm font-semibold">{highlight === 'top' ? '🏆 Top Performer' : '📉 Needs Improvement'}</p>
+                        <div className="grid grid-cols-1 gap-4 sm:grid-cols-3">
+                            {cardRows.map((row, index) => (
+                                <LeaderCard key={row.id} row={row} rank={index} variant={highlight} />
+                            ))}
+                        </div>
+                    </div>
+                )}
 
                 <Card>
                     <CardHeader>
