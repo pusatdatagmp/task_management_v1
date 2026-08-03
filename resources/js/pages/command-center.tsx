@@ -222,7 +222,7 @@ const HEATMAP_LEVEL_LABEL: Record<'aman' | 'tengah' | 'overload', string> = {
 
 const HEATMAP_LEVEL_CLASS: Record<'aman' | 'tengah' | 'overload', string> = {
     aman: 'bg-gray-100 text-gray-900 dark:bg-gray-800 dark:text-gray-200',
-    tengah: 'bg-green-100 text-green-900 dark:bg-green-950 dark:text-green-200',
+    tengah: 'bg-green-500 text-green-900 dark:bg-green-950 dark:text-green-200',
     overload: 'bg-red-100 text-red-900 dark:bg-red-950 dark:text-red-200',
 };
 
@@ -543,6 +543,15 @@ export default function CommandCenter({
     const [selectedDay, setSelectedDay] = useState<HeatmapDay | null>(null);
     const [dayWorkload, setDayWorkload] = useState<{ date: string; rows: TeamRow[] } | null>(null);
     const [dayWorkloadLoading, setDayWorkloadLoading] = useState(false);
+
+    // Permintaan Boss: sort per kolom tabel "Workload Tim" di modal kalender --
+    // pola SAMA teamSort/teamModalSort (reuse TeamSortKey/sortTeamRows yang sudah
+    // ada), murni re-urut baris yang SUDAH di-fetch, nol fetch ulang per kolom.
+    const [dayWorkloadSort, setDayWorkloadSort] = useState<{ key: TeamSortKey; dir: 'asc' | 'desc' }>({ key: 'name', dir: 'asc' });
+    const sortedDayWorkload = dayWorkload ? sortTeamRows(dayWorkload.rows, dayWorkloadSort) : [];
+    const toggleDayWorkloadSort = (key: TeamSortKey) => {
+        setDayWorkloadSort((prev) => (prev.key === key ? { key, dir: prev.dir === 'asc' ? 'desc' : 'asc' } : { key, dir: 'desc' }));
+    };
 
     const openDayModal = (day: HeatmapDay) => {
         setSelectedDay(day);
@@ -1147,14 +1156,29 @@ export default function CommandCenter({
                                                 <table className="w-full text-left text-sm">
                                                     <thead>
                                                         <tr className="border-b bg-muted/50 text-muted-foreground">
-                                                            <th className="p-2">Tim</th>
-                                                            <th className="p-2">Waktu Terpakai</th>
-                                                            <th className="p-2">Kapasitas Sisa</th>
-                                                            <th className="p-2">Status</th>
+                                                            {(
+                                                                [
+                                                                    ['name', 'Tim'],
+                                                                    ['aktif', 'Waktu Terpakai'],
+                                                                    ['idle_plan', 'Kapasitas Sisa'],
+                                                                    ['status', 'Status'],
+                                                                ] as [TeamSortKey, string][]
+                                                            ).map(([key, label]) => (
+                                                                <th key={key} className="p-2">
+                                                                    <button
+                                                                        type="button"
+                                                                        className="flex items-center gap-1 font-medium hover:text-foreground"
+                                                                        onClick={() => toggleDayWorkloadSort(key)}
+                                                                    >
+                                                                        {label}
+                                                                        {dayWorkloadSort.key === key && <span>{dayWorkloadSort.dir === 'asc' ? '↑' : '↓'}</span>}
+                                                                    </button>
+                                                                </th>
+                                                            ))}
                                                         </tr>
                                                     </thead>
                                                     <tbody>
-                                                        {dayWorkload.rows.map((row) => {
+                                                        {sortedDayWorkload.map((row) => {
                                                             const status = classifyWorkload(row.beban, row.kapasitas);
                                                             const badge = STATUS_BADGE[status];
 
