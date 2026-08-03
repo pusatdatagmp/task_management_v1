@@ -210,9 +210,19 @@ const TASK_TYPE_LABEL: Record<string, string> = {
     project: 'Project',
 };
 
+// Permintaan Boss: label tampilan "Longgar"/"Sedang" (key backend 'aman'/'tengah'
+// TIDAK diubah -- itu flag F-44 dari DashboardController::heatmap(), ganti nama
+// key butuh migrasi test/backend, di luar permintaan ini yang MURNI soal label
+// & warna tampilan). Warna: overload=merah, sedang=hijau, longgar=abu-abu.
+const HEATMAP_LEVEL_LABEL: Record<'aman' | 'tengah' | 'overload', string> = {
+    aman: 'Longgar',
+    tengah: 'Sedang',
+    overload: 'Overload',
+};
+
 const HEATMAP_LEVEL_CLASS: Record<'aman' | 'tengah' | 'overload', string> = {
-    aman: 'bg-green-100 text-green-900 dark:bg-green-950 dark:text-green-200',
-    tengah: 'bg-amber-100 text-amber-900 dark:bg-amber-950 dark:text-amber-200',
+    aman: 'bg-gray-100 text-gray-900 dark:bg-gray-800 dark:text-gray-200',
+    tengah: 'bg-green-100 text-green-900 dark:bg-green-950 dark:text-green-200',
     overload: 'bg-red-100 text-red-900 dark:bg-red-950 dark:text-red-200',
 };
 
@@ -1066,10 +1076,10 @@ export default function CommandCenter({
                             <div className="mt-4 pt-3 border-t border-border space-y-2">
                                 <div className="flex flex-wrap items-center justify-start gap-4 text-xs text-muted-foreground font-medium">
                                     {/* Status Beban Warna */}
-                                    {Object.keys(HEATMAP_LEVEL_CLASS).map((level) => (
+                                    {(['aman', 'tengah', 'overload'] as const).map((level) => (
                                         <div key={level} className="flex items-center gap-1.5">
                                             <span className={`h-3 w-3 rounded-sm ${HEATMAP_LEVEL_CLASS[level]}`} />
-                                            <span className="capitalize">{level}</span>
+                                            <span>{HEATMAP_LEVEL_LABEL[level]}</span>
                                         </div>
                                     ))}
 
