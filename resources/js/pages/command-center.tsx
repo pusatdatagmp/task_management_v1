@@ -42,6 +42,7 @@
 import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
+import { Dialog, DialogContent, DialogHeader, DialogTitle } from '@/components/ui/dialog';
 import { formatLiveMinutes } from '@/hooks/use-live-counter';
 import { classifyWorkload } from '@/lib/dashboard-status';
 import { formatJamPair, shiftMonth } from '@/lib/command-center-format';
@@ -49,7 +50,7 @@ import { PRIORITY_QUADRANT_COLOR } from '@/lib/priority-quadrant';
 import AppLayout from '@/layouts/app-layout';
 import { type BreadcrumbItem } from '@/types';
 import { Head, Link, router } from '@inertiajs/react';
-import { AlertTriangle, ChevronLeft, ChevronRight, Clock, Eye, ListTodo, PlayCircle, X } from 'lucide-react';
+import { AlertTriangle, Briefcase, ChevronLeft, ChevronRight, Clock, Eye, ListTodo, PlayCircle, Star, X } from 'lucide-react';
 import { useEffect, useState } from 'react';
 
 interface SummaryCards {
@@ -73,7 +74,10 @@ interface TopTask {
     prio_score: number;
     due_date: string;
     project: string | null;
+    project_id: number;
     assignees: string[];
+    task_type: string;
+    status: { name: string; color: string };
 }
 
 interface WorkloadRow {
@@ -158,7 +162,7 @@ interface CommandCenterProps {
     recent_activity: ActivityRow[];
     workload_top5: WorkloadRow[];
     status_projects: StatusProjectRow[];
-    team: { date: string; rows: TeamRow[] };
+    team: { date: string; selected_user_id: number | null; rows: TeamRow[] };
     filters: Filters;
     filter_users: FilterUser[];
 }
@@ -181,6 +185,17 @@ const PRIORITY_LABEL: Record<'p1' | 'p2' | 'p3' | 'p4' | 'none', string> = {
     none: 'Belum ditandai',
 };
 
+// SUMBER: label kategori (task_type, DM §3.9) untuk kolom "Kategori" tabel
+// Top-10 (permintaan Boss) -- pola SAMA TASK_TYPES di tasks/all.tsx, didefinisikan
+// lokal (bukan lib bersama) karena cuma dipakai di satu tabel di halaman ini.
+const TASK_TYPE_LABEL: Record<string, string> = {
+    daily: 'Harian',
+    weekly: 'Mingguan',
+    monthly: 'Bulanan',
+    tentative: 'Tentatif',
+    project: 'Project',
+};
+
 const HEATMAP_LEVEL_CLASS: Record<'aman' | 'tengah' | 'overload', string> = {
     aman: 'bg-green-100 text-green-900 dark:bg-green-950 dark:text-green-200',
     tengah: 'bg-amber-100 text-amber-900 dark:bg-amber-950 dark:text-amber-200',
@@ -192,6 +207,21 @@ const STATUS_BADGE: Record<string, { label: string; className: string }> = {
     'idle-tinggi': { label: 'Idle tinggi', className: 'border-transparent bg-amber-500 text-white hover:bg-amber-500' },
     normal: { label: '', className: '' },
 };
+
+// Permintaan Boss: card "Team Work Load" & modal "Detail & filter"-nya BUTUH
+// sort per kolom -- MURNI re-urut baris yang SUDAH dikirim backend (team.rows,
+// F-52), nol angka beban/idle baru dihitung di sini. `status` diturunkan dari
+// classifyWorkload() yang SAMA dipakai badge (bukan derivasi baru).
+type TeamSortKey = 'name' | 'aktif' | 'beban' | 'idle_plan' | 'status';
+function sortTeamRows(rows: TeamRow[], sort: { key: TeamSortKey; dir: 'asc' | 'desc' }): TeamRow[] {
+    return [...rows].sort((a, b) => {
+        const av = sort.key === 'status' ? classifyWorkload(a.beban, a.kapasitas) : a[sort.key];
+        const bv = sort.key === 'status' ? classifyWorkload(b.beban, b.kapasitas) : b[sort.key];
+        const cmp = av < bv ? -1 : av > bv ? 1 : 0;
+
+        return sort.dir === 'asc' ? cmp : -cmp;
+    });
+}
 
 // SUMBER: proporsi lingkaran donut MURNI presentasi -- count per quadrant SUDAH
 // final dari donut_priority (backend), di sini cuma dibagi 360 derajat (F-109:
@@ -431,6 +461,52 @@ export default function CommandCenter({
         setStatusProjectSort((prev) => (prev.key === key ? { key, dir: prev.dir === 'asc' ? 'desc' : 'asc' } : { key, dir: 'desc' }));
     };
 
+    // Permintaan Boss: tabel Top-10 Task -- sort MURNI client-side (backend
+    // sudah kirim 10 baris final, klik header cuma re-urut 10 baris yang SAMA).
+    // Default prio_score DESC -- cerminan urutan default backend (topTasks()).
+    type TopTaskSortKey = 'title' | 'prio_score' | 'task_type' | 'status' | 'assignees' | 'due_date';
+    const [topTaskSort, setTopTaskSort] = useState<{ key: TopTaskSortKey; dir: 'asc' | 'desc' }>({ key: 'prio_score', dir: 'desc' });
+    const sortedTopTasks = [...topTasks].sort((a, b) => {
+        const { key, dir } = topTaskSort;
+        const av = key === 'assignees' ? a.assignees.join(', ') : key === 'status' ? a.status.name : a[key];
+        const bv = key === 'assignees' ? b.assignees.join(', ') : key === 'status' ? b.status.name : b[key];
+        const cmp = av < bv ? -1 : av > bv ? 1 : 0;
+
+        return dir === 'asc' ? cmp : -cmp;
+    });
+    const toggleTopTaskSort = (key: TopTaskSortKey) => {
+        setTopTaskSort((prev) => (prev.key === key ? { key, dir: prev.dir === 'asc' ? 'desc' : 'asc' } : { key, dir: 'desc' }));
+    };
+
+    // Permintaan Boss: card "Team Work Load" tampil TOP-5 berdasarkan kapasitas
+    // idle TERBANYAK (seleksi TETAP, dihitung SEKALI dari team.rows) -- sort per
+    // kolom cuma re-urut 5 baris hasil seleksi ini (pola SAMA Status Project),
+    // BUKAN memilih ulang top-5 lain per kolom.
+    const teamTop5 = [...team.rows].sort((a, b) => b.idle_plan - a.idle_plan).slice(0, 5);
+    const [teamSort, setTeamSort] = useState<{ key: TeamSortKey; dir: 'asc' | 'desc' }>({ key: 'idle_plan', dir: 'desc' });
+    const sortedTeamTop5 = sortTeamRows(teamTop5, teamSort);
+    const toggleTeamSort = (key: TeamSortKey) => {
+        setTeamSort((prev) => (prev.key === key ? { key, dir: prev.dir === 'asc' ? 'desc' : 'asc' } : { key, dir: 'desc' }));
+    };
+
+    // Permintaan Boss: modal "Detail & filter" -- tabel PENUH (team.rows, bukan
+    // top-5), sort state TERPISAH dari card utama supaya tidak saling timpa.
+    const [workloadModalOpen, setWorkloadModalOpen] = useState(false);
+    const [teamModalSort, setTeamModalSort] = useState<{ key: TeamSortKey; dir: 'asc' | 'desc' }>({ key: 'name', dir: 'asc' });
+    const sortedTeamAll = sortTeamRows(team.rows, teamModalSort);
+    const toggleTeamModalSort = (key: TeamSortKey) => {
+        setTeamModalSort((prev) => (prev.key === key ? { key, dir: prev.dir === 'asc' ? 'desc' : 'asc' } : { key, dir: 'desc' }));
+    };
+    // SUMBER: filter tanggal/user modal REUSE ?date=/?user_id= yang SUDAH dibaca
+    // loadRows() (SATU sumber sama dengan dashboard lama, F-52) -- nol param
+    // baru di backend, cuma ditambahkan lewat helper applyFilters() yang sudah ada.
+    const applyTeamFilter = (overrides: { date?: string; user_id?: number | null }) => {
+        applyFilters({
+            date: overrides.date ?? team.date,
+            user_id: overrides.user_id !== undefined ? overrides.user_id : team.selected_user_id,
+        });
+    };
+
     const donutChart = buildDonutGradient(donut);
     const progressTotal = progress.selesai + progress.review + progress.progress + progress.todo;
 
@@ -488,9 +564,9 @@ export default function CommandCenter({
                                 </Button>
                             </div>
                         )}
-                        <Button variant="outline" size="sm" asChild>
+                        {/* <Button variant="outline" size="sm" asChild>
                             <Link href={route('dashboard')}>Dashboard lama (detail & filter)</Link>
-                        </Button>
+                        </Button> */}
                     </div>
                 </div>
 
@@ -541,7 +617,7 @@ export default function CommandCenter({
                     {/* A3: Donut prioritas */}
                     <Card>
                         <CardHeader className="flex flex-col gap-2">
-                            <CardTitle className="text-base">Prioritas Eisenhower</CardTitle>
+                            <CardTitle className="text-base">Prioritas Tugas</CardTitle>
                             <RangeUserFilter
                                 from={filters.donut_from}
                                 to={filters.donut_to}
@@ -662,53 +738,361 @@ export default function CommandCenter({
                     </Card>
                 </div>
 
-                {/* A6: master calendar heatmap */}
-                <Card>
-                    <CardHeader className="flex flex-row flex-wrap items-center justify-between gap-2 space-y-0">
-                        <CardTitle className="text-base">Kalender Beban Tim — {heatmap.month}</CardTitle>
-                        <div className="flex flex-wrap items-center gap-2">
-                            <UserOnlyFilter userId={filters.heatmap_user_id} users={filterUsers} onChange={(userId) => applyFilters({ heatmap_user_id: userId })} />
-                            <Button variant="outline" size="sm" onClick={() => goToMonth(shiftMonth(heatmap.month, -1))} disabled={navigating}>
-                                <ChevronLeft className="h-4 w-4" />
+                <div className="grid grid-cols-1 gap-4 lg:grid-cols-2">
+                    {/* F-52/F-121: dashboard 3-angka lama DIPERTAHANKAN sebagai section "Beban
+        Tim" -- Permintaan Boss: top-5 idle terbanyak + sort per kolom + modal
+        "Detail & filter" (menggantikan Link ke halaman dashboard lama). */}
+                    <Card>
+                        <CardHeader className="flex flex-row items-center justify-between space-y-0">
+                            <CardTitle className="text-base">Team Work Load — {team.date}</CardTitle>
+                            <Button type="button" variant="outline" size="sm" onClick={() => setWorkloadModalOpen(true)}>
+                                Detail & filter →
                             </Button>
-                            <Button variant="outline" size="sm" onClick={() => goToMonth(shiftMonth(heatmap.month, 1))} disabled={navigating}>
-                                <ChevronRight className="h-4 w-4" />
-                            </Button>
-                        </div>
-                    </CardHeader>
-                    <CardContent>
-                        <div className="mb-2 grid grid-cols-7 gap-1 text-center text-xs text-muted-foreground">
-                            {['Sen', 'Sel', 'Rab', 'Kam', 'Jum', 'Sab', 'Min'].map((d) => (
-                                <div key={d}>{d}</div>
-                            ))}
-                        </div>
-                        <div className="grid grid-cols-7 gap-1">
-                            {Array.from({ length: leadingBlank }).map((_, i) => (
-                                <div key={`blank-${i}`} />
-                            ))}
-                            {heatmap.days.map((day) => {
-                                // F-131: hari LEWAT (level null) -- NETRAL, abu-abu, bukan warna realisasi.
-                                const cellClass = day.level ? HEATMAP_LEVEL_CLASS[day.level] : 'bg-muted text-muted-foreground';
+                        </CardHeader>
+                        <CardContent className="overflow-x-auto p-0">
+                            <table className="w-full text-left text-sm">
+                                <thead>
+                                    <tr className="border-b bg-muted/50 text-muted-foreground">
+                                        {(
+                                            [
+                                                ['name', 'Tim'],
+                                                ['aktif', 'Waktu Terpakai'],
+                                                ['idle_plan', 'Kapasitas Sisa (idle plan)'],
+                                                ['status', 'Status'],
+                                            ] as [TeamSortKey, string][]
+                                        ).map(([key, label]) => (
+                                            <th key={key} className="p-3">
+                                                <button
+                                                    type="button"
+                                                    className="flex items-center gap-1 font-medium hover:text-foreground"
+                                                    onClick={() => toggleTeamSort(key)}
+                                                >
+                                                    {label}
+                                                    {teamSort.key === key && <span>{teamSort.dir === 'asc' ? '↑' : '↓'}</span>}
+                                                </button>
+                                            </th>
+                                        ))}
+                                    </tr>
+                                </thead>
+                                <tbody>
+                                    {sortedTeamTop5.map((row) => {
+                                        const status = classifyWorkload(row.beban, row.kapasitas);
+                                        const badge = STATUS_BADGE[status];
 
-                                return (
-                                    <div
-                                        key={day.date}
-                                        className={`flex aspect-square flex-col items-center justify-center rounded-md text-xs ${cellClass}`}
-                                        title={day.beban === null ? 'Hari lewat (netral)' : `Beban tim: ${formatLiveMinutes(day.beban)}`}
+                                        return (
+                                            <tr key={row.id} className="border-b last:border-0 align-top">
+                                                <td className="p-3 font-medium">{row.name}</td>
+                                                <td className="p-3">{formatLiveMinutes(row.aktif)}</td>
+                                                <td className="p-3">
+                                                    {formatLiveMinutes(row.beban)} (idle {formatLiveMinutes(row.idle_plan)})
+                                                </td>
+                                                <td className="p-3">{badge.label && <Badge className={badge.className}>{badge.label}</Badge>}</td>
+                                            </tr>
+                                        );
+                                    })}
+
+                                    {sortedTeamTop5.length === 0 && (
+                                        <tr>
+                                            <td colSpan={4} className="p-6 text-center text-muted-foreground">
+                                                Tidak ada user aktif untuk ditampilkan.
+                                            </td>
+                                        </tr>
+                                    )}
+                                </tbody>
+                            </table>
+                        </CardContent>
+                    </Card>
+
+                    {/* Permintaan Boss: modal "Detail & filter" Team Work Load -- tabel PENUH
+        (bukan cuma top-5) + filter Tanggal & User yang REUSE ?date=/?user_id=
+        yang SUDAH dibaca loadRows() (F-52, nol param baru di backend). */}
+                    <Dialog open={workloadModalOpen} onOpenChange={setWorkloadModalOpen}>
+                        <DialogContent className="max-h-[85vh] max-w-3xl overflow-y-auto">
+                            <DialogHeader>
+                                <DialogTitle>Team Work Load — Detail &amp; Filter</DialogTitle>
+                            </DialogHeader>
+
+                            <div className="flex flex-wrap items-end gap-3 text-sm">
+                                <label className="flex flex-col gap-1">
+                                    <span className="font-medium">Tanggal</span>
+                                    <input
+                                        type="date"
+                                        value={team.date}
+                                        onChange={(e) => applyTeamFilter({ date: e.target.value })}
+                                        className="h-8 rounded-md border border-input bg-background px-2"
+                                    />
+                                </label>
+                                <label className="flex flex-col gap-1">
+                                    <span className="font-medium">User</span>
+                                    <select
+                                        value={team.selected_user_id ?? ''}
+                                        onChange={(e) => applyTeamFilter({ user_id: e.target.value ? Number(e.target.value) : null })}
+                                        className="h-8 rounded-md border border-input bg-background px-2"
                                     >
-                                        <span className="font-medium">{new Date(`${day.date}T00:00:00`).getDate()}</span>
-                                    </div>
-                                );
-                            })}
-                        </div>
-                        <p className="mt-3 text-xs text-muted-foreground">
-                            Ambang agregat {heatmap.active_user_count} user aktif — hari lewat selalu netral (F-131).
-                        </p>
-                    </CardContent>
-                </Card>
+                                        <option value="">Semua user</option>
+                                        {filterUsers.map((u) => (
+                                            <option key={u.id} value={u.id}>
+                                                {u.name}
+                                            </option>
+                                        ))}
+                                    </select>
+                                </label>
+                            </div>
+
+                            <div className="overflow-x-auto rounded-lg border">
+                                <table className="w-full text-left text-sm">
+                                    <thead>
+                                        <tr className="border-b bg-muted/50 text-muted-foreground">
+                                            {(
+                                                [
+                                                    ['name', 'Tim'],
+                                                    ['aktif', 'Waktu Terpakai'],
+                                                    ['idle_plan', 'Kapasitas Sisa (idle plan)'],
+                                                    ['status', 'Status'],
+                                                ] as [TeamSortKey, string][]
+                                            ).map(([key, label]) => (
+                                                <th key={key} className="p-3">
+                                                    <button
+                                                        type="button"
+                                                        className="flex items-center gap-1 font-medium hover:text-foreground"
+                                                        onClick={() => toggleTeamModalSort(key)}
+                                                    >
+                                                        {label}
+                                                        {teamModalSort.key === key && <span>{teamModalSort.dir === 'asc' ? '↑' : '↓'}</span>}
+                                                    </button>
+                                                </th>
+                                            ))}
+                                        </tr>
+                                    </thead>
+                                    <tbody>
+                                        {sortedTeamAll.map((row) => {
+                                            const status = classifyWorkload(row.beban, row.kapasitas);
+                                            const badge = STATUS_BADGE[status];
+
+                                            return (
+                                                <tr key={row.id} className="border-b last:border-0 align-top">
+                                                    <td className="p-3 font-medium">{row.name}</td>
+                                                    <td className="p-3">{formatLiveMinutes(row.aktif)}</td>
+                                                    <td className="p-3">
+                                                        {formatLiveMinutes(row.beban)} (idle {formatLiveMinutes(row.idle_plan)})
+                                                    </td>
+                                                    <td className="p-3">{badge.label && <Badge className={badge.className}>{badge.label}</Badge>}</td>
+                                                </tr>
+                                            );
+                                        })}
+
+                                        {sortedTeamAll.length === 0 && (
+                                            <tr>
+                                                <td colSpan={4} className="p-6 text-center text-muted-foreground">
+                                                    Tidak ada user aktif untuk ditampilkan.
+                                                </td>
+                                            </tr>
+                                        )}
+                                    </tbody>
+                                </table>
+                            </div>
+                        </DialogContent>
+                    </Dialog>
+
+                    {/* §12.5: widget "Status Project" -- COUNTS top-5 proyek (BUKAN
+        derivasi status-label F-125, itu tugas halaman Proyek nanti). */}
+                    <Card>
+                        <CardHeader className="flex flex-row items-center justify-between space-y-0">
+                            <CardTitle className="text-base">Status Project</CardTitle>
+                            <Button variant="outline" size="sm" asChild>
+                                <Link href={route('projects.index')}>Show More →</Link>
+                            </Button>
+                        </CardHeader>
+                        <CardContent className="overflow-x-auto p-0">
+                            <table className="w-full text-left text-sm">
+                                <thead>
+                                    <tr className="border-b bg-muted/50 text-muted-foreground">
+                                        {(
+                                            [
+                                                ['name', 'Proyek'],
+                                                ['task_total', 'Task'],
+                                                ['todo', 'Todo'],
+                                                ['progress', 'Progress'],
+                                                ['selesai', 'Selesai'],
+                                                ['overdue', 'Overdue'],
+                                                ['due_date', 'Deadline'],
+                                            ] as [StatusProjectSortKey, string][]
+                                        ).map(([key, label]) => (
+                                            <th key={key} className="p-3">
+                                                <button
+                                                    type="button"
+                                                    className="flex items-center gap-1 font-medium hover:text-foreground"
+                                                    onClick={() => toggleStatusProjectSort(key)}
+                                                >
+                                                    {label}
+                                                    {statusProjectSort.key === key && <span>{statusProjectSort.dir === 'asc' ? '↑' : '↓'}</span>}
+                                                </button>
+                                            </th>
+                                        ))}
+                                    </tr>
+                                </thead>
+                                <tbody>
+                                    {sortedStatusProjects.map((row) => (
+                                        <tr key={row.id} className="border-b last:border-0">
+                                            <td className="p-3 font-medium">{row.name}</td>
+                                            <td className="p-3">{row.task_total}</td>
+                                            <td className="p-3">{row.todo}</td>
+                                            <td className="p-3">{row.progress}</td>
+                                            <td className="p-3">{row.selesai}</td>
+                                            <td className="p-3">
+                                                {row.overdue > 0 ? (
+                                                    <Badge className="border-transparent bg-red-600 text-white hover:bg-red-600">{row.overdue}</Badge>
+                                                ) : (
+                                                    <span className="text-muted-foreground">0</span>
+                                                )}
+                                            </td>
+                                            <td className="p-3">{row.due_date ? new Date(row.due_date).toLocaleDateString('id-ID') : '-'}</td>
+                                        </tr>
+                                    ))}
+
+                                    {sortedStatusProjects.length === 0 && (
+                                        <tr>
+                                            <td colSpan={7} className="p-6 text-center text-muted-foreground">
+                                                Belum ada proyek aktif.
+                                            </td>
+                                        </tr>
+                                    )}
+                                </tbody>
+                            </table>
+                        </CardContent>
+                    </Card>
+
+
+                </div>
 
                 <div className="grid grid-cols-1 gap-4 lg:grid-cols-2">
-                    {/* A7: top-10 task */}
+                    {/* A6: master calendar heatmap */}
+                    <Card>
+                        <CardHeader className="flex flex-row flex-wrap items-center justify-between gap-2 space-y-0">
+                            <CardTitle className="text-base">Kalender Beban Tim — {heatmap.month}</CardTitle>
+                            <div className="flex flex-wrap items-center gap-2">
+                                <UserOnlyFilter userId={filters.heatmap_user_id} users={filterUsers} onChange={(userId) => applyFilters({ heatmap_user_id: userId })} />
+                                <Button variant="outline" size="sm" onClick={() => goToMonth(shiftMonth(heatmap.month, -1))} disabled={navigating}>
+                                    <ChevronLeft className="h-4 w-4" />
+                                </Button>
+                                <Button variant="outline" size="sm" onClick={() => goToMonth(shiftMonth(heatmap.month, 1))} disabled={navigating}>
+                                    <ChevronRight className="h-4 w-4" />
+                                </Button>
+                            </div>
+                        </CardHeader>
+
+                        <CardContent>
+                            {/* Header Hari */}
+                            <div className="mb-2 grid grid-cols-7 gap-1 text-center text-xs font-semibold text-muted-foreground">
+                                {['SEN', 'SEL', 'RAB', 'KAM', 'JUM', 'SAB', 'MIN'].map((d) => (
+                                    <div key={d}>{d}</div>
+                                ))}
+                            </div>
+
+                            {/* Grid Kalender */}
+                            <div className="grid grid-cols-7 gap-1">
+                                {Array.from({ length: leadingBlank }).map((_, i) => (
+                                    <div key={`blank-${i}`} />
+                                ))}
+                                {heatmap.days.map((day) => {
+                                    // F-131: hari LEWAT (level null) -- NETRAL, abu-abu
+                                    const cellClass = day.level ? HEATMAP_LEVEL_CLASS[day.level] : 'bg-muted text-muted-foreground';
+
+                                    return (
+                                        <div
+                                            key={day.date}
+                                            /* flex-col & p-1 memastikan posisi angka dan icon muat di dalam kotak secara vertikal */
+                                            className={`flex aspect-square flex-col items-center justify-between p-1.5 rounded-lg text-xs font-semibold ${cellClass}`}
+                                            title={day.beban === null ? 'Hari lewat (netral)' : `Beban tim: ${formatLiveMinutes(day.beban)}`}
+                                        >
+                                            {/* Angka Tanggal di Bagian Atas/Tengah Kotak */}
+                                            <span>{new Date(`${day.date}T00:00:00`).getDate()}</span>
+
+                                            {/* Icon di Dalam Kotak Tanggal (Bagian Bawah) */}
+                                            <div className="h-4 flex items-center justify-center">
+                                                {day.type === 'meeting' && (
+                                                    <Briefcase className="h-3.5 w-3.5 text-blue-600" />
+                                                )}
+                                                {day.type === 'libur' && (
+                                                    <Star className="h-3.5 w-3.5" />
+                                                )}
+                                            </div>
+                                        </div>
+                                    );
+                                })}
+                            </div>
+
+                            {/* Section Legend di Bawah Kalender */}
+                            <div className="mt-4 pt-3 border-t border-border space-y-2">
+                                <div className="flex flex-wrap items-center justify-start gap-4 text-xs text-muted-foreground font-medium">
+                                    {/* Status Beban Warna */}
+                                    {Object.keys(HEATMAP_LEVEL_CLASS).map((level) => (
+                                        <div key={level} className="flex items-center gap-1.5">
+                                            <span className={`h-3 w-3 rounded-sm ${HEATMAP_LEVEL_CLASS[level]}`} />
+                                            <span className="capitalize">{level}</span>
+                                        </div>
+                                    ))}
+
+                                    {/* Icon Legend */}
+                                    <div className="flex items-center gap-1.5">
+                                        <Briefcase className="h-3.5 w-3.5 text-blue-600" />
+                                        <span>Meeting</span>
+                                    </div>
+
+                                    <div className="flex items-center gap-1.5">
+                                        <Star className="h-3.5 w-3.5" />
+                                        <span>Libur</span>
+                                    </div>
+                                </div>
+
+                                <p className="text-xs text-muted-foreground">
+                                    Ambang agregat {heatmap.active_user_count} user aktif — hari lewat selalu netral (F-131).
+                                </p>
+                            </div>
+                        </CardContent>
+                    </Card>
+
+                    {/* A9: recent activity -- label APA ADANYA dari ActivityLogPresenter (F-106) */}
+                    <Card>
+                        <CardHeader className="flex flex-col gap-2">
+                            <CardTitle className="text-base">Aktivitas Terbaru</CardTitle>
+                            <RangeUserFilter
+                                from={filters.activity_from}
+                                to={filters.activity_to}
+                                userId={filters.activity_user_id}
+                                users={filterUsers}
+                                onChange={(patch) =>
+                                    applyFilters({
+                                        ...(patch.from !== undefined && { activity_from: patch.from }),
+                                        ...(patch.to !== undefined && { activity_to: patch.to }),
+                                        ...(patch.user_id !== undefined && { activity_user_id: patch.user_id }),
+                                    })
+                                }
+                            />
+                        </CardHeader>
+                        <CardContent>
+                            {recentActivity.length === 0 ? (
+                                <p className="text-sm text-muted-foreground">Belum ada aktivitas.</p>
+                            ) : (
+                                <ul className="flex flex-col gap-2 text-sm">
+                                    {recentActivity.map((log) => (
+                                        <li key={log.id} className="flex items-center justify-between gap-2 border-b pb-2 last:border-0">
+                                            <span>{log.message}</span>
+                                            <span className="shrink-0 text-xs text-muted-foreground">
+                                                {new Date(log.created_at).toLocaleString('id-ID')}
+                                            </span>
+                                        </li>
+                                    ))}
+                                </ul>
+                            )}
+                        </CardContent>
+                    </Card>
+                </div>
+
+                <div className="grid grid-cols-1 gap-4 lg:grid-cols-1">
+                    {/* A7: top-10 task -- Permintaan Boss: tabel (bukan list) dengan kolom
+        Tugas/Prioritas/Kategori/Status/Tim-Assign/Tgl Deadline, sort per kolom,
+        + tombol Show more ke halaman "Semua Tugas" (tasks.all). */}
                     <Card>
                         <CardHeader className="flex flex-col gap-2">
                             <CardTitle className="text-base">Top-10 Task Prioritas</CardTitle>
@@ -730,233 +1114,82 @@ export default function CommandCenter({
                             {topTasks.length === 0 ? (
                                 <p className="text-sm text-muted-foreground">Tidak ada task aktif.</p>
                             ) : (
-                                <ul className="flex flex-col gap-2 text-sm">
-                                    {topTasks.map((task) => (
-                                        <li key={task.id} className="flex items-center justify-between gap-2 border-b pb-2 last:border-0">
-                                            <div className="min-w-0">
-                                                <p className="truncate font-medium">{task.title}</p>
-                                                <p className="truncate text-xs text-muted-foreground">
-                                                    {task.project ?? '-'} · {task.assignees.join(', ') || '-'} ·{' '}
-                                                    {new Date(task.due_date).toLocaleDateString('id-ID')}
-                                                </p>
-                                            </div>
-                                            {task.priority_quadrant && (
-                                                <Badge
-                                                    style={{ backgroundColor: PRIORITY_COLOR[task.priority_quadrant], color: '#fff', borderColor: 'transparent' }}
-                                                >
-                                                    {task.priority_quadrant.toUpperCase()}
-                                                </Badge>
-                                            )}
-                                        </li>
-                                    ))}
-                                </ul>
+                                <div className="overflow-x-auto">
+                                    <table className="w-full text-left text-sm">
+                                        <thead>
+                                            <tr className="border-b bg-muted/50 text-muted-foreground">
+                                                {(
+                                                    [
+                                                        ['title', 'Tugas'],
+                                                        ['prio_score', 'Prioritas'],
+                                                        ['task_type', 'Kategori'],
+                                                        ['status', 'Status'],
+                                                        ['assignees', 'Tim/Assign'],
+                                                        ['due_date', 'Tanggal Deadline'],
+                                                    ] as [TopTaskSortKey, string][]
+                                                ).map(([key, label]) => (
+                                                    <th key={key} className="p-3">
+                                                        <button
+                                                            type="button"
+                                                            className="flex items-center gap-1 font-medium hover:text-foreground"
+                                                            onClick={() => toggleTopTaskSort(key)}
+                                                        >
+                                                            {label}
+                                                            {topTaskSort.key === key && <span>{topTaskSort.dir === 'asc' ? '↑' : '↓'}</span>}
+                                                        </button>
+                                                    </th>
+                                                ))}
+                                            </tr>
+                                        </thead>
+                                        <tbody>
+                                            {sortedTopTasks.map((task) => (
+                                                <tr key={task.id} className="border-b last:border-0">
+                                                    <td className="p-3">
+                                                        {/* Permintaan Boss: judul task DIKLIK -> langsung ke halaman detail
+                                                            (route tasks.show, pola SAMA tasks/all.tsx & tasks/index.tsx). */}
+                                                        <Link href={route('tasks.show', [task.project_id, task.id])} className="font-medium hover:underline">
+                                                            {task.title}
+                                                        </Link>
+                                                        <p className="text-xs text-muted-foreground">{task.project ?? '-'}</p>
+                                                    </td>
+                                                    <td className="p-3">
+                                                        {task.priority_quadrant ? (
+                                                            <Badge
+                                                                style={{
+                                                                    backgroundColor: PRIORITY_COLOR[task.priority_quadrant],
+                                                                    color: '#fff',
+                                                                    borderColor: 'transparent',
+                                                                }}
+                                                            >
+                                                                {task.priority_quadrant.toUpperCase()}
+                                                            </Badge>
+                                                        ) : (
+                                                            <span className="text-xs text-muted-foreground">-</span>
+                                                        )}
+                                                    </td>
+                                                    <td className="p-3">{TASK_TYPE_LABEL[task.task_type] ?? task.task_type}</td>
+                                                    <td className="p-3">
+                                                        <Badge style={{ backgroundColor: task.status.color, color: '#fff', borderColor: 'transparent' }}>
+                                                            {task.status.name}
+                                                        </Badge>
+                                                    </td>
+                                                    <td className="p-3">{task.assignees.join(', ') || '-'}</td>
+                                                    <td className="p-3">{new Date(task.due_date).toLocaleDateString('id-ID')}</td>
+                                                </tr>
+                                            ))}
+                                        </tbody>
+                                    </table>
+                                </div>
                             )}
-                        </CardContent>
-                    </Card>
 
-                    {/* A8: workload top-5 */}
-                    <Card>
-                        <CardHeader className="flex flex-col gap-2">
-                            <CardTitle className="text-base">Workload Top-5</CardTitle>
-                            <div className="flex flex-wrap items-center gap-1.5 text-xs">
-                                <span className="text-muted-foreground">Anchor:</span>
-                                <input
-                                    type="date"
-                                    aria-label="Tanggal anchor workload"
-                                    className="h-6 rounded-md border border-input bg-background px-1.5 text-xs"
-                                    value={filters.workload_date ?? ''}
-                                    onChange={(e) => applyFilters({ workload_date: e.target.value || null })}
-                                />
-                                <UserOnlyFilter
-                                    userId={filters.workload_user_id}
-                                    users={filterUsers}
-                                    onChange={(userId) => applyFilters({ workload_user_id: userId })}
-                                />
+                            <div className="mt-4 flex justify-center">
+                                <Button type="button" variant="outline" size="sm" asChild>
+                                    <Link href={route('tasks.all')}>Show more tugas →</Link>
+                                </Button>
                             </div>
-                        </CardHeader>
-                        <CardContent>
-                            {workloadTop5.length === 0 ? (
-                                <p className="text-sm text-muted-foreground">Belum ada beban tercatat.</p>
-                            ) : (
-                                <ul className="flex flex-col gap-2 text-sm">
-                                    {workloadTop5.map((row) => (
-                                        <li key={row.id} className="flex items-center justify-between">
-                                            <span>{row.name ?? '-'}</span>
-                                            <span className="font-medium">{formatLiveMinutes(row.beban)}</span>
-                                        </li>
-                                    ))}
-                                </ul>
-                            )}
                         </CardContent>
                     </Card>
                 </div>
-
-                {/* A9: recent activity -- label APA ADANYA dari ActivityLogPresenter (F-106) */}
-                <Card>
-                    <CardHeader className="flex flex-col gap-2">
-                        <CardTitle className="text-base">Aktivitas Terbaru</CardTitle>
-                        <RangeUserFilter
-                            from={filters.activity_from}
-                            to={filters.activity_to}
-                            userId={filters.activity_user_id}
-                            users={filterUsers}
-                            onChange={(patch) =>
-                                applyFilters({
-                                    ...(patch.from !== undefined && { activity_from: patch.from }),
-                                    ...(patch.to !== undefined && { activity_to: patch.to }),
-                                    ...(patch.user_id !== undefined && { activity_user_id: patch.user_id }),
-                                })
-                            }
-                        />
-                    </CardHeader>
-                    <CardContent>
-                        {recentActivity.length === 0 ? (
-                            <p className="text-sm text-muted-foreground">Belum ada aktivitas.</p>
-                        ) : (
-                            <ul className="flex flex-col gap-2 text-sm">
-                                {recentActivity.map((log) => (
-                                    <li key={log.id} className="flex items-center justify-between gap-2 border-b pb-2 last:border-0">
-                                        <span>{log.message}</span>
-                                        <span className="shrink-0 text-xs text-muted-foreground">
-                                            {new Date(log.created_at).toLocaleString('id-ID')}
-                                        </span>
-                                    </li>
-                                ))}
-                            </ul>
-                        )}
-                    </CardContent>
-                </Card>
-
-                {/* §12.5: widget "Status Project" -- COUNTS top-5 proyek (BUKAN
-                    derivasi status-label F-125, itu tugas halaman Proyek nanti). */}
-                <Card>
-                    <CardHeader className="flex flex-row items-center justify-between space-y-0">
-                        <CardTitle className="text-base">Status Project</CardTitle>
-                        <Button variant="outline" size="sm" asChild>
-                            <Link href={route('projects.index')}>Show More →</Link>
-                        </Button>
-                    </CardHeader>
-                    <CardContent className="overflow-x-auto p-0">
-                        <table className="w-full text-left text-sm">
-                            <thead>
-                                <tr className="border-b bg-muted/50 text-muted-foreground">
-                                    {(
-                                        [
-                                            ['name', 'Proyek'],
-                                            ['task_total', 'Task'],
-                                            ['todo', 'Todo'],
-                                            ['progress', 'Progress'],
-                                            ['selesai', 'Selesai'],
-                                            ['overdue', 'Overdue'],
-                                            ['due_date', 'Deadline'],
-                                        ] as [StatusProjectSortKey, string][]
-                                    ).map(([key, label]) => (
-                                        <th key={key} className="p-3">
-                                            <button
-                                                type="button"
-                                                className="flex items-center gap-1 font-medium hover:text-foreground"
-                                                onClick={() => toggleStatusProjectSort(key)}
-                                            >
-                                                {label}
-                                                {statusProjectSort.key === key && <span>{statusProjectSort.dir === 'asc' ? '↑' : '↓'}</span>}
-                                            </button>
-                                        </th>
-                                    ))}
-                                </tr>
-                            </thead>
-                            <tbody>
-                                {sortedStatusProjects.map((row) => (
-                                    <tr key={row.id} className="border-b last:border-0">
-                                        <td className="p-3 font-medium">{row.name}</td>
-                                        <td className="p-3">{row.task_total}</td>
-                                        <td className="p-3">{row.todo}</td>
-                                        <td className="p-3">{row.progress}</td>
-                                        <td className="p-3">{row.selesai}</td>
-                                        <td className="p-3">
-                                            {row.overdue > 0 ? (
-                                                <Badge className="border-transparent bg-red-600 text-white hover:bg-red-600">{row.overdue}</Badge>
-                                            ) : (
-                                                <span className="text-muted-foreground">0</span>
-                                            )}
-                                        </td>
-                                        <td className="p-3">{row.due_date ? new Date(row.due_date).toLocaleDateString('id-ID') : '-'}</td>
-                                    </tr>
-                                ))}
-
-                                {sortedStatusProjects.length === 0 && (
-                                    <tr>
-                                        <td colSpan={7} className="p-6 text-center text-muted-foreground">
-                                            Belum ada proyek aktif.
-                                        </td>
-                                    </tr>
-                                )}
-                            </tbody>
-                        </table>
-                    </CardContent>
-                </Card>
-
-                {/* F-52/F-121: dashboard 3-angka lama DIPERTAHANKAN sebagai section "Beban
-                    Tim" -- read-only (tanpa filter tanggal/user, itu tetap di halaman lama). */}
-                <Card>
-                    <CardHeader className="flex flex-row items-center justify-between space-y-0">
-                        <CardTitle className="text-base">Beban Tim — {team.date}</CardTitle>
-                        <Button variant="outline" size="sm" asChild>
-                            <Link href={route('dashboard')}>Detail & filter →</Link>
-                        </Button>
-                    </CardHeader>
-                    <CardContent className="overflow-x-auto p-0">
-                        <table className="w-full text-left text-sm">
-                            <thead>
-                                <tr className="border-b bg-muted/50 text-muted-foreground">
-                                    <th className="p-3">Nama</th>
-                                    <th className="p-3">Aktif</th>
-                                    <th className="p-3">Beban hari ini (idle plan)</th>
-                                    <th className="p-3">Backlog</th>
-                                    <th className="p-3">Anomali</th>
-                                </tr>
-                            </thead>
-                            <tbody>
-                                {team.rows.map((row) => {
-                                    const status = classifyWorkload(row.beban, row.kapasitas);
-                                    const badge = STATUS_BADGE[status];
-
-                                    return (
-                                        <tr key={row.id} className="border-b last:border-0 align-top">
-                                            <td className="p-3 font-medium">{row.name}</td>
-                                            <td className="p-3">{formatLiveMinutes(row.aktif)}</td>
-                                            <td className="p-3">
-                                                <div className="flex flex-wrap items-center gap-2">
-                                                    <span>
-                                                        {formatLiveMinutes(row.beban)} (idle {formatLiveMinutes(row.idle_plan)})
-                                                    </span>
-                                                    {badge.label && <Badge className={badge.className}>{badge.label}</Badge>}
-                                                </div>
-                                            </td>
-                                            <td className="p-3">{formatLiveMinutes(row.backlog)}</td>
-                                            <td className="p-3">
-                                                {row.anomalies.length === 0 ? (
-                                                    <span className="text-muted-foreground">0</span>
-                                                ) : (
-                                                    <Badge className="border-transparent bg-slate-500 text-white hover:bg-slate-500">
-                                                        {row.anomalies.length} perlu ditinjau
-                                                    </Badge>
-                                                )}
-                                            </td>
-                                        </tr>
-                                    );
-                                })}
-
-                                {team.rows.length === 0 && (
-                                    <tr>
-                                        <td colSpan={5} className="p-6 text-center text-muted-foreground">
-                                            Tidak ada user aktif untuk ditampilkan.
-                                        </td>
-                                    </tr>
-                                )}
-                            </tbody>
-                        </table>
-                    </CardContent>
-                </Card>
             </div>
         </AppLayout>
     );

@@ -128,6 +128,11 @@ class DashboardController extends Controller
             ...$this->commandCenterPayload($request, $service),
             'team' => [
                 'date' => $teamDate->toDateString(),
+                // SUMBER (permintaan Boss): dikirim balik SEMATA supaya modal
+                // "Detail & filter" bisa render <input>/<select> TERKONTROL --
+                // ?user_id= di sini REUSE param yang SAMA dibaca loadRows() di
+                // atas, nol filter/param baru di backend.
+                'selected_user_id' => $request->filled('user_id') ? $request->integer('user_id') : null,
                 'rows' => $teamRows,
             ],
         ]);
@@ -503,6 +508,12 @@ class DashboardController extends Controller
      *
      * v1.2 DS-4 (F-109): $from/$to/$userId sama seperti donutPriority().
      *
+     * Permintaan Boss: tabel Top-10 di frontend BUTUH kolom Kategori (task_type)
+     * & Status (nama+warna task_status AKTUAL, F-44 -- bukan bucket hardcode)
+     * supaya bisa disortir per kolom. `task_status_id` WAJIB ikut di select()
+     * eksplisit ini (bukan otomatis) -- FK relasi taskStatus() tidak ikut kebawa
+     * kalau kolomnya sendiri tidak diminta.
+     *
      * @return array<int, array<string, mixed>>
      */
     private function topTasks(?string $from, ?string $to, ?int $userId): array
@@ -516,9 +527,9 @@ class DashboardController extends Controller
             ->when($userId, fn ($q) => $q->whereHas('assignees', fn ($a) => $a->whereKey($userId)))
             ->orderByRaw("{$weightCase} DESC")
             ->orderBy('due_date')
-            ->with(['assignees:id,name', 'project:id,name'])
+            ->with(['assignees:id,name', 'project:id,name', 'taskStatus:id,name,color'])
             ->limit(10)
-            ->get(['id', 'title', 'priority_quadrant', 'due_date', 'project_id'])
+            ->get(['id', 'title', 'priority_quadrant', 'due_date', 'project_id', 'task_type', 'task_status_id'])
             ->map(fn (Task $task) => [
                 'id' => $task->id,
                 'title' => $task->title,
@@ -528,7 +539,16 @@ class DashboardController extends Controller
                 },
                 'due_date' => $task->due_date,
                 'project' => $task->project?->name,
+                // SUMBER (permintaan Boss): project_id numerik -- DIPAKAI FE bangun
+                // route('tasks.show', [project_id, id]), pola SAMA tasks/all.tsx &
+                // tasks/index.tsx (tasks.show SELALU butuh project_id di param).
+                'project_id' => $task->project_id,
                 'assignees' => $task->assignees->pluck('name'),
+                'task_type' => $task->task_type,
+                'status' => [
+                    'name' => $task->taskStatus->name,
+                    'color' => $task->taskStatus->color,
+                ],
             ])
             ->all();
     }

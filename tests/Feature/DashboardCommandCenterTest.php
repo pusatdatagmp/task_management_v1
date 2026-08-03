@@ -373,7 +373,15 @@ test('F-4: nol field rupiah/skor-kinerja di output; prio_score cuma bobot urutan
     foreach (['rupiah', 'salary', 'gaji', 'performance_score', 'leaderboard'] as $forbidden) {
         expect(str_contains(strtolower($flat), $forbidden))->toBeFalse("field terlarang '{$forbidden}' bocor ke command-center (F-4)");
     }
-    expect(array_keys($response->json('top_tasks.0')))->toBe(['id', 'title', 'priority_quadrant', 'prio_score', 'due_date', 'project', 'assignees']);
+    // Permintaan Boss: tabel Top-10 di FE butuh kolom Kategori (task_type) & Status
+    // (nama/warna task_status ASLI, F-44) -- 2 key ditambah di sini (F-78: cakupan
+    // setara, TETAP menjaga guard F-4 di atas -- status.name/color bukan
+    // rupiah/skor-kinerja). `project_id` (F-78 lanjutan) -- judul task di FE
+    // sekarang Link ke route('tasks.show', [project_id, id]), butuh id numerik
+    // (nama project doang tidak cukup untuk bangun URL).
+    expect(array_keys($response->json('top_tasks.0')))->toBe([
+        'id', 'title', 'priority_quadrant', 'prio_score', 'due_date', 'project', 'project_id', 'assignees', 'task_type', 'status',
+    ]);
 });
 
 test('jumlah query command-center TETAP KONSTAN walau task/user/log bertambah banyak (A9/F-85)', function () {
