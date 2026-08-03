@@ -56,6 +56,8 @@ namespace App\Http\Controllers;
 use App\Models\ActivityLog;
 use App\Models\Attachment;
 use App\Models\DeadlineExtension;
+use App\Models\Holiday;
+use App\Models\Meeting;
 use App\Models\Project;
 use App\Models\Task;
 use App\Models\User;
@@ -447,7 +449,15 @@ class DashboardController extends Controller
      * kedua akan tabrakan & berisiko melanggar F-131/F-141 (hari-lewat wajib
      * netral apa pun filternya).
      *
-     * @return array{month: string, days: array<int, array{date:string, beban:?int, level:?string}>, active_user_count:int}
+     * Permintaan Boss: modal "detail acara/peristiwa" saat tanggal diklik --
+     * `holiday`/`meetings` dihitung untuk SEMUA hari (termasuk yang LEWAT, beda
+     * dari beban/level) karena ini FAKTA kalender (nama libur, jadwal meeting),
+     * BUKAN angka KPI yang tunduk F-131 "hari lewat netral". `type` cuma flag
+     * ikon (BUKAN sumber baru F-44 -- turunan holiday/meetings yang SAMA dikirim
+     * di bawah, nol logic ganda). 2 query TETAP (holidays + meetings sebulan,
+     * F-85 -- konstan, bukan per-hari/per-baris).
+     *
+     * @return array{month: string, days: array<int, array{date:string, beban:?int, level:?string, type:?string, holiday:?string, meetings:array<int,array<string,mixed>>}>, active_user_count:int}
      */
     private function heatmap(DashboardService $service, Collection $users, ?string $monthParam, Carbon $today): array
     {
@@ -472,14 +482,50 @@ class DashboardController extends Controller
         $tengahFloor = 210 * $activeUserCount;
         $overloadFloor = 420 * $activeUserCount;
 
+        // SUMBER: nama libur PER TANGGAL, 1 query utuh sebulan (OrganizationScope
+        // F-15 otomatis) -- dipakai ikon 'libur' (F-43) DAN isi modal detail.
+        $holidays = Holiday::query()
+            ->whereBetween('date', [$firstDay->toDateString(), $lastDay->toDateString()])
+            ->get(['date', 'name'])
+            ->keyBy(fn (Holiday $h) => $h->date->toDateString());
+
+        // SUMBER: meeting PER TANGGAL (berdasar start_at), 1 query utuh sebulan +
+        // eager load creator/project/participants (F-85, nol N+1 walau meeting
+        // bertambah). Fitur Meeting (F-124) baru model H2 -- CRUD/UI-nya belum
+        // dibangun (H6 di roadmap), jadi array ini WAJAR kosong sampai H6 selesai.
+        $meetingsByDate = Meeting::query()
+            ->whereBetween('start_at', [$firstDay->copy()->startOfDay(), $lastDay->copy()->endOfDay()])
+            ->with(['creator:id,name', 'project:id,name', 'participants:id,name'])
+            ->get()
+            ->groupBy(fn (Meeting $m) => $m->start_at->toDateString());
+
         $days = [];
         $cursor = $firstDay->copy();
         while ($cursor->lessThanOrEqualTo($lastDay)) {
             $key = $cursor->toDateString();
+            $holidayName = $holidays->get($key)?->name;
+            $meetings = ($meetingsByDate->get($key) ?? collect())
+                ->map(fn (Meeting $m) => [
+                    'id' => $m->id,
+                    'title' => $m->title,
+                    'description' => $m->description,
+                    'start_at' => $m->start_at,
+                    'end_at' => $m->end_at,
+                    'project' => $m->project?->name,
+                    'creator' => $m->creator?->name,
+                    'participants' => $m->participants->pluck('name'),
+                ])
+                ->values()
+                ->all();
+            // SUMBER: 'libur' menang atas 'meeting' kalau dua-duanya ada tanggal
+            // SAMA (ikon tunggal per sel, pola SAMA sketsa ikon Boss) -- modal
+            // detail TETAP tampilkan KEDUANYA (holiday+meetings), cuma ikon sel
+            // kalender yang harus pilih satu.
+            $type = $holidayName ? 'libur' : (count($meetings) > 0 ? 'meeting' : null);
 
             if ($cursor->lessThan($today)) {
                 // F-131: hari lewat NETRAL -- beban/level TIDAK diisi sama sekali.
-                $days[] = ['date' => $key, 'beban' => null, 'level' => null];
+                $days[] = ['date' => $key, 'beban' => null, 'level' => null, 'type' => $type, 'holiday' => $holidayName, 'meetings' => $meetings];
             } else {
                 $beban = $loads[$key] ?? 0;
                 $level = match (true) {
@@ -487,7 +533,7 @@ class DashboardController extends Controller
                     $beban >= $tengahFloor => 'tengah',
                     default => 'aman',
                 };
-                $days[] = ['date' => $key, 'beban' => $beban, 'level' => $level];
+                $days[] = ['date' => $key, 'beban' => $beban, 'level' => $level, 'type' => $type, 'holiday' => $holidayName, 'meetings' => $meetings];
             }
 
             $cursor->addDay();

@@ -61,10 +61,24 @@ interface SummaryCards {
     overdue: number;
 }
 
+interface MeetingEvent {
+    id: number;
+    title: string;
+    description: string | null;
+    start_at: string;
+    end_at: string;
+    project: string | null;
+    creator: string | null;
+    participants: string[];
+}
+
 interface HeatmapDay {
     date: string;
     beban: number | null;
     level: 'aman' | 'tengah' | 'overload' | null;
+    type: 'meeting' | 'libur' | null;
+    holiday: string | null;
+    meetings: MeetingEvent[];
 }
 
 interface TopTask {
@@ -506,6 +520,11 @@ export default function CommandCenter({
             user_id: overrides.user_id !== undefined ? overrides.user_id : team.selected_user_id,
         });
     };
+
+    // Permintaan Boss: klik tanggal di Kalender Beban Tim -> modal detail
+    // acara/peristiwa (libur + meeting hari itu, MURNI data yang SUDAH dikirim
+    // di heatmap.days -- nol fetch tambahan saat modal dibuka).
+    const [selectedDay, setSelectedDay] = useState<HeatmapDay | null>(null);
 
     const donutChart = buildDonutGradient(donut);
     const progressTotal = progress.selesai + progress.review + progress.progress + progress.todo;
@@ -999,10 +1018,12 @@ export default function CommandCenter({
                                     const cellClass = day.level ? HEATMAP_LEVEL_CLASS[day.level] : 'bg-muted text-muted-foreground';
 
                                     return (
-                                        <div
+                                        <button
+                                            type="button"
                                             key={day.date}
+                                            onClick={() => setSelectedDay(day)}
                                             /* flex-col & p-1 memastikan posisi angka dan icon muat di dalam kotak secara vertikal */
-                                            className={`flex aspect-square flex-col items-center justify-between p-1.5 rounded-lg text-xs font-semibold ${cellClass}`}
+                                            className={`flex aspect-square flex-col items-center justify-between p-1.5 rounded-lg text-xs font-semibold hover:bg-primary/30 transition-all duration-200 hover:-translate-y-1 hover:shadow cursor-pointer ${cellClass}`}
                                             title={day.beban === null ? 'Hari lewat (netral)' : `Beban tim: ${formatLiveMinutes(day.beban)}`}
                                         >
                                             {/* Angka Tanggal di Bagian Atas/Tengah Kotak */}
@@ -1017,7 +1038,7 @@ export default function CommandCenter({
                                                     <Star className="h-3.5 w-3.5" />
                                                 )}
                                             </div>
-                                        </div>
+                                        </button>
                                     );
                                 })}
                             </div>
@@ -1051,6 +1072,75 @@ export default function CommandCenter({
                             </div>
                         </CardContent>
                     </Card>
+
+                    {/* Permintaan Boss: modal detail acara/peristiwa per tanggal -- MURNI
+        render ulang data yang SUDAH ada di heatmap.days (holiday/meetings),
+        nol fetch tambahan saat modal dibuka. */}
+                    <Dialog open={selectedDay !== null} onOpenChange={(open) => !open && setSelectedDay(null)}>
+                        <DialogContent className="max-h-[85vh] max-w-lg overflow-y-auto">
+                            <DialogHeader>
+                                <DialogTitle>
+                                    {selectedDay &&
+                                        new Date(`${selectedDay.date}T00:00:00`).toLocaleDateString('id-ID', {
+                                            weekday: 'long',
+                                            day: 'numeric',
+                                            month: 'long',
+                                            year: 'numeric',
+                                        })}
+                                </DialogTitle>
+                            </DialogHeader>
+
+                            {selectedDay && (
+                                <div className="flex flex-col gap-4 text-sm">
+                                    <p className="text-muted-foreground">
+                                        {selectedDay.beban === null
+                                            ? 'Hari lewat (netral, tidak dihitung).'
+                                            : `Beban tim hari ini: ${formatLiveMinutes(selectedDay.beban)}`}
+                                    </p>
+
+                                    {selectedDay.holiday && (
+                                        <div className="flex items-start gap-2 rounded-md border bg-muted/30 p-3">
+                                            <Star className="mt-0.5 h-4 w-4 shrink-0" />
+                                            <div>
+                                                <p className="font-medium">Hari Libur</p>
+                                                <p className="text-muted-foreground">{selectedDay.holiday}</p>
+                                            </div>
+                                        </div>
+                                    )}
+
+                                    {selectedDay.meetings.length > 0 && (
+                                        <div className="flex flex-col gap-2">
+                                            <p className="font-medium">Meeting ({selectedDay.meetings.length})</p>
+                                            {selectedDay.meetings.map((meeting) => (
+                                                <div key={meeting.id} className="rounded-md border p-3">
+                                                    <div className="flex items-start gap-2">
+                                                        <Briefcase className="mt-0.5 h-4 w-4 shrink-0 text-blue-600" />
+                                                        <div className="min-w-0">
+                                                            <p className="font-medium">{meeting.title}</p>
+                                                            <p className="text-xs text-muted-foreground">
+                                                                {new Date(meeting.start_at).toLocaleTimeString('id-ID', { hour: '2-digit', minute: '2-digit' })}
+                                                                {' – '}
+                                                                {new Date(meeting.end_at).toLocaleTimeString('id-ID', { hour: '2-digit', minute: '2-digit' })}
+                                                                {meeting.project && ` · ${meeting.project}`}
+                                                            </p>
+                                                            {meeting.description && <p className="mt-1 text-xs">{meeting.description}</p>}
+                                                            <p className="mt-1 text-xs text-muted-foreground">
+                                                                Peserta: {meeting.participants.join(', ') || '-'}
+                                                            </p>
+                                                        </div>
+                                                    </div>
+                                                </div>
+                                            ))}
+                                        </div>
+                                    )}
+
+                                    {!selectedDay.holiday && selectedDay.meetings.length === 0 && (
+                                        <p className="text-center text-muted-foreground">Tidak ada acara/peristiwa tercatat pada tanggal ini.</p>
+                                    )}
+                                </div>
+                            )}
+                        </DialogContent>
+                    </Dialog>
 
                     {/* A9: recent activity -- label APA ADANYA dari ActivityLogPresenter (F-106) */}
                     <Card>
@@ -1143,7 +1233,7 @@ export default function CommandCenter({
                                         </thead>
                                         <tbody>
                                             {sortedTopTasks.map((task) => (
-                                                <tr key={task.id} className="border-b last:border-0">
+                                                <tr key={task.id} onClick={() => router.visit(route('tasks.show', [task.project_id, task.id]))} className="border-b last:border-0 cursor-pointer hover:bg-primary/10">
                                                     <td className="p-3">
                                                         {/* Permintaan Boss: judul task DIKLIK -> langsung ke halaman detail
                                                             (route tasks.show, pola SAMA tasks/all.tsx & tasks/index.tsx). */}
