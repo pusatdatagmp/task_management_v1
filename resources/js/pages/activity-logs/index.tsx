@@ -8,7 +8,9 @@
 // MEMANGGIL   : -
 // DATA MASUK  : logs (paginator, message SUDAH label manusiawi dari
 //               ActivityLogPresenter — F-106, tidak ada terjemahan di sini),
-//               users[]/eventTypes[] (opsi filter), filters aktif
+//               users[]/eventTypes[] (opsi filter), filters aktif, summary
+//               (4 kartu ringkas, permintaan Boss — REUSE angka yang SAMA
+//               dengan filter aktif, lihat ActivityLogController::buildSummary())
 // DATA KELUAR : router.get (filter server-side, URL tercermin, pola sama tasks/index.tsx)
 // RISIKO      : JANGAN PERNAH tambah tombol/aksi mutasi di halaman ini (F-23/F-39
 //               semangat read-only) — kalau ada kebutuhan "hapus log", itu keputusan
@@ -21,6 +23,7 @@ import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import AppLayout from '@/layouts/app-layout';
 import { type BreadcrumbItem } from '@/types';
 import { Head, Link, router } from '@inertiajs/react';
+import { Activity, CalendarClock, Flame, UserRound } from 'lucide-react';
 
 interface UserOption {
     id: number;
@@ -56,8 +59,21 @@ interface Filters {
     to: string | null;
 }
 
+// SUMBER: ActivityLogController::buildSummary() -- 4 angka REUSE closure filter
+// yang SAMA dipakai listing (bukan agregat organisasi penuh), jadi kartu ini
+// selalu cerminan hasil yang SEDANG ditampilkan di tabel bawah.
+interface Summary {
+    total: number;
+    today: number;
+    top_user: string | null;
+    top_user_count: number;
+    top_event: string | null;
+    top_event_count: number;
+}
+
 interface ActivityLogIndexProps {
     logs: PaginatedLogs;
+    summary: Summary;
     filters: Filters;
     users: UserOption[];
     eventTypes: EventOption[];
@@ -65,7 +81,7 @@ interface ActivityLogIndexProps {
 
 const breadcrumbs: BreadcrumbItem[] = [{ title: 'Log Aktivitas', href: '/pengaturan/activity-log' }];
 
-export default function ActivityLogIndex({ logs, filters, users, eventTypes }: ActivityLogIndexProps) {
+export default function ActivityLogIndex({ logs, summary, filters, users, eventTypes }: ActivityLogIndexProps) {
     const applyFilters = (overrides: Partial<Filters>) => {
         router.get(
             route('activity-logs.index'),
@@ -90,6 +106,45 @@ export default function ActivityLogIndex({ logs, filters, users, eventTypes }: A
 
             <div className="flex flex-col gap-4 p-4">
                 <h1 className="text-xl font-semibold">Log Aktivitas</h1>
+
+                {/* Permintaan Boss: 4 kartu ringkas -- gaya SAMA kartu Command Center
+                    (icon + angka besar), angka REUSE filter aktif (lihat interface Summary). */}
+                <div className="grid grid-cols-2 gap-3 md:grid-cols-4">
+                    <Card>
+                        <CardHeader className="flex flex-row items-center justify-between space-y-0 p-4 pb-2">
+                            <CardTitle className="text-sm font-medium text-muted-foreground">Total Log</CardTitle>
+                            <Activity className="h-4 w-4 text-muted-foreground" />
+                        </CardHeader>
+                        <CardContent className="p-4 pt-0 text-2xl font-semibold">{summary.total}</CardContent>
+                    </Card>
+                    <Card>
+                        <CardHeader className="flex flex-row items-center justify-between space-y-0 p-4 pb-2">
+                            <CardTitle className="text-sm font-medium text-muted-foreground">Log Hari Ini</CardTitle>
+                            <CalendarClock className="h-4 w-4 text-muted-foreground" />
+                        </CardHeader>
+                        <CardContent className="p-4 pt-0 text-2xl font-semibold">{summary.today}</CardContent>
+                    </Card>
+                    <Card>
+                        <CardHeader className="flex flex-row items-center justify-between space-y-0 p-4 pb-2">
+                            <CardTitle className="text-sm font-medium text-muted-foreground">User Teraktif</CardTitle>
+                            <UserRound className="h-4 w-4 text-muted-foreground" />
+                        </CardHeader>
+                        <CardContent className="p-4 pt-0">
+                            <p className="truncate text-lg font-semibold">{summary.top_user ?? '-'}</p>
+                            {summary.top_user && <p className="text-xs text-muted-foreground">{summary.top_user_count} kejadian</p>}
+                        </CardContent>
+                    </Card>
+                    <Card>
+                        <CardHeader className="flex flex-row items-center justify-between space-y-0 p-4 pb-2">
+                            <CardTitle className="text-sm font-medium text-muted-foreground">Event Terbanyak</CardTitle>
+                            <Flame className="h-4 w-4 text-muted-foreground" />
+                        </CardHeader>
+                        <CardContent className="p-4 pt-0">
+                            <p className="truncate text-lg font-semibold">{summary.top_event ?? '-'}</p>
+                            {summary.top_event && <p className="text-xs text-muted-foreground">{summary.top_event_count} kejadian</p>}
+                        </CardContent>
+                    </Card>
+                </div>
 
                 <div className="flex flex-wrap items-end gap-4 rounded-lg border p-4 text-sm">
                     <div className="flex flex-col gap-1">
