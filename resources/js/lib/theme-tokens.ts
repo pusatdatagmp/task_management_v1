@@ -5,9 +5,13 @@
 //               v1.2 DS-3) — dipakai BERSAMA oleh app.tsx (apply-at-load, pola
 //               sama initializeTheme() appearance) dan org-settings/index.tsx
 //               (live preview + Simpan + Batal + Reset). TOKEN_KEYS SENGAJA cuma
-//               8 yang benar-benar dipakai komponen (lihat app.css) -- accent/
+//               9 yang benar-benar dipakai komponen (lihat app.css) -- accent/
 //               emerald/rose/tx3 belum dikait ke komponen mana pun (keputusan
 //               Boss LANGKAH 0), diedit di sini = kelihatan "rusak" (nol efek).
+//               Permintaan Boss (lanjutan DS-3): `button_text` DIPISAH dari `ink`
+//               -- pola IDENTIK kelahiran `sidebar_bg` (lihat komentar app.css)
+//               supaya teks tombol primary/amber tidak diam-diam ikut berubah
+//               kalau Boss mengganti warna teks utama halaman.
 // DIPANGGIL   : app.tsx, org-settings/index.tsx
 // MEMANGGIL   : document.documentElement.style (CSS custom property, BUKAN
 //               ubah file/class per-komponen — F-144)
@@ -29,7 +33,7 @@ export interface ThemeToken {
     hint: string;
 }
 
-export type TokenKey = 'sidebar_bg' | 'ink' | 'ink2' | 'paper' | 'card' | 'amber' | 'tx' | 'tx2';
+export type TokenKey = 'sidebar_bg' | 'ink' | 'ink2' | 'paper' | 'card' | 'amber' | 'button_text' | 'tx' | 'tx2';
 
 export type GradientDirection = 'to right' | 'to bottom' | 'to bottom right';
 
@@ -60,11 +64,12 @@ export interface ThemeConfig {
 // dipakai juga sebagai nilai awal color-picker sebelum org pernah kustom.
 export const TEMPO_TOKENS: ThemeToken[] = [
     { key: 'sidebar_bg', cssVar: '--tempo-sidebar-bg', label: 'Latar Sidebar', defaultHex: '#0f1523', hint: 'Background sidebar kiri saja (F-143 — dipisah dari warna teks, DS-3).' },
-    { key: 'ink', cssVar: '--tempo-ink', label: 'Warna Teks Utama', defaultHex: '#0f1523', hint: 'Teks di seluruh halaman terang + teks di atas tombol amber.' },
+    { key: 'ink', cssVar: '--tempo-ink', label: 'Warna Teks Utama', defaultHex: '#0f1523', hint: 'Teks di seluruh halaman terang (BUKAN lagi teks tombol -- lihat token "Warna Teks Button").' },
     { key: 'ink2', cssVar: '--tempo-ink2', label: 'Aksen Sidebar', defaultHex: '#161d30', hint: 'Warna hover/border item sidebar.' },
     { key: 'paper', cssVar: '--tempo-paper', label: 'Latar Workspace', defaultHex: '#f5f6f9', hint: 'Background area kerja di kanan sidebar.' },
     { key: 'card', cssVar: '--tempo-card', label: 'Latar Kartu', defaultHex: '#ffffff', hint: 'Background card/panel di seluruh halaman.' },
     { key: 'amber', cssVar: '--tempo-amber', label: 'Warna Aksi (Primary)', defaultHex: '#e0a012', hint: 'Tombol utama + aksen sidebar aktif (F-145 default amber).' },
+    { key: 'button_text', cssVar: '--tempo-button-text', label: 'Warna Teks Button', defaultHex: '#0f1523', hint: 'Teks di atas tombol primary/amber SAJA -- dipisah dari "Warna Teks Utama" supaya ganti warna teks halaman tidak ikut mengubah teks tombol.' },
     { key: 'tx', cssVar: '--tempo-tx', label: 'Teks Sidebar (aktif)', defaultHex: '#f8fafc', hint: 'Warna teks sidebar saat item di-hover/aktif.' },
     { key: 'tx2', cssVar: '--tempo-tx2', label: 'Teks Sidebar (default)', defaultHex: '#cbd5e1', hint: 'Warna teks sidebar dalam keadaan biasa.' },
 ];

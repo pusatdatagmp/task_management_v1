@@ -5,11 +5,12 @@
  * MODUL       : UpdateThemeRequest
  * KLASIFIKASI : DOMAIN
  * TUJUAN      : Validasi form tab Tema halaman Setelan (F-143, v1.2 DS-3).
- *               Token INTI yang boleh diedit = 8 yang benar-benar dipakai
- *               komponen (F-144, lihat app.css) -- sidebar_bg (BARU, dipisah dari
- *               ink DS-3), ink, ink2, paper, card, amber, tx, tx2. Token
- *               dekoratif (accent/emerald/rose/tx3, belum dipakai komponen mana
- *               pun) SENGAJA TIDAK ada di sini -- keputusan Boss LANGKAH 0.
+ *               Token INTI yang boleh diedit = 9 yang benar-benar dipakai
+ *               komponen (F-144, lihat app.css) -- sidebar_bg (dipisah dari ink,
+ *               DS-3), ink, ink2, paper, card, amber, button_text (permintaan
+ *               Boss, dipisah dari ink -- pola SAMA sidebar_bg, lihat app.css),
+ *               tx, tx2. Token dekoratif (accent/emerald/rose/tx3, belum dipakai
+ *               komponen mana pun) SENGAJA TIDAK ada di sini -- keputusan Boss LANGKAH 0.
  * DIPANGGIL   : SettingsController::updateTheme()
  * MEMANGGIL   : -
  * DATA MASUK  : Form tab Tema (tokens{...} hex per key, gradient{enabled,from,to,direction})
@@ -40,7 +41,7 @@ class UpdateThemeRequest extends FormRequest
      */
     public static function tokenKeys(): array
     {
-        return ['sidebar_bg', 'ink', 'ink2', 'paper', 'card', 'amber', 'tx', 'tx2'];
+        return ['sidebar_bg', 'ink', 'ink2', 'paper', 'card', 'amber', 'button_text', 'tx', 'tx2'];
     }
 
     public static function gradientDirections(): array

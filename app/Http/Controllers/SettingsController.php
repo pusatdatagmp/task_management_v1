@@ -13,7 +13,7 @@
  * MEMANGGIL   : Organization (branding/tema SELALU milik Auth::user()->organization,
  *               TIDAK PERNAH dari route model binding — F-5, cegah IDOR org lain)
  * DATA MASUK  : Form Branding (UpdateBrandingRequest), Form Tema (UpdateThemeRequest)
- *               -- tokens{sidebar_bg,ink,ink2,paper,card,amber,tx,tx2} + gradient
+ *               -- tokens{sidebar_bg,ink,ink2,paper,card,amber,button_text,tx,tx2} + gradient
  * DATA KELUAR : Inertia page 'org-settings/index', update organizations.{*, theme_config}
  * RISIKO      : SUMBER : organization SELALU diambil dari user login
  *               ($request->user()->organization), BUKAN {organization} di URL —

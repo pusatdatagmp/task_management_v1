@@ -67,6 +67,7 @@
     --color-tempo-paper: var(--tempo-paper);
     --color-tempo-card: var(--tempo-card);
     --color-tempo-amber: var(--tempo-amber);
+    --color-tempo-button-text: var(--tempo-button-text);
     --color-tempo-emerald: var(--tempo-emerald);
     --color-tempo-rose: var(--tempo-rose);
     --color-tempo-blue: var(--tempo-blue);
@@ -107,7 +108,7 @@
     --popover: var(--tempo-card);
     --popover-foreground: var(--tempo-ink);
     --primary: var(--tempo-amber);
-    --primary-foreground: var(--tempo-ink);
+    --primary-foreground: var(--tempo-button-text);
     --secondary: hsl(0, 0%, 96.1%);
     --secondary-foreground: hsl(0, 0%, 9%);
     --muted: hsl(0, 0%, 96.1%);
@@ -152,6 +153,14 @@
        SAMA persis dengan --tempo-ink lama supaya tampilan default TEMPO
        (F-145) nol berubah — cuma titik override-nya yang sekarang independen. */
     --tempo-sidebar-bg: #0f1523;
+
+    /* Permintaan Boss (lanjutan DS-3): pola IDENTIK --tempo-sidebar-bg di atas
+       -- `--tempo-ink` JUGA dipakai GANDA sebagai teks halaman (--foreground)
+       SEKALIGUS teks di atas tombol primary/amber (--primary-foreground).
+       Token BARU ini dipisah KHUSUS teks tombol, default SAMA persis dengan
+       --tempo-ink lama (tampilan default TEMPO F-145 nol berubah) -- cuma
+       titik override-nya sekarang independen dari "Warna Teks Utama". */
+    --tempo-button-text: #0f1523;
 
     /* v1.2 DS-3 (F-143): gradasi opsional, target tombol primary + sidebar
        (keputusan Boss — kartu header TIDAK termasuk, CardHeader tak disentuh).
