@@ -9,7 +9,13 @@
  * DIPANGGIL   : routes/admin.php
  * MEMANGGIL   : Role, Permission, UserService::createRole() (C6, dipakai ulang)
  * DATA MASUK  : Form Role Baru/Edit Role
- * DATA KELUAR : Inertia pages 'roles/*'
+ * DATA KELUAR : Inertia pages 'roles/*'. Permintaan Boss: index() lama (roles/index)
+ *               TETAP hidup sebagai route mandiri (tidak dihapus, F-16-style —
+ *               ragu = jangan hapus), TAPI tidak lagi jadi tujuan redirect --
+ *               store()/update()/destroy()/setDefault() SEKARANG balik ke
+ *               `users.index` (halaman gabungan Pengguna & Peran, satu-satunya
+ *               entri sidebar sejak merge ini) supaya admin tidak "terdampar" di
+ *               halaman roles-saja setelah simpan.
  * RISIKO      : SUMBER : destroy() TOLAK role sistem (tidak bisa dihapus SELAMANYA,
  *               F-88) DAN role yang masih dipakai user (pola F-19 — "masih ada N
  *               user, pindahkan dulu"). update() TOLAK melucuti user.manage dari
@@ -68,7 +74,7 @@ class RoleController extends Controller
             $request->user(),
         );
 
-        return to_route('roles.index');
+        return to_route('users.index');
     }
 
     public function edit(Role $role): Response
@@ -114,7 +120,7 @@ class RoleController extends Controller
             $role->permissions()->sync($permissionIds);
         });
 
-        return to_route('roles.index');
+        return to_route('users.index');
     }
 
     /**
@@ -140,7 +146,7 @@ class RoleController extends Controller
 
         $role->delete();
 
-        return to_route('roles.index');
+        return to_route('users.index');
     }
 
     /**

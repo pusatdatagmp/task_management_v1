@@ -48,9 +48,10 @@ interface RoleEditProps {
     isLastUserManageHolder: boolean;
 }
 
+// Permintaan Boss: lihat catatan sama di roles/create.tsx -- node 'Role' dihapus
+// dari breadcrumb sejak halaman Pengguna & Peran digabung 2-kolom.
 const breadcrumbs: BreadcrumbItem[] = [
-    { title: 'User', href: '/pengaturan/users' },
-    { title: 'Role', href: '/pengaturan/roles' },
+    { title: 'Pengguna & Peran', href: '/pengaturan/users' },
     { title: 'Edit Role', href: '#' },
 ];
 

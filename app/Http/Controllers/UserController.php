@@ -9,10 +9,15 @@
  *               (03-BUSINESS-FLOW §7). Gerbang permission `user.manage`
  *               (routes/admin.php), bukan lagi middleware 'admin' blanket.
  * DIPANGGIL   : routes/admin.php (index/create/store/edit/update/toggleActive)
- * MEMANGGIL   : User, UserService (onboarding — RBAC §C)
+ * MEMANGGIL   : User, Role, UserService (onboarding — RBAC §C)
  * DATA MASUK  : Form buat/edit user, form onboarding 3-mode (Fase E2)
  * DATA KELUAR : Inertia pages 'users/*', flash session `generatedPassword` (SEKALI)
- * RISIKO      : SUMBER : F-16 — TIDAK ADA destroy(). Nonaktifkan HANYA lewat
+ * RISIKO      : Permintaan Boss: index() SEKARANG juga mengirim `roles` (query
+ *               IDENTIK RoleController::index(), gate SAMA can:user.manage) supaya
+ *               halaman ini bisa menampilkan Pengguna & Peran 2-kolom sekaligus —
+ *               nol permission baru, nol rumus baru, cuma 1 query tambahan tetap
+ *               (bukan N+1, tidak tumbuh dgn jumlah user).
+ *               SUMBER : F-16 — TIDAK ADA destroy(). Nonaktifkan HANYA lewat
  *               toggleActive() (is_active=false), riwayat task/KPI milik user tetap
  *               utuh. Hard delete user akan menghapus jejak assignee/approver di
  *               riwayat KPI — dilarang keras.
@@ -40,10 +45,19 @@ class UserController extends Controller
 {
     public function index(): Response
     {
+        $organizationId = Auth::user()->organization_id;
+
         return Inertia::render('users/index', [
             'users' => User::with('role:id,role_name')
                 ->orderBy('name')
                 ->get(['id', 'name', 'email', 'role_id', 'employment_type', 'daily_capacity_minutes', 'is_active']),
+            // SUMBER (permintaan Boss): query IDENTIK RoleController::index() --
+            // SATU sumber bentuk data untuk kolom "Peran" di halaman gabungan ini.
+            'roles' => Role::where('organization_id', $organizationId)
+                ->withCount('users')
+                ->orderByDesc('is_system')
+                ->orderBy('role_name')
+                ->get(['id', 'role_name', 'is_system', 'is_default']),
             // SUMBER: F-92 — flash session diisi store() SEKALI, otomatis kosong
             // lagi di request BERIKUTNYA (perilaku bawaan Session::flash() Laravel)
             // -- itu sebabnya "tampilkan sekali" tidak butuh logic manual di sini.

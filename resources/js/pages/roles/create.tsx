@@ -27,9 +27,12 @@ interface PermissionOption {
     module: string;
 }
 
+// Permintaan Boss: halaman Pengguna & Peran digabung 2-kolom (users/index.tsx) --
+// node 'Role' yang dulu mengarah ke /pengaturan/roles (kini tanpa link sidebar,
+// F-16-style: route TETAP hidup, cuma tidak lagi jadi hub navigasi) DIHAPUS dari
+// breadcrumb supaya tidak ada link ke halaman yang terasa "terdampar".
 const breadcrumbs: BreadcrumbItem[] = [
-    { title: 'User', href: '/pengaturan/users' },
-    { title: 'Role', href: '/pengaturan/roles' },
+    { title: 'Pengguna & Peran', href: '/pengaturan/users' },
     { title: 'Role Baru', href: '/pengaturan/roles/create' },
 ];
 
