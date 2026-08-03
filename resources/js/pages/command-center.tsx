@@ -523,8 +523,27 @@ export default function CommandCenter({
 
     // Permintaan Boss: klik tanggal di Kalender Beban Tim -> modal detail
     // acara/peristiwa (libur + meeting hari itu, MURNI data yang SUDAH dikirim
-    // di heatmap.days -- nol fetch tambahan saat modal dibuka).
+    // di heatmap.days -- nol fetch tambahan untuk bagian ini). Data workload
+    // per-user DI FETCH terpisah saat modal dibuka (route('dashboard.summary'),
+    // endpoint JSON YANG SUDAH ADA sejak H2 -- REUSE loadRows()/forUsers() yang
+    // SAMA dipakai dashboard.tsx & section "Beban Tim", nol rumus baru). Tidak
+    // di-precompute untuk 30+ hari sekaligus di heatmap() -- itu akan melanggar
+    // F-85 (query bertumbuh dengan jumlah hari), jadi lazy-fetch PER TANGGAL
+    // yang benar-benar diklik.
     const [selectedDay, setSelectedDay] = useState<HeatmapDay | null>(null);
+    const [dayWorkload, setDayWorkload] = useState<{ date: string; rows: TeamRow[] } | null>(null);
+    const [dayWorkloadLoading, setDayWorkloadLoading] = useState(false);
+
+    const openDayModal = (day: HeatmapDay) => {
+        setSelectedDay(day);
+        setDayWorkload(null);
+        setDayWorkloadLoading(true);
+
+        fetch(route('dashboard.summary', { date: day.date }), { headers: { Accept: 'application/json' } })
+            .then((res) => res.json())
+            .then((data: { date: string; users: TeamRow[] }) => setDayWorkload({ date: data.date, rows: data.users }))
+            .finally(() => setDayWorkloadLoading(false));
+    };
 
     const donutChart = buildDonutGradient(donut);
     const progressTotal = progress.selesai + progress.review + progress.progress + progress.todo;
@@ -1021,7 +1040,7 @@ export default function CommandCenter({
                                         <button
                                             type="button"
                                             key={day.date}
-                                            onClick={() => setSelectedDay(day)}
+                                            onClick={() => openDayModal(day)}
                                             /* flex-col & p-1 memastikan posisi angka dan icon muat di dalam kotak secara vertikal */
                                             className={`flex aspect-square flex-col items-center justify-between p-1.5 rounded-lg text-xs font-semibold hover:bg-primary/30 transition-all duration-200 hover:-translate-y-1 hover:shadow cursor-pointer ${cellClass}`}
                                             title={day.beban === null ? 'Hari lewat (netral)' : `Beban tim: ${formatLiveMinutes(day.beban)}`}
@@ -1076,7 +1095,15 @@ export default function CommandCenter({
                     {/* Permintaan Boss: modal detail acara/peristiwa per tanggal -- MURNI
         render ulang data yang SUDAH ada di heatmap.days (holiday/meetings),
         nol fetch tambahan saat modal dibuka. */}
-                    <Dialog open={selectedDay !== null} onOpenChange={(open) => !open && setSelectedDay(null)}>
+                    <Dialog
+                        open={selectedDay !== null}
+                        onOpenChange={(open) => {
+                            if (!open) {
+                                setSelectedDay(null);
+                                setDayWorkload(null);
+                            }
+                        }}
+                    >
                         <DialogContent className="max-h-[85vh] max-w-lg overflow-y-auto">
                             <DialogHeader>
                                 <DialogTitle>
@@ -1097,6 +1124,50 @@ export default function CommandCenter({
                                             ? 'Hari lewat (netral, tidak dihitung).'
                                             : `Beban tim hari ini: ${formatLiveMinutes(selectedDay.beban)}`}
                                     </p>
+
+                                    {/* Permintaan Boss: data workload per-user untuk tanggal ini --
+                                        di-fetch lazy dari route('dashboard.summary', {date}), endpoint
+                                        JSON yang SUDAH ADA (F-52/H2), nol rumus baru. */}
+                                    <div className="flex flex-col gap-2">
+                                        <p className="font-medium">Workload Tim</p>
+                                        {dayWorkloadLoading ? (
+                                            <p className="text-muted-foreground">Memuat...</p>
+                                        ) : dayWorkload && dayWorkload.rows.length > 0 ? (
+                                            <div className="overflow-x-auto rounded-md border">
+                                                <table className="w-full text-left text-sm">
+                                                    <thead>
+                                                        <tr className="border-b bg-muted/50 text-muted-foreground">
+                                                            <th className="p-2">Tim</th>
+                                                            <th className="p-2">Waktu Terpakai</th>
+                                                            <th className="p-2">Kapasitas Sisa</th>
+                                                            <th className="p-2">Status</th>
+                                                        </tr>
+                                                    </thead>
+                                                    <tbody>
+                                                        {dayWorkload.rows.map((row) => {
+                                                            const status = classifyWorkload(row.beban, row.kapasitas);
+                                                            const badge = STATUS_BADGE[status];
+
+                                                            return (
+                                                                <tr key={row.id} className="border-b last:border-0 align-top">
+                                                                    <td className="p-2 font-medium">{row.name}</td>
+                                                                    <td className="p-2">{formatLiveMinutes(row.aktif)}</td>
+                                                                    <td className="p-2">
+                                                                        {formatLiveMinutes(row.beban)} (idle {formatLiveMinutes(row.idle_plan)})
+                                                                    </td>
+                                                                    <td className="p-2">
+                                                                        {badge.label && <Badge className={badge.className}>{badge.label}</Badge>}
+                                                                    </td>
+                                                                </tr>
+                                                            );
+                                                        })}
+                                                    </tbody>
+                                                </table>
+                                            </div>
+                                        ) : (
+                                            <p className="text-muted-foreground">Tidak ada user aktif untuk ditampilkan.</p>
+                                        )}
+                                    </div>
 
                                     {selectedDay.holiday && (
                                         <div className="flex items-start gap-2 rounded-md border bg-muted/30 p-3">
