@@ -10,7 +10,10 @@
  * DATA MASUK  : Seeder 3 template (daily/weekly/monthly), is_active=true, belum generate
  * DATA KELUAR : Task.task_template_id menunjuk balik ke sini saat instance lahir (v0.8)
  * RISIKO      : last_generated_date WAJIB diisi scheduler v0.8 — tanpa ini task
- *               duplikat kalau scheduler jalan 2x (F-61).
+ *               duplikat kalau scheduler jalan 2x (F-61). Kolom anchor_strategy,
+ *               interval_value, interval_unit, anchor_config, date_window_config,
+ *               max_active_instances, blocked_since, last_block_notified_at (F-159)
+ *               BELUM dibaca engine manapun sampai AE-2 — murni skema.
  * ==========================================================
  */
 
@@ -40,6 +43,15 @@ class TaskTemplate extends Model
         'default_assignees',
         'is_active',
         'last_generated_date',
+        // F-151/158/161: kolom Automation Engine v1.3 — skema H1, dibaca AE-2.
+        'anchor_strategy',
+        'interval_value',
+        'interval_unit',
+        'anchor_config',
+        'date_window_config',
+        'max_active_instances',
+        'blocked_since',
+        'last_block_notified_at',
     ];
 
     protected function casts(): array
@@ -49,6 +61,10 @@ class TaskTemplate extends Model
             'default_assignees' => 'array',
             'is_active' => 'boolean',
             'last_generated_date' => 'date',
+            'anchor_config' => 'array',
+            'date_window_config' => 'array',
+            'blocked_since' => 'date',
+            'last_block_notified_at' => 'datetime',
         ];
     }
 

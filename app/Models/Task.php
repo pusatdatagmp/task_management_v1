@@ -52,6 +52,9 @@ class Task extends Model
         'organization_id',
         'project_id',
         'task_template_id',
+        // F-159/F-61: kunci idempotency (task_template_id, period_key) — diisi
+        // AE-2 saat generate, null untuk task manual (union F-46).
+        'period_key',
         'parent_task_id',
         'task_status_id',
         'title',
