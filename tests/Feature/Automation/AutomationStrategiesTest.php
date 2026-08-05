@@ -21,11 +21,13 @@ use App\Models\Task;
 use App\Models\TaskStatus;
 use App\Models\TaskTemplate;
 use App\Models\User;
+use App\Notifications\TemplateBlockedNotification;
 use App\Services\Automation\AutomationContext;
 use App\Services\Automation\Strategies\CalendarAnchoredStrategy;
 use App\Services\Automation\Strategies\CompletionBasedStrategy;
 use App\Services\Automation\Strategies\TimeBasedStrategy;
 use Carbon\Carbon;
+use Illuminate\Support\Facades\Notification;
 
 function createStrategyTestProject(): Project
 {
@@ -108,7 +110,9 @@ test('CompletionBasedStrategy: Pass kalau belum pernah ada instance sebelumnya',
     expect($decision)->toBeNull();
 });
 
-test('CompletionBasedStrategy: Skip sebelumnya-belum-selesai + set blocked_since', function () {
+test('CompletionBasedStrategy: Skip sebelumnya-belum-selesai + set blocked_since + notif admin SEKALI (F-154)', function () {
+    Notification::fake();
+
     $project = createStrategyTestProject();
     $template = createStrategyTestTemplate($project, ['anchor_strategy' => 'completion_based']);
     $previousTask = createStrategyTestTask($project, $template, '2026-08-02', isCompleted: false);
@@ -121,13 +125,40 @@ test('CompletionBasedStrategy: Skip sebelumnya-belum-selesai + set blocked_since
     expect($decision)->not->toBeNull();
     expect($decision->reason)->toBe('sebelumnya-belum-selesai');
     expect($template->fresh()->blocked_since?->toDateString())->toBe('2026-08-03');
+    expect($template->fresh()->last_block_notified_at?->toDateString())->toBe('2026-08-03');
+    Notification::assertSentTo($project->owner, TemplateBlockedNotification::class);
 });
 
-test('CompletionBasedStrategy: Pass + clear blocked_since kalau sebelumnya SELESAI', function () {
+test('CompletionBasedStrategy: masih block di run berikutnya -> TIDAK notif lagi (anti-spam F-154)', function () {
+    Notification::fake();
+
+    $project = createStrategyTestProject();
+    // blocked_since & last_block_notified_at SUDAH terisi dari run SEBELUMNYA.
+    $template = createStrategyTestTemplate($project, [
+        'anchor_strategy' => 'completion_based',
+        'blocked_since' => '2026-08-03',
+        'last_block_notified_at' => '2026-08-03 00:01:00',
+    ]);
+    $previousTask = createStrategyTestTask($project, $template, '2026-08-02', isCompleted: false);
+
+    $decision = (new CompletionBasedStrategy)->evaluate(
+        $template,
+        strategyCtx(Carbon::create(2026, 8, 4), [$template->id => $previousTask->load('taskStatus')])
+    );
+
+    expect($decision->reason)->toBe('sebelumnya-belum-selesai');
+    expect($template->fresh()->blocked_since?->toDateString())->toBe('2026-08-03'); // TIDAK berubah
+    Notification::assertNothingSent();
+});
+
+test('CompletionBasedStrategy: Pass + clear blocked_since & last_block_notified_at kalau sebelumnya SELESAI', function () {
+    Notification::fake();
+
     $project = createStrategyTestProject();
     $template = createStrategyTestTemplate($project, [
         'anchor_strategy' => 'completion_based',
         'blocked_since' => '2026-08-01',
+        'last_block_notified_at' => '2026-08-01 00:01:00',
     ]);
     $previousTask = createStrategyTestTask($project, $template, '2026-08-02', isCompleted: true);
 
@@ -137,6 +168,8 @@ test('CompletionBasedStrategy: Pass + clear blocked_since kalau sebelumnya SELES
     );
 
     expect($decision)->toBeNull();
+    expect($template->fresh()->last_block_notified_at)->toBeNull();
+    Notification::assertNothingSent();
     expect($template->fresh()->blocked_since)->toBeNull();
 });
 

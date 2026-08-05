@@ -4,11 +4,12 @@
  * ==========================================================
  * MODUL       : GenerateRecurringTasksCommand
  * KLASIFIKASI : DOMAIN
- * TUJUAN      : Engine recurring (F-46) — melahirkan instance `tasks` dari
+ * TUJUAN      : Engine recurring (F-46) LAMA — melahirkan instance `tasks` dari
  *               `task_templates` aktif, HARI INI SAJA (F-100, tidak backfill).
- *               Dijadwalkan HARIAN (F-81 — cron recurring SAH, F-38 tetap
- *               melarang scheduler untuk COUNTER, beda subjek sama sekali).
- * DIPANGGIL   : routes/console.php (Schedule::command), manual (php artisan tasks:generate-recurring)
+ *               Sebelum AE-3: dijadwalkan HARIAN (F-81). Sejak AE-3: TIDAK
+ *               dijadwalkan lagi, disimpan sebagai referensi/rollback saja.
+ * DIPANGGIL   : (TIDAK LAGI routes/console.php sejak AE-3/F-162) — manual saja
+ *               (php artisan tasks:generate-recurring)
  * MEMANGGIL   : TaskTemplate, WorkSchedule, Holiday, TaskStatus, Task, ActivityLog,
  *               TaskTemplateChecklistItem (F-123, copy-on-generate)
  * DATA MASUK  : task_templates.is_active=true + recurrence_config + last_generated_date,
@@ -30,7 +31,18 @@
  *               28 Feb Sabtu -> geser ke 2 Maret Senin); cek 1 periode saja membuat
  *               occurrence yang lahir dari periode sebelumnya tidak pernah ketemu
  *               begitu tanggal berjalan menyeberang ke periode baru.
+ *               JANGAN HAPUS file ini (F-162 AE-3) — rollback cutover butuh code
+ *               ini utuh, bukan ditulis ulang dari git history.
  * ==========================================================
+ *
+ * @deprecated F-162 (AE-3 cutover, tutup risiko dual-engine) — DIGANTIKAN
+ *             `automation:run` (App\Console\Commands\RunAutomationEngineCommand).
+ *             DICABUT dari scheduler (routes/console.php); CODE SENGAJA
+ *             DIPERTAHANKAN untuk rollback (JANGAN DIHAPUS). Masih bisa
+ *             dijalankan MANUAL (`php artisan tasks:generate-recurring`) untuk
+ *             rollback darurat — tapi JANGAN jalankan bersamaan dengan
+ *             `automation:run` aktif (F-162: skema idempotency dua engine ini
+ *             beda dan tidak saling kenal, akan generate task dobel).
  */
 
 namespace App\Console\Commands;
