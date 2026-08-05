@@ -104,10 +104,10 @@ test('recurring -> dashboard beban -> counter live -> attachment -> review -> ap
     expect($rowsBefore[$member->id]['beban'])->toBe(120);
 
     // === PILAR 3: COUNTER LIVE (F-38/F-94) — mulai kerja, majukan waktu 90 menit. ===
-    $inProgress = TaskStatus::where('project_id', $project->id)->where('is_work_state', true)->firstOrFail();
-    $this->actingAs($member)->patch(route('tasks.status', [$project, $task]), [
-        'task_status_id' => $inProgress->id,
-    ])->assertRedirect();
+    // F-78 (H7/F-138a): DULU dropdown TODO->IN_PROGRESS otomatis buka segmen.
+    // SEKARANG lewat aksi eksplisit Mulai (TaskTransitionService::start()) —
+    // assertion berikutnya (90 menit akumulasi) TETAP IDENTIK.
+    $this->actingAs($member)->patch(route('tasks.start', [$project, $task]))->assertRedirect();
 
     $ninetyMinutesLater = $monday0800->copy()->addMinutes(90);
     $this->travelTo($ninetyMinutesLater);

@@ -5,18 +5,25 @@
  * MODUL       : TaskTransitionService
  * KLASIFIKASI : DOMAIN
  * TUJUAN      : SATU-SATUNYA jalur mengubah task_status_id (F-45 transisi berurutan,
- *               F-28 approve/reject admin-only, F-127 gate checklist ->review).
- *               Semua mutasi status task — dropdown, drag board, member submit
- *               kerja, admin approve/reject — WAJIB lewat sini supaya validasi
- *               tidak pernah bisa dilewati oleh jalur lain (F-111).
- * DIPANGGIL   : TaskController::updateStatus()/approve()/reject() — updateStatus()
- *               dipakai BAIK oleh dropdown (TaskStatusCell) MAUPUN drag board (F-111),
- *               keduanya endpoint HTTP yang sama, jadi gate F-127 di sini otomatis
- *               berlaku ke keduanya tanpa kode terpisah.
- * MEMANGGIL   : Task::update() (memicu TaskObserver -> F-21/F-39/F-41/F-51 otomatis),
+ *               F-28 approve/reject admin-only, F-127 gate checklist ->review) DAN
+ *               (H7/F-138) satu-satunya jalur buka/tutup task_time_segments lewat
+ *               aksi EKSPLISIT Mulai/Hold/Lanjut/Submit. Semua mutasi status task —
+ *               dropdown, drag board, member submit kerja, admin approve/reject —
+ *               WAJIB lewat sini supaya validasi tidak pernah bisa dilewati jalur lain (F-111).
+ * DIPANGGIL   : TaskController::updateStatus()/approve()/reject()/start()/hold()/
+ *               resume()/submit() — updateStatus() dipakai BAIK oleh dropdown
+ *               (TaskStatusCell) MAUPUN drag board (F-111), keduanya endpoint HTTP
+ *               yang sama, jadi gate F-127 di sini otomatis berlaku ke keduanya
+ *               tanpa kode terpisah. start()/hold()/resume()/submit() KHUSUS 4
+ *               tombol detail task (F-132/F-138), TIDAK dipakai dropdown/drag.
+ * MEMANGGIL   : Task::update() (memicu TaskObserver -> F-21/F-39/F-51 otomatis;
+ *               F-41 SEKARANG HANYA menutup segmen saat KELUAR work_state, TIDAK
+ *               PERNAH membuka — lihat TaskObserver), TaskTimeSegment (start/hold/
+ *               resume BUKA/TUTUP segmen eksplisit DI SINI, bukan observer),
  *               Task::checklistItems() (F-127 gate)
  * DATA MASUK  : Task, TaskStatus tujuan, User pelaku (dari controller, sudah lolos FormRequest)
- * DATA KELUAR : tasks.task_status_id (+ approved_at/approved_by/quality_rating saat approve)
+ * DATA KELUAR : tasks.task_status_id (+ approved_at/approved_by/quality_rating saat
+ *               approve), task_time_segments.started_at/ended_at (F-138, start/hold/resume)
  * RISIKO      : SUMBER : F-45 — maju cuma boleh position+1, mundur bebas. F-28 — status
  *               is_review CUMA bisa keluar lewat approve()/reject(), generic changeStatus()
  *               MENOLAK task yang sedang is_review supaya quality_rating tidak pernah
@@ -25,6 +32,11 @@
  *               F-127 — gate checklist DICEK SAAT TRANSISI (bukan retroaktif): task
  *               yang SUDAH di review lalu ditambah item baru TIDAK ditendang mundur
  *               otomatis — gate cuma jalan lagi kalau ada transisi BARU ke review.
+ *               F-95 — start/hold/resume/submit SENGAJA TIDAK reuse pengecekan
+ *               admin-atau-assignee milik changeStatus(): 4 aksi ini murni personal
+ *               "jam kerja SAYA", admin TIDAK BOLEH memicu atas nama assignee lain
+ *               (beda dari changeStatus() yang memang boleh dipakai admin menggeser
+ *               status task siapa pun via dropdown/drag/board).
  * ==========================================================
  */
 
@@ -32,7 +44,9 @@ namespace App\Services;
 
 use App\Models\Task;
 use App\Models\TaskStatus;
+use App\Models\TaskTimeSegment;
 use App\Models\User;
+use Illuminate\Support\Facades\DB;
 use Illuminate\Validation\ValidationException;
 
 class TaskTransitionService
@@ -45,12 +59,6 @@ class TaskTransitionService
      */
     public function changeStatus(Task $task, TaskStatus $targetStatus, User $actor): void
     {
-        if ($targetStatus->project_id !== $task->project_id) {
-            throw ValidationException::withMessages([
-                'task_status_id' => 'Status tujuan bukan milik project ini.',
-            ]);
-        }
-
         // BUSINESS RULE F-29/E2: bukan soal input salah (bukan 422) — member yang
         // bukan assignee task ini memang TIDAK BOLEH melakukan aksi ini sama sekali,
         // jadi 403 (authorization), bukan validation error.
@@ -61,6 +69,178 @@ class TaskTransitionService
         // satunya role sistem yang punya permission ini sampai ada yang sengaja
         // memberi role lain permission yang sama lewat UI Role Management).
         abort_unless($actor->can('task.manage') || $task->assignees()->whereKey($actor->id)->exists(), 403, 'Kamu tidak di-assign ke task ini.');
+
+        $this->transitionStatus($task, $targetStatus);
+    }
+
+    /**
+     * KONTRAK (H7/F-138a): "Mulai" — HANYA assignee (F-95, TIDAK ada bypass
+     * task.manage, lihat RISIKO header). Task WAJIB masih di status entri (belum
+     * is_work_state/is_review/is_completed — "todo"). Pindah ke status is_work_state
+     * PERTAMA project ini (by position) LALU buka segmen atas nama $actor sendiri
+     * (F-112 — pelaku=pekerja, tidak perlu resolveSegmentWorker() lagi karena
+     * aksi ini SELALU personal).
+     */
+    public function start(Task $task, User $actor): void
+    {
+        $this->assertAssignee($task, $actor);
+
+        $currentStatus = $task->taskStatus;
+
+        if ($currentStatus->is_work_state || $currentStatus->is_review || $currentStatus->is_completed) {
+            throw ValidationException::withMessages([
+                'task_status_id' => 'Task sudah pernah dimulai — pakai Lanjut kalau sedang jeda.',
+            ]);
+        }
+
+        $targetStatus = TaskStatus::where('project_id', $task->project_id)
+            ->where('is_work_state', true)
+            ->orderBy('position')
+            ->first();
+
+        if (! $targetStatus) {
+            throw ValidationException::withMessages([
+                'task_status_id' => 'Project ini tidak punya status "sedang dikerjakan" (F-19) — hubungi admin.',
+            ]);
+        }
+
+        DB::transaction(function () use ($task, $actor, $targetStatus) {
+            $this->transitionStatus($task, $targetStatus);
+            $this->openSegment($task, $actor);
+        });
+    }
+
+    /**
+     * KONTRAK (H7/F-138): "Hold" — tutup segmen MILIK $actor sendiri yang sedang
+     * terbuka (jeda). Status TETAP is_work_state (F-138b: jeda = TURUNAN, nol
+     * field baru) — hanya segmen yang berubah.
+     */
+    public function hold(Task $task, User $actor): void
+    {
+        $this->assertAssignee($task, $actor);
+
+        if (! $task->taskStatus->is_work_state) {
+            throw ValidationException::withMessages([
+                'task_status_id' => 'Task tidak sedang dikerjakan.',
+            ]);
+        }
+
+        $openSegment = TaskTimeSegment::where('task_id', $task->id)
+            ->where('user_id', $actor->id)
+            ->whereNull('ended_at')
+            ->first();
+
+        if (! $openSegment) {
+            throw ValidationException::withMessages([
+                'task_status_id' => 'Tidak ada sesi kerja yang sedang berjalan untuk kamu di task ini.',
+            ]);
+        }
+
+        $openSegment->update(['ended_at' => now()]);
+    }
+
+    /**
+     * KONTRAK (H7/F-138): "Lanjut" — buka segmen BARU atas nama $actor. Task WAJIB
+     * is_work_state DAN $actor WAJIB sedang jeda (nol segmen terbuka miliknya) —
+     * mencegah dobel segmen kalau tombol diklik dua kali / race.
+     */
+    public function resume(Task $task, User $actor): void
+    {
+        $this->assertAssignee($task, $actor);
+
+        if (! $task->taskStatus->is_work_state) {
+            throw ValidationException::withMessages([
+                'task_status_id' => 'Task tidak sedang dikerjakan.',
+            ]);
+        }
+
+        $hasOpenSegment = TaskTimeSegment::where('task_id', $task->id)
+            ->where('user_id', $actor->id)
+            ->whereNull('ended_at')
+            ->exists();
+
+        if ($hasOpenSegment) {
+            throw ValidationException::withMessages([
+                'task_status_id' => 'Sesi kerja kamu sudah berjalan, tidak sedang jeda.',
+            ]);
+        }
+
+        $this->openSegment($task, $actor);
+    }
+
+    /**
+     * KONTRAK (H7/F-132/F-138): "Submit" — CEK GATE F-127 dulu (checklist belum
+     * tuntas -> GAGAL, task_status_id & segmen TIDAK disentuh sama sekali, sebelum
+     * transitionStatus() dipanggil). Lolos -> pindah ke status is_review project
+     * ini; TaskObserver yang menutup SEMUA segmen terbuka task ini (siapa pun
+     * pemiliknya, pola sama sejak F-41 lama — "keluar work_state = tutup segmen"
+     * TIDAK diubah H7, lihat TaskObserver header) dan realisasi (F-38) otomatis
+     * ikut ter-Σ dari sana, TIDAK dihitung/ditulis manual di sini.
+     */
+    public function submit(Task $task, User $actor): void
+    {
+        $this->assertAssignee($task, $actor);
+
+        if (! $task->taskStatus->is_work_state) {
+            throw ValidationException::withMessages([
+                'task_status_id' => 'Task tidak sedang dikerjakan.',
+            ]);
+        }
+
+        $targetStatus = TaskStatus::where('project_id', $task->project_id)
+            ->where('is_review', true)
+            ->first();
+
+        if (! $targetStatus) {
+            throw ValidationException::withMessages([
+                'task_status_id' => 'Project ini tidak punya status "review" (F-19) — hubungi admin.',
+            ]);
+        }
+
+        // transitionStatus() sendiri yang menegakkan gate F-127 (target is_review)
+        // -- kalau gagal, exception dilempar SEBELUM Task::update() dipanggil sama
+        // sekali, jadi status & segmen TIDAK tersentuh (D4).
+        $this->transitionStatus($task, $targetStatus);
+    }
+
+    /**
+     * KONTRAK: buka 1 segmen baru atas nama $user. DIPAKAI start()/resume() —
+     * TIDAK ADA guard "tutup dulu segmen dangling" seperti observer lama, karena
+     * start()/resume() sendiri sudah menjamin TIDAK ADA segmen terbuka milik
+     * $user sebelum dipanggil (dicek di pemanggil masing-masing).
+     */
+    private function openSegment(Task $task, User $user): void
+    {
+        TaskTimeSegment::create([
+            'organization_id' => $task->organization_id,
+            'task_id' => $task->id,
+            'user_id' => $user->id,
+            'started_at' => now(),
+        ]);
+    }
+
+    /**
+     * KONTRAK (F-95): start/hold/resume/submit HANYA assignee task ini, TITIK —
+     * lihat RISIKO header kenapa ini TIDAK sama dengan pengecekan changeStatus().
+     */
+    private function assertAssignee(Task $task, User $actor): void
+    {
+        abort_unless($task->assignees()->whereKey($actor->id)->exists(), 403, 'Kamu bukan assignee task ini.');
+    }
+
+    /**
+     * KONTRAK: inti validasi+eksekusi transisi status (F-45/F-28/F-127), DIPISAH
+     * dari changeStatus() supaya start()/submit() bisa reuse validasi yang SAMA
+     * PERSIS tanpa ikut memaksakan aturan otorisasi admin-atau-assignee milik
+     * changeStatus() (lihat RISIKO header — F-95, 4 aksi baru assignee-only murni).
+     */
+    private function transitionStatus(Task $task, TaskStatus $targetStatus): void
+    {
+        if ($targetStatus->project_id !== $task->project_id) {
+            throw ValidationException::withMessages([
+                'task_status_id' => 'Status tujuan bukan milik project ini.',
+            ]);
+        }
 
         $currentStatus = $task->taskStatus;
 
@@ -91,8 +271,8 @@ class TaskTransitionService
         // BUSINESS RULE F-127 (gate-only, RESOLVED): transisi ke status is_review
         // DITOLAK kalau ada item checklist yang belum dicentang. Checklist KOSONG
         // -> LOLOS (bukan setiap task wajib punya item). Ditegakkan DI SINI (F-111)
-        // supaya SEMUA jalur (dropdown TaskStatusCell, drag board) otomatis ikut —
-        // keduanya lewat changeStatus() ini, nol jalur kedua untuk dilewati.
+        // supaya SEMUA jalur (dropdown TaskStatusCell, drag board, Submit tombol H7)
+        // otomatis ikut — nol jalur kedua untuk dilewati.
         if ($targetStatus->is_review && $task->checklistItems()->where('is_done', false)->exists()) {
             throw ValidationException::withMessages([
                 'task_status_id' => 'Centang semua checklist dulu sebelum submit ke review (F-127).',

@@ -187,6 +187,36 @@ class Task extends Model
             ));
     }
 
+    /**
+     * KONTRAK (H7/F-132/F-138b): state 5-nilai TASK-WIDE untuk UI — {todo|
+     * dikerjakan-aktif|dikerjakan-jeda|review|selesai}. "dikerjakan-jeda" adalah
+     * TURUNAN murni (F-138b, NOL kolom/field baru) dari is_work_state + TIDAK
+     * ADA segmen terbuka MILIK SIAPA PUN saat ini — beda dari live_counter
+     * (LiveTaskCounter) yang PER-USER, ini task-wide (dipakai badge "Jeda" yang
+     * sama terlihat siapa pun, bukan cuma assignee yang login).
+     * DIPANGGIL   : TaskController::show()
+     * F-44: SELURUH keputusan pakai flag is_work_state/is_review/is_completed,
+     * BUKAN nama status.
+     */
+    public function computeWorkState(): string
+    {
+        $status = $this->taskStatus;
+
+        if ($status->is_completed) {
+            return 'selesai';
+        }
+
+        if ($status->is_review) {
+            return 'review';
+        }
+
+        if ($status->is_work_state) {
+            return $this->timeSegments()->whereNull('ended_at')->exists() ? 'dikerjakan-aktif' : 'dikerjakan-jeda';
+        }
+
+        return 'todo';
+    }
+
     public function attachments(): HasMany
     {
         return $this->hasMany(Attachment::class);

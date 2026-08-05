@@ -217,6 +217,9 @@ class TaskController extends Controller
                 ]),
                 'description_html' => $task->description ? $sanitizer->sanitize($task->description) : null,
                 'task_status' => $task->taskStatus,
+                // H7/F-132/F-138: state 5-nilai task-wide, dipakai frontend untuk
+                // badge "Jeda" (F-138f) — TERPISAH dari live_counter (per-user).
+                'work_state' => $task->computeWorkState(),
                 'assignees' => $task->assignees,
                 'parent' => $task->parent,
                 'children' => $task->children,
@@ -572,5 +575,40 @@ class TaskController extends Controller
         $service->reject($task, $validated['reason']);
 
         return to_route('tasks.index', $project);
+    }
+
+    /**
+     * BUSINESS RULE (H7/F-132/F-138): 4 tombol detail task, assignee-only (F-95,
+     * ditegakkan DI SERVICE — lihat TaskTransitionService::assertAssignee()).
+     * Nol FormRequest terpisah -- tidak ada body yang perlu divalidasi, seluruh
+     * aturan (status/segmen) ada di service. `back()` (bukan to_route) supaya
+     * user tetap di halaman detail task yang sama setelah klik tombol.
+     */
+    public function start(Request $request, Project $project, Task $task, TaskTransitionService $service): RedirectResponse
+    {
+        $service->start($task, $request->user());
+
+        return back();
+    }
+
+    public function hold(Request $request, Project $project, Task $task, TaskTransitionService $service): RedirectResponse
+    {
+        $service->hold($task, $request->user());
+
+        return back();
+    }
+
+    public function resumeWork(Request $request, Project $project, Task $task, TaskTransitionService $service): RedirectResponse
+    {
+        $service->resume($task, $request->user());
+
+        return back();
+    }
+
+    public function submit(Request $request, Project $project, Task $task, TaskTransitionService $service): RedirectResponse
+    {
+        $service->submit($task, $request->user());
+
+        return back();
     }
 }

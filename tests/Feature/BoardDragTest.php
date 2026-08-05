@@ -8,15 +8,21 @@
  *               drag visual tidak bisa diuji Pest, jadi ini menguji endpoint YANG
  *               SAMA dipanggil drop (`tasks.status`, identik TaskStatusCell) untuk
  *               membuktikan F-45 tetap ditegakkan server meski client sudah
- *               memfilter kolom tak-sah, dan C3 (segmen atas nama assignee, bukan
- *               pelaku drag) benar.
+ *               memfilter kolom tak-sah.
+ *               H7/F-138c (F-78): drag SEKARANG status SAJA, NOL segmen — TIDAK
+ *               PEDULI berapa assignee-nya (dulu C3/resolveSegmentWorker()
+ *               mendisambiguasi tunggal/nol/multi assignee KARENA drag dulu
+ *               membuka segmen; sekarang disambiguasi itu MOOT total karena
+ *               drag tidak pernah membuka segmen untuk siapa pun). Segmen
+ *               HANYA lewat Mulai/Lanjut eksplisit (TaskWorkActionsTest::D7).
  * DIPANGGIL   : php artisan test (Pest)
  * MEMANGGIL   : TaskController::updateStatus(), TaskTransitionService, TaskObserver
  * DATA MASUK  : -
  * DATA KELUAR : Assertion pass/fail
- * RISIKO      : Test C3 (segmen bukan atas nama admin) adalah pagar SATU-SATUNYA
- *               untuk bug yang ditemukan sesi ini — tanpa ini, admin yang sekadar
- *               menggeser kartu Board diam-diam tercatat sebagai "pekerja" di data KPI.
+ * RISIKO      : Test "drag = nol segmen SELALU" adalah pagar F-138c — kalau
+ *               regresi (drag diam-diam membuka segmen lagi), pelaku drag
+ *               (sering admin merapikan board) akan tercatat sebagai "pekerja"
+ *               di data KPI padahal cuma memindah kartu (bug asal C3 kembali).
  * ==========================================================
  */
 
@@ -60,7 +66,7 @@ function createDragTask(Project $project, TaskStatus $status, User $admin, array
     return $task;
 }
 
-test('drop maju +1 (TODO -> IN PROGRESS) changes status and opens a segment (F-41)', function () {
+test('drop maju +1 (TODO -> IN PROGRESS) changes status but opens NO segment (H7/F-138c, F-78 -- dulu buka F-41)', function () {
     $admin = User::factory()->admin()->create();
     $member = User::factory()->create(['organization_id' => $admin->organization_id]);
     $project = createDragProject($admin, [$member->id]);
@@ -74,7 +80,7 @@ test('drop maju +1 (TODO -> IN PROGRESS) changes status and opens a segment (F-4
 
     $response->assertSessionDoesntHaveErrors();
     expect($task->fresh()->task_status_id)->toBe($inProgress->id)
-        ->and($task->timeSegments()->whereNull('ended_at')->count())->toBe(1);
+        ->and($task->timeSegments()->count())->toBe(0);
 });
 
 test('a jump drop (TODO -> DONE) is REJECTED server-side even though the client should have prevented it (F-45)', function () {
@@ -150,7 +156,12 @@ test('a member cannot drag/drop a task assigned to someone else (F-95)', functio
     $response->assertForbidden();
 });
 
-test('admin dropping a task with a single assignee opens the segment for the ASSIGNEE, not the admin (C3)', function () {
+test('admin dropping a task with a single assignee STILL opens no segment (H7/F-138c, F-78 -- dulu C3 buka atas nama assignee)', function () {
+    // F-78: SEBELUM H7, drag membuka segmen dan C3 memastikan atas nama assignee
+    // (BUKAN admin yang menggeser). H7/F-138c menghapus pembukaan segmen dari
+    // drag SAMA SEKALI -- disambiguasi "siapa pekerjanya" jadi tidak relevan lagi
+    // untuk jalur ini, karena TIDAK ADA segmen yang dibuka SIAPA PUN. Assignee
+    // membuka sesinya SENDIRI lewat Mulai/Lanjut (TaskWorkActionsTest::D7).
     $admin = User::factory()->admin()->create();
     $member = User::factory()->create(['organization_id' => $admin->organization_id]);
     $project = createDragProject($admin, [$member->id]);
@@ -162,9 +173,8 @@ test('admin dropping a task with a single assignee opens the segment for the ASS
         'task_status_id' => $inProgress->id,
     ])->assertSessionDoesntHaveErrors();
 
-    $segment = $task->timeSegments()->whereNull('ended_at')->firstOrFail();
-    expect($segment->user_id)->toBe($member->id)
-        ->and($segment->user_id)->not->toBe($admin->id);
+    expect($task->fresh()->task_status_id)->toBe($inProgress->id)
+        ->and($task->timeSegments()->count())->toBe(0);
 });
 
 test('admin dropping a task with NO assignee opens no segment at all (C3, ambiguous worker)', function () {
@@ -199,7 +209,12 @@ test('admin dropping a task with MULTIPLE assignees opens no segment at all (C3,
         ->and($task->timeSegments()->count())->toBe(0);
 });
 
-test('a member dropping their OWN task still opens the segment under their own name as usual', function () {
+test('a member dropping their OWN task ALSO opens no segment now (H7/F-138c, F-78 -- dulu buka atas nama sendiri)', function () {
+    // F-78: SEBELUM H7 kasus ini (pelaku=assignee sendiri) adalah kasus "normal"
+    // C3 -- segmen dibuka atas nama diri sendiri. H7/F-138c MENYAMARATAKAN drag
+    // jadi status-saja TERLEPAS siapa pelakunya (member sendiri ATAU admin) --
+    // assignee WAJIB klik Mulai eksplisit sendiri untuk membuka sesi kerjanya
+    // (TaskWorkActionsTest::D1/D7), drag/dropdown TIDAK LAGI jalan pintas itu.
     $admin = User::factory()->admin()->create();
     $member = User::factory()->create(['organization_id' => $admin->organization_id]);
     $project = createDragProject($admin, [$member->id]);
@@ -211,6 +226,6 @@ test('a member dropping their OWN task still opens the segment under their own n
         'task_status_id' => $inProgress->id,
     ])->assertSessionDoesntHaveErrors();
 
-    $segment = $task->timeSegments()->whereNull('ended_at')->firstOrFail();
-    expect($segment->user_id)->toBe($member->id);
+    expect($task->fresh()->task_status_id)->toBe($inProgress->id)
+        ->and($task->timeSegments()->count())->toBe(0);
 });

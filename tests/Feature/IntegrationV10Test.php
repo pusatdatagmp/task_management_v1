@@ -117,14 +117,24 @@ test('a task travels create -> board+list -> drag -> comment/mention -> approve,
     // Pelaku = ASSIGNEE sendiri di sini supaya sekaligus jadi baseline untuk C3
     // (BoardDragTest sudah membuktikan kasus admin-menggeser-task-orang secara
     // terisolasi; alur ini fokus pada konsistensi lintas-fitur, bukan mengulang C3).
+    // F-78 (H7/F-138c): DULU drag/dropdown ke IN_PROGRESS otomatis buka segmen
+    // (assertion lama: F-112 segmen atas nama assignee). SEKARANG drag = STATUS
+    // SAJA, NOL segmen — assignee klik Mulai sendiri (baris di bawah) untuk
+    // benar-benar membuka sesi kerja, supaya assertion realisasi berikutnya
+    // (45 menit, 3 permukaan) tetap punya segmen nyata untuk dihitung.
     $this->actingAs($member)->patch(route('tasks.status', [$project, $task]), [
         'task_status_id' => $inProgress->id,
     ])->assertSessionDoesntHaveErrors();
 
     $task->refresh();
     expect($task->task_status_id)->toBe($inProgress->id);
+    expect($task->timeSegments()->count())->toBe(0); // F-138c: drag = status saja, nol segmen
 
-    // F-112: segmen dibuka atas nama ASSIGNEE (di sini juga pelaku, kasus paling umum).
+    // Task SUDAH is_work_state (dipindah drag di atas) tapi JEDA (nol segmen) --
+    // assignee klik Lanjut (BUKAN Mulai, itu khusus dari status todo) untuk
+    // benar-benar membuka sesi kerja. F-112 tetap benar: atas nama assignee yang
+    // klik, di sini juga pelaku, kasus paling umum.
+    $this->actingAs($member)->patch(route('tasks.resume', [$project, $task]))->assertSessionDoesntHaveErrors();
     $openSegment = $task->timeSegments()->whereNull('ended_at')->firstOrFail();
     expect($openSegment->user_id)->toBe($member->id);
 

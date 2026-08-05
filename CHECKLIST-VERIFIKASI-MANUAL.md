@@ -1,4 +1,4 @@
-# CHECKLIST VERIFIKASI MANUAL — F-97 (v0.8, 6 item) + v1.0 Board/Komentar/Log (4 item) + v1.2 H4-H5 (3 item) + v1.2 DS-1 (1 item) + v1.2 DS-4b (1 item)
+# CHECKLIST VERIFIKASI MANUAL — F-97 (v0.8, 6 item) + v1.0 Board/Komentar/Log (4 item) + v1.2 H4-H5 (3 item) + v1.2 DS-1 (1 item) + v1.2 DS-4b (1 item) + v1.2 H7 (1 item)
 
 > **Kenapa file ini ada:** Chrome extension untuk Claude Code absen 12+ sesi berturut.
 > 12 fitur di bawah SUDAH lulus test otomatis (unit + feature HTTP end-to-end di
@@ -700,9 +700,56 @@ halaman (bukan cuma Setelan), member tetap 403 tapi ikut lihat tema org.
 
 ---
 
+## 19. Model waktu kerja eksplisit — Mulai/Hold/Lanjut/Submit (v1.2 H7, F-132/F-138)
+
+> Chrome extension **absen lagi** sesi ini (percobaan connect gagal) — 4 tombol
+> baru + badge Jeda cuma lulus 434 test otomatis HTTP (MySQL) + `tsc`/build/pint
+> bersih, **belum pernah dilihat mata manusia**. Ini perubahan PERILAKU INTI
+> (segmen kerja TIDAK LAGI buka otomatis saat drag/dropdown/reject — F-138),
+> jadi item ini kritis: kalau badge/tombol salah tampil, assignee bisa bingung
+> apakah jam kerjanya sedang tercatat atau tidak.
+>
+> **Data uji SUDAH disiapkan** (tidak perlu bikin dari nol): task **"H7 Browser
+> Verify Task"** (id 5), project **"mbaleni"** (id 2), assignee
+> **asep@deevatech.test** / `password`, status awal todo, tanpa checklist item.
+> WorkSchedule 24 jam sudah dibuat untuk organisasi ini supaya cap jam kerja
+> F-57 tidak mengganggu verifikasi visual. URL langsung: `/projects/2/tasks/5`.
+
+1. Login **asep@deevatech.test** / `password`. Buka `/projects/2/tasks/5`.
+   Card "Status": tombol **Mulai** harus tampil (satu-satunya tombol, status
+   masih todo). Belum ada badge counter di atas judul.
+2. Klik **Mulai**. Harus terjadi SEKALIGUS: status berubah ke status
+   is_work_state project ini (mis. "IN PROGRESS"), badge **HIJAU** "Sedang
+   dikerjakan" muncul di atas judul, tombol berubah jadi **Hold** + **Submit**.
+3. Tunggu ±10 detik, klik **Hold**. Badge harus berubah jadi **ABU-ABU
+   "Jeda"** (bukan hijau lagi), tombol berubah jadi **Lanjut** + **Submit**.
+4. Klik **Lanjut**. Badge kembali **HIJAU**, tombol kembali **Hold** + **Submit**.
+   Angka counter harus melanjutkan akumulasi sebelumnya, BUKAN reset ke 0.
+5. Klik **Submit**. Status berubah ke "REVIEW", badge & tombol kerja **HILANG**
+   dari halaman (task bukan lagi is_work_state).
+6. Login **admin@deevatech.test** / `password` (tab/browser lain). Buka task
+   yang sama, klik **Tolak** di card Status, isi alasan bebas.
+   Status kembali ke "IN PROGRESS", TAPI badge yang tampil **ABU-ABU "Jeda"**
+   (BUKAN hijau) — buktikan F-138(d): reject TIDAK otomatis melanjutkan sesi kerja.
+7. Login lagi **asep@deevatech.test** — tombol yang tampil **Lanjut** + **Submit**
+   (BUKAN Mulai — task sudah pernah dimulai sebelumnya, ini state jeda).
+8. Buka `/projects/2/board`. Buat 1 task baru (todo, assignee asep, lewat
+   halaman Tugas biasa) kalau perlu, lalu **drag kartu itu** dari kolom TODO ke
+   kolom dikerjakan. Status pindah kolom seperti biasa, TAPI kartu **TIDAK**
+   menampilkan badge counter — buktikan F-138(c): drag = status saja, nol
+   segmen, sampai assignee klik Mulai sendiri di halaman detail.
+
+**Hasil diharapkan:** badge hijau HANYA saat sesi aktif, abu-abu "Jeda" saat
+dihold/direject, tombol berubah tepat sesuai state (Mulai/Hold+Submit/
+Lanjut+Submit/tidak ada), drag TIDAK PERNAH memicu badge/segmen otomatis.
+
+[ ] LULUS — dicoret Boss tanggal: ______
+
+---
+
 ## SETELAH SEMUA DICORET
 
-Kabari Jarvis "F-97 tutup, X/18 lulus" + status tiap item (atau sebutkan
+Kabari Jarvis "F-97 tutup, X/19 lulus" + status tiap item (atau sebutkan
 item mana yang gagal) supaya status finding **F-97** di `docs/04-FINDING-REGISTRY.md`
 bisa diupdate dari 🟡 TERBUKA ke 🟢. Jarvis tidak akan mengubah dokumen ini sendiri
 tanpa konfirmasi.

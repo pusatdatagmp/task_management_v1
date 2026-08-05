@@ -5,16 +5,18 @@
  * MODUL       : TaskObserver
  * KLASIFIKASI : DOMAIN
  * TUJUAN      : Tulang punggung alur task (F-22, F-51). Menangani F-21 (completed_at),
- *               F-41 (buka/tutup task_time_segments), rejection_count++ saat ditolak,
- *               F-39 (freeze actual_minutes saat approve), F-79 (description_plain
- *               untuk FULLTEXT search), dan trigger notifikasi #3/#6/#7/#8 (F-35) —
- *               SEMUA otomatis dari perubahan atribut Task, BUKAN dipanggil manual
- *               di controller.
+ *               F-41 (TUTUP task_time_segments saat keluar work_state — H7/F-138:
+ *               BUKA segmen DIPINDAH ke TaskTransitionService::start()/resume(),
+ *               observer ini TIDAK PERNAH membuka segmen lagi), rejection_count++
+ *               saat ditolak, F-39 (freeze actual_minutes saat approve), F-79
+ *               (description_plain untuk FULLTEXT search), dan trigger notifikasi
+ *               #3/#6/#7/#8 (F-35) — SEMUA otomatis dari perubahan atribut Task,
+ *               BUKAN dipanggil manual di controller.
  * DIPANGGIL   : Laravel (event Eloquent) via #[ObservedBy] di App\Models\Task
  * MEMANGGIL   : ActivityLog, TaskStatus, TaskTimeSegment, TaskNotification
  * DATA MASUK  : Perubahan atribut Task (khususnya task_status_id, description)
- * DATA KELUAR : activity_logs, task_time_segments, tasks.completed_at/actual_minutes/
- *               rejection_count/description_plain, notifications
+ * DATA KELUAR : activity_logs, task_time_segments (TUTUP saja), tasks.completed_at/
+ *               actual_minutes/rejection_count/description_plain, notifications
  * RISIKO      : SUMBER : 03-BUSINESS-FLOW §1/§2 — logika di sini TIDAK BOLEH cek nama
  *               status (F-44), hanya flag is_work_state/is_review/is_completed.
  *               Freeze actual_minutes (F-39) sekarang pakai Task::calculateActualMinutes()
@@ -27,10 +29,11 @@
  *               notifikasi atas aksinya sendiri, di SEMUA trigger di file ini.
  *               F-84 — trigger #3 (generik) DIAM kalau transisi sudah ditangkap
  *               #6/#7/#8 (lebih spesifik), supaya 1 aksi tidak pernah kirim 2 notif.
- *               C3 (v1.0 H2) — segmen F-41 dibuka atas nama ASSIGNEE, bukan pelaku
- *               transisi (lihat resolveSegmentWorker()) — penting karena Board (drag)
- *               DAN dropdown lama sama-sama admin bisa menggeser task orang lain;
- *               segmen tidak boleh diam-diam tercatat sebagai kerja admin.
+ *               H7/F-138 — `resolveSegmentWorker()` (C3, v1.0 H2) DIHAPUS TOTAL:
+ *               dead code sejak buka-segmen-otomatis dicabut, TIDAK ADA pemanggil
+ *               tersisa. Disambiguasi pelaku-vs-assignee yang dulu dilakukannya
+ *               kini tidak perlu lagi — start()/resume() SELALU personal (F-95,
+ *               assignee yang klik = assignee yang dicatat, nol ambiguitas).
  * ==========================================================
  */
 
@@ -146,27 +149,17 @@ class TaskObserver
             $this->notifyAssignees($task, TaskNotification::STATUS_CHANGED);
         }
 
-        // F-41/F-48: masuk work_state -> buka segmen baru. Tutup dulu segmen yang
-        // masih terbuka (guard F-48: maks 1 segmen terbuka per task).
-        // C3 (v1.0 H2): segmen HANYA atas nama assignee — resolveSegmentWorker()
-        // bisa balikin null (tidak ada pekerja jelas), jadi TIDAK ADA segmen dibuka
-        // sama sekali kalau begitu (guard di bawah).
-        if ($newStatus?->is_work_state && ! $oldStatus?->is_work_state) {
-            TaskTimeSegment::where('task_id', $task->id)->whereNull('ended_at')->update(['ended_at' => now()]);
-
-            $workerId = $this->resolveSegmentWorker($task);
-
-            if ($workerId !== null) {
-                TaskTimeSegment::create([
-                    'organization_id' => $task->organization_id,
-                    'task_id' => $task->id,
-                    'user_id' => $workerId,
-                    'started_at' => now(),
-                ]);
-            }
-        }
+        // H7/F-138a/c/d: masuk work_state TIDAK LAGI membuka segmen di sini --
+        // BLOK LAMA DIHAPUS (dulu buka otomatis lewat resolveSegmentWorker()).
+        // Segmen SEKARANG HANYA terbuka lewat aksi eksplisit Mulai/Lanjut
+        // (TaskTransitionService::start()/resume()), jadi drag ke kolom dikerjakan
+        // (F-138c) DAN reject admin (F-138d, mundur review->work_state) sekarang
+        // status SAJA, nol efek segmen — task mendarat di JEDA (F-138b, turunan
+        // dari nol segmen terbuka), assignee klik Lanjut sendiri.
 
         // F-41: keluar work_state (mis. submit ke REVIEW) -> tutup segmen berjalan.
+        // TIDAK BERUBAH oleh H7 -- berlaku SEMUA jalur keluar work_state (dropdown,
+        // drag ke review, TaskTransitionService::submit()), SATU tempat menutup.
         if (! $newStatus?->is_work_state && $oldStatus?->is_work_state) {
             TaskTimeSegment::where('task_id', $task->id)->whereNull('ended_at')->update(['ended_at' => now()]);
         }
@@ -212,39 +205,6 @@ class TaskObserver
     public function deleted(Task $task): void
     {
         $this->logActivity($task, 'deleted', null, null);
-    }
-
-    /**
-     * KONTRAK: SIAPA yang segmen kerja dibuka atas namanya saat task masuk
-     * is_work_state (F-41). C3 (v1.0 H2, ditemukan lewat drag Board tapi berlaku
-     * di SEMUA jalur ubah status — dropdown lama maupun drag — karena keduanya
-     * lewat observer yang SAMA, F-111).
-     *
-     * ATURAN: kalau PELAKU transisi (Auth::id()) sendiri salah satu assignee
-     * task ini -> dialah pekerjanya, segmen atas namanya (kasus normal: member
-     * mengerjakan task sendiri). Kalau BUKAN (mis. admin menggeser status task
-     * orang lain, drag ATAU dropdown) -> admin BUKAN pekerja, jadi:
-     *   - assignee TUNGGAL -> segmen dibuka atas nama assignee itu
-     *   - 0 atau 2+ assignee -> AMBIGU, TIDAK ADA segmen dibuka sama sekali;
-     *     assignee yang bersangkutan mulai sendiri dari detail/My Tasks nanti.
-     *
-     * RISIKO: sebelum perbaikan ini, baris ini SELALU pakai Auth::id() (fallback
-     * $task->created_by kalau null) — admin yang menggeser task orang lain diam-
-     * diam tercatat sebagai "pekerja"-nya. Salah secara substansi (realisasi
-     * jadi milik orang yang tidak benar-benar mengerjakan) walau tidak pernah
-     * menyalahi F-41 secara skema. F-78: 2 test lama (`TaskTransitionTest.php`)
-     * disesuaikan SETUP-nya (bukan assertion) untuk kasus ini, dilaporkan di H2.
-     */
-    private function resolveSegmentWorker(Task $task): ?int
-    {
-        $assigneeIds = $task->assignees()->pluck('users.id');
-        $actorId = Auth::id();
-
-        if ($actorId !== null && $assigneeIds->contains($actorId)) {
-            return $actorId;
-        }
-
-        return $assigneeIds->count() === 1 ? $assigneeIds->first() : null;
     }
 
     /**

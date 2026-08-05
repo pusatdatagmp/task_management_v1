@@ -67,15 +67,17 @@ test('forward transition can only go to position+1, TODO to DONE is rejected (F-
     expect($task->fresh()->task_status_id)->toBe($todo->id);
 });
 
-test('TODO to IN_PROGRESS is allowed and opens a time segment (F-41)', function () {
+test('TODO to IN_PROGRESS is allowed and opens NO time segment (H7/F-138a, F-78 -- dulu auto-buka F-41)', function () {
+    // F-78: perilaku SENGAJA diubah H7 (F-138a) -- segmen dulu OTOMATIS terbuka
+    // di sini (assertion lama: count===1), sekarang HARUS 0 karena buka segmen
+    // dipindah ke aksi eksplisit Mulai (TaskTransitionService::start(), diuji
+    // penuh di TaskWorkActionsTest::D1/D7). Test ini tetap membuktikan sisi lain
+    // yang TIDAK berubah: dropdown/drag masih bisa memindah status TODO->IN_PROGRESS.
     $admin = User::factory()->admin()->create();
     $project = createTransitionProject($admin);
     $todo = TaskStatus::where('project_id', $project->id)->where('position', 0)->firstOrFail();
     $inProgress = TaskStatus::where('project_id', $project->id)->where('is_work_state', true)->firstOrFail();
     $task = createTransitionTask($project, $todo, $admin);
-    // C3 (v1.0 H2): segmen HANYA dibuka atas nama assignee. Admin di sini WAJIB
-    // jadi assignee task-nya sendiri supaya skenario "F-41: segmen terbuka" tetap
-    // punya pekerja yang jelas — bukan lagi admin mengerjakan task orang lain.
     $task->assignees()->sync([$admin->id]);
 
     $response = $this->actingAs($admin)->patch(route('tasks.status', [$project, $task]), [
@@ -84,7 +86,7 @@ test('TODO to IN_PROGRESS is allowed and opens a time segment (F-41)', function 
 
     $response->assertSessionDoesntHaveErrors();
     expect($task->fresh()->task_status_id)->toBe($inProgress->id)
-        ->and($task->timeSegments()->whereNull('ended_at')->count())->toBe(1);
+        ->and($task->timeSegments()->whereNull('ended_at')->count())->toBe(0);
 });
 
 test('IN_PROGRESS to REVIEW is allowed and closes the open time segment', function () {
@@ -107,13 +109,15 @@ test('IN_PROGRESS to REVIEW is allowed and closes the open time segment', functi
     expect($task->timeSegments()->whereNull('ended_at')->count())->toBe(0);
 });
 
-test('rejecting a task in review increments rejection_count and opens a new segment', function () {
+test('rejecting a task in review increments rejection_count and leaves it PAUSED, zero open segments (H7/F-138d, F-78 -- dulu auto-buka)', function () {
+    // F-78: perilaku SENGAJA diubah H7 (F-138d) -- reject dulu OTOMATIS membuka
+    // segmen baru (assertion lama: count===1). Sekarang reject = JEDA murni (nol
+    // segmen terbuka, turunan F-138b) -- assignee WAJIB klik Lanjut sendiri
+    // (diuji penuh di TaskWorkActionsTest::D3).
     $admin = User::factory()->admin()->create();
     $project = createTransitionProject($admin);
     $review = TaskStatus::where('project_id', $project->id)->where('is_review', true)->firstOrFail();
     $task = createTransitionTask($project, $review, $admin);
-    // C3 (v1.0 H2): sama seperti test F-41 di atas — admin di sini WAJIB assignee
-    // supaya segmen re-open ("mundur ke is_work_state" saat reject) punya pekerja jelas.
     $task->assignees()->sync([$admin->id]);
 
     $response = $this->actingAs($admin)->patch(route('tasks.reject', [$project, $task]), [
@@ -124,7 +128,8 @@ test('rejecting a task in review increments rejection_count and opens a new segm
     $task->refresh();
     expect($task->rejection_count)->toBe(1)
         ->and($task->taskStatus->is_work_state)->toBeTrue()
-        ->and($task->timeSegments()->whereNull('ended_at')->count())->toBe(1);
+        ->and($task->timeSegments()->whereNull('ended_at')->count())->toBe(0)
+        ->and($task->computeWorkState())->toBe('dikerjakan-jeda');
 });
 
 test('approving a task in review freezes actual_minutes and fills completed_at (F-39)', function () {
@@ -191,6 +196,11 @@ test('member cannot change the status of a task assigned to someone else', funct
  * jendela kerja (F-57) — jendela di test ini dibuat 24 jam penuh supaya assert
  * murni menguji AKUMULASI, bukan cap jendela (itu sudah diuji WorkScheduleTest/
  * BusinessHoursCalculator terpisah).
+ *
+ * F-78 (H7/F-138): "mulai kerja" & "reject->kerja lagi" DULU lewat dropdown
+ * (buka segmen otomatis). SEKARANG lewat aksi eksplisit tasks.start/tasks.resume
+ * (TaskTransitionService::start()/resume()) — assertion akhir (75 menit, 2
+ * segmen, status done) TETAP IDENTIK, cuma mekanisme buka segmennya berubah.
  */
 test('actual_minutes accumulates across multiple work/reject/rework segments end-to-end (F3)', function () {
     $admin = User::factory()->admin()->create();
@@ -199,8 +209,6 @@ test('actual_minutes accumulates across multiple work/reject/rework segments end
     $project->members()->sync([$admin->id, $member->id]);
 
     $todo = TaskStatus::where('project_id', $project->id)->where('position', 0)->firstOrFail();
-    $inProgress = TaskStatus::where('project_id', $project->id)->where('is_work_state', true)->firstOrFail();
-    $review = TaskStatus::where('project_id', $project->id)->where('is_review', true)->firstOrFail();
     $done = TaskStatus::where('project_id', $project->id)->where('is_completed', true)->firstOrFail();
 
     $task = createTransitionTask($project, $todo, $admin);
@@ -220,28 +228,26 @@ test('actual_minutes accumulates across multiple work/reject/rework segments end
         'created_by' => $admin->id,
     ]);
 
-    // T0: member mulai kerja -> segmen 1 dibuka.
+    // T0: member klik Mulai -> segmen 1 dibuka (H7, GANTI dropdown TODO->IN_PROGRESS).
     $this->travelTo($anchor->copy());
-    $this->actingAs($member)->patch(route('tasks.status', [$project, $task]), [
-        'task_status_id' => $inProgress->id,
-    ])->assertSessionDoesntHaveErrors();
+    $this->actingAs($member)->patch(route('tasks.start', [$project, $task]))->assertSessionDoesntHaveErrors();
 
-    // T0+30m: member submit review -> segmen 1 ditutup (30 menit).
+    // T0+30m: member klik Submit -> segmen 1 ditutup (30 menit).
     $this->travelTo($anchor->copy()->addMinutes(30));
-    $this->actingAs($member)->patch(route('tasks.status', [$project, $task]), [
-        'task_status_id' => $review->id,
-    ])->assertSessionDoesntHaveErrors();
+    $this->actingAs($member)->patch(route('tasks.submit', [$project, $task]))->assertSessionDoesntHaveErrors();
 
-    // Admin tolak -> rejection_count++, segmen 2 dibuka (mundur ke is_work_state).
+    // Admin tolak -> rejection_count++, JEDA (H7/F-138d, nol segmen -- GANTI
+    // asumsi lama "segmen 2 otomatis terbuka").
     $this->actingAs($admin)->patch(route('tasks.reject', [$project, $task]), [
         'reason' => 'Revisi diperlukan.',
     ])->assertRedirect();
 
-    // T0+30m+45m: member submit review lagi -> segmen 2 ditutup (45 menit).
+    // Member klik Lanjut -> BARU segmen 2 dibuka (H7).
+    $this->actingAs($member)->patch(route('tasks.resume', [$project, $task]))->assertSessionDoesntHaveErrors();
+
+    // T0+30m+45m: member klik Submit lagi -> segmen 2 ditutup (45 menit).
     $this->travelTo($anchor->copy()->addMinutes(30)->addMinutes(45));
-    $this->actingAs($member)->patch(route('tasks.status', [$project, $task]), [
-        'task_status_id' => $review->id,
-    ])->assertSessionDoesntHaveErrors();
+    $this->actingAs($member)->patch(route('tasks.submit', [$project, $task]))->assertSessionDoesntHaveErrors();
 
     // Admin approve -> FREEZE actual_minutes (F-39).
     $this->actingAs($admin)->patch(route('tasks.approve', [$project, $task]), [

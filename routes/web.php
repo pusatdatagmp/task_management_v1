@@ -51,6 +51,14 @@ Route::middleware(['auth'])->scopeBindings()->group(function () {
     Route::get('projects/{project}/tasks', [TaskController::class, 'index'])->name('tasks.index');
     Route::patch('projects/{project}/tasks/{task}/status', [TaskController::class, 'updateStatus'])->name('tasks.status');
 
+    // H7 (F-132/F-138): 4 tombol Mulai/Hold/Lanjut/Submit di detail task --
+    // assignee-only (F-95, ditegakkan di TaskTransitionService), BUKAN admin-only
+    // -- makanya di routes/web.php (auth biasa), bukan routes/admin.php.
+    Route::patch('projects/{project}/tasks/{task}/start', [TaskController::class, 'start'])->name('tasks.start');
+    Route::patch('projects/{project}/tasks/{task}/hold', [TaskController::class, 'hold'])->name('tasks.hold');
+    Route::patch('projects/{project}/tasks/{task}/resume', [TaskController::class, 'resumeWork'])->name('tasks.resume');
+    Route::patch('projects/{project}/tasks/{task}/submit', [TaskController::class, 'submit'])->name('tasks.submit');
+
     // v1.0 H1 (F-109): Board = tampilan alternatif List View, gating IDENTIK
     // TaskController::show() (404 untuk member project lain, bukan 403).
     Route::get('projects/{project}/board', [BoardController::class, 'index'])->name('tasks.board');

@@ -6,15 +6,18 @@
 //               member tidak boleh masuk form edit (F-29).
 // DIPANGGIL   : TaskController::show()
 // MEMANGGIL   : TaskStatusCell (ubah status lewat jalur F-45/F-28 yang sama dipakai
-//               tasks/index & my-tasks), TaskAttachments (upload/download/hapus
-//               lampiran output, v0.8 H5/F-49), TaskComments (diskusi+mention,
-//               v1.0 H3/F-113), Card "Riwayat" (activity_logs read-only, v1.0 H4/
-//               F-95/F-106 — label SUDAH manusiawi dari server, nol logika di sini),
-//               route('tasks.edit'/'tasks.destroy'/'tasks.show')
-// DATA MASUK  : project, task (description_html SUDAH DISANITASI di server, F-82 A3),
+//               tasks/index & my-tasks), TaskWorkActions (H7/F-132/F-138 — tombol
+//               Mulai/Hold/Lanjut/Submit, assignee-only), TaskAttachments (upload/
+//               download/hapus lampiran output, v0.8 H5/F-49), TaskComments
+//               (diskusi+mention, v1.0 H3/F-113), Card "Riwayat" (activity_logs
+//               read-only, v1.0 H4/F-95/F-106 — label SUDAH manusiawi dari server,
+//               nol logika di sini), route('tasks.edit'/'tasks.destroy'/'tasks.show')
+// DATA MASUK  : project, task (description_html SUDAH DISANITASI di server, F-82 A3;
+//               work_state H7 5-nilai task-wide dari Task::computeWorkState()),
 //               statuses[]. F-90: TIDAK ADA lagi prop 'isAdmin' — permission dibaca
 //               dari auth.permissions (shared global, HandleInertiaRequests).
-// DATA KELUAR : navigasi edit/hapus (task.manage), aksi ubah status (TaskStatusCell)
+// DATA KELUAR : navigasi edit/hapus (task.manage), aksi ubah status (TaskStatusCell),
+//               aksi Mulai/Hold/Lanjut/Submit (TaskWorkActions, H7)
 // RISIKO      : description_html dirender via dangerouslySetInnerHTML — AMAN karena
 //               backend (TaskController::show()) sudah sanitasi pakai Symfony
 //               HtmlSanitizer sebelum sampai ke props ini. JANGAN render field HTML
@@ -26,11 +29,13 @@ import TaskChecklist from '@/components/task-checklist';
 import TaskComments from '@/components/task-comments';
 import TaskLiveCounter, { type LiveCounterData } from '@/components/task-live-counter';
 import TaskStatusCell, { type TaskStatusOption } from '@/components/task-status-cell';
+import TaskWorkActions, { type WorkState } from '@/components/task-work-actions';
 import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import AppLayout from '@/layouts/app-layout';
 import { PRIORITY_QUADRANT_COLOR, PRIORITY_QUADRANT_LABEL, type PriorityQuadrant } from '@/lib/priority-quadrant';
+import { confirmAction } from '@/lib/swal';
 import { type BreadcrumbItem, type SharedData } from '@/types';
 import { Head, Link, router, usePage } from '@inertiajs/react';
 
@@ -91,6 +96,8 @@ interface TaskDetail {
     original_due_date: string | null;
     description_html: string | null;
     task_status: TaskStatusOption;
+    // H7/F-132/F-138: state 5-nilai task-wide, dihitung Task::computeWorkState() server.
+    work_state: WorkState;
     assignees: UserOption[];
     parent: TaskLink | null;
     children: TaskLink[];
@@ -124,6 +131,9 @@ function timeAgo(isoDate: string): string {
 export default function TaskShow({ project, task, statuses, projectMembers }: TaskShowProps) {
     const { auth } = usePage<SharedData>().props;
     const can = (permission: string) => auth.permissions.includes(permission);
+    // H7/F-95: tombol Mulai/Hold/Lanjut/Submit HANYA assignee -- dihitung dari
+    // daftar assignee yang SUDAH dikirim server, nol permission baru (F-95).
+    const isAssignee = task.assignees.some((a) => a.id === auth.user.id);
 
     const breadcrumbs: BreadcrumbItem[] = [
         { title: 'Project', href: '/projects' },
@@ -132,8 +142,8 @@ export default function TaskShow({ project, task, statuses, projectMembers }: Ta
         { title: task.title, href: '#' },
     ];
 
-    const destroy = () => {
-        if (!confirm(`Hapus task "${task.title}"?`)) return;
+    const destroy = async () => {
+        if (!(await confirmAction(`Hapus task "${task.title}"?`, { danger: true }))) return;
         router.delete(route('tasks.destroy', [project.id, task.id]));
     };
 
@@ -166,8 +176,13 @@ export default function TaskShow({ project, task, statuses, projectMembers }: Ta
                                 Subtask dari: {task.parent.title}
                             </Link>
                         )}
-                        {/* B1: badge besar, tersembunyi otomatis kalau bukan is_work_state (F-44). */}
-                        <TaskLiveCounter isWorkState={task.task_status.is_work_state} liveCounter={task.live_counter} />
+                        {/* B1: badge besar, tersembunyi otomatis kalau bukan is_work_state (F-44).
+                            H7: isPaused dari work_state task-wide (F-138b/f), BUKAN per-user. */}
+                        <TaskLiveCounter
+                            isWorkState={task.task_status.is_work_state}
+                            liveCounter={task.live_counter}
+                            isPaused={task.work_state === 'dikerjakan-jeda'}
+                        />
                     </div>
 
                     {can('task.manage') && (
@@ -260,7 +275,7 @@ export default function TaskShow({ project, task, statuses, projectMembers }: Ta
                             <CardHeader>
                                 <CardTitle>Status</CardTitle>
                             </CardHeader>
-                            <CardContent>
+                            <CardContent className="flex flex-col gap-4">
                                 <TaskStatusCell
                                     projectId={project.id}
                                     task={task}
@@ -268,6 +283,15 @@ export default function TaskShow({ project, task, statuses, projectMembers }: Ta
                                     currentUserId={auth.user.id}
                                     canManageTask={can('task.manage')}
                                     canApprove={can('task.approve')}
+                                />
+                                {/* H7/F-132/F-138: Mulai/Hold/Lanjut/Submit -- assignee-only,
+                                    tombol berbeda per work_state, nol render kalau bukan assignee
+                                    atau status sudah review/selesai (komponen sendiri yang jaga). */}
+                                <TaskWorkActions
+                                    projectId={project.id}
+                                    taskId={task.id}
+                                    workState={task.work_state}
+                                    isAssignee={isAssignee}
                                 />
                             </CardContent>
                         </Card>
