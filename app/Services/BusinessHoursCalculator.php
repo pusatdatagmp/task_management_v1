@@ -188,10 +188,15 @@ class BusinessHoursCalculator
      * itu (F-66, F-44 — bukan nama hari hardcode). $schedule null (tidak ada
      * config berlaku hari itu) = bukan hari kerja (F-42/F-40).
      *
+     * PUBLIC (AE-2, F-158): direuse langsung oleh HolidayShiftResolver —
+     * SATU sumber kebenaran business-day yang sama dipakai overlapMinutes()/
+     * countBusinessDays() DAN Resolver Automation Engine, bukan kalkulator
+     * ketiga yang terpisah (F-72/F-76).
+     *
      * @param  Collection<int, WorkSchedule>  $schedules
      * @param  Collection<int, int>  $holidayDates  keyed by 'Y-m-d' (hasil flip(), F-85 — sudah di-index SEKALI oleh caller)
      */
-    private function isBusinessDay(Carbon $day, Collection $schedules, Collection $holidayDates): bool
+    public function isBusinessDay(Carbon $day, Collection $schedules, Collection $holidayDates): bool
     {
         if ($holidayDates->has($day->toDateString())) {
             return false;
