@@ -106,6 +106,15 @@ test('TimeDeltaGuard: Pass kalau interval sudah tercapai', function () {
     expect($decision)->toBeNull();
 });
 
+test('TimeDeltaGuard: Pass kalau interval_unit NULL walau sudah pernah generate (AE-2b, calendar_anchored tanpa interval)', function () {
+    $template = createGuardTestTemplate(['interval_value' => null, 'interval_unit' => null, 'anchor_strategy' => 'calendar_anchored']);
+    $template->update(['last_generated_date' => '2026-08-03']); // "kemarin", tanpa interval tetap Pass
+
+    $decision = (new TimeDeltaGuard)->check($template->refresh(), ctxAt(Carbon::create(2026, 8, 4)));
+
+    expect($decision)->toBeNull();
+});
+
 // ---------------------------------------------------------------------------
 // DateWindowGuard
 // ---------------------------------------------------------------------------

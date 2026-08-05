@@ -4,6 +4,9 @@
 // TUJUAN      : Form buat template recurring baru (admin only, F-46, task.manage).
 //               task_type HANYA daily/weekly/monthly (A2) — tentative/project tidak
 //               berulang, tidak muncul di sini (beda dari tasks/create.tsx).
+//               AE-2b (F-158): seksi "Konfigurasi Automation Engine" — Boss atur
+//               anchor_strategy A/B/C + guard (date_window/quota) yang DIBACA
+//               Pipeline AE-2/3, form ini MURNI CRUD (nol logika jadwal di sini).
 // DIPANGGIL   : TaskTemplateController::create()
 // MEMANGGIL   : route('task-templates.store')
 // DATA MASUK  : project {id,name}, members[] (checkbox default_assignees)
@@ -13,6 +16,9 @@
 //               bukan dikirim kosong lalu diabaikan diam-diam di server.
 //               checklist_items (F-123) SELALU kirim SELURUH daftar (bukan diff) —
 //               server hapus-lalu-buat-ulang tiap simpan (TaskTemplateController).
+//               F-74: `anchor_day_type` adalah SELECT (bukan 2 field opsional
+//               independen) — structural mencegah day_of_week & day_of_month
+//               terkirim BERSAMAAN atau KEDUANYA kosong untuk calendar_anchored.
 // ==========================================================
 
 import HeadingSmall from '@/components/heading-small';
@@ -49,6 +55,33 @@ const DAY_OPTIONS = [
     { value: '7', label: 'Minggu' },
 ];
 
+// C3 (opsional, prompt AE-2b): ringkasan teks murni dari config form -- BUKAN
+// simulasi tanggal berikutnya (itu tugas HolidayShiftResolver di server, tidak
+// diduplikasi di sini). Cuma bantu Boss membaca efek pilihannya sendiri.
+function describeSchedule(
+    anchorStrategy: string,
+    intervalValue: number,
+    intervalUnit: string,
+    dayType: string,
+    dayOfWeek: number,
+    dayOfMonth: number,
+): string {
+    const dayLabel = (value: number) => DAY_OPTIONS.find((d) => d.value === String(value))?.label ?? '?';
+    const unitLabel: Record<string, string> = { day: 'hari', week: 'minggu', month: 'bulan' };
+
+    if (anchorStrategy === 'time_based') {
+        return `Preview: generate tiap ${intervalValue} ${unitLabel[intervalUnit] ?? intervalUnit}, dihitung dari terakhir kali generate (otomatis geser kalau jatuh di libur/akhir pekan).`;
+    }
+    if (anchorStrategy === 'completion_based') {
+        return `Preview: generate tiap ${intervalValue} ${unitLabel[intervalUnit] ?? intervalUnit} SETELAH instance periode sebelumnya SELESAI — kalau belum, ditunda dan admin dinotifikasi sekali.`;
+    }
+    if (dayType === 'week') {
+        return `Preview: generate tiap hari ${dayLabel(dayOfWeek)} (geser ke hari kerja berikutnya kalau libur/akhir pekan).`;
+    }
+
+    return `Preview: generate tiap tanggal ${dayOfMonth} (digeser ke hari TERAKHIR bulan itu kalau bulan lebih pendek, lalu ke hari kerja berikutnya kalau libur).`;
+}
+
 export default function TaskTemplateCreate({ project, members }: TaskTemplateCreateProps) {
     const breadcrumbs: BreadcrumbItem[] = [
         { title: 'Project', href: '/projects' },
@@ -71,6 +104,18 @@ export default function TaskTemplateCreate({ project, members }: TaskTemplateCre
         // F-123/F-127: disalin ke task_checklist_items instance TIAP kali template
         // ini melahirkan task (GenerateRecurringTasksCommand). Urutan array = position.
         checklist_items: [] as string[],
+
+        // AE-2b (F-158): dibaca Pipeline AE-2/3, lihat header modul.
+        anchor_strategy: 'time_based' as 'time_based' | 'completion_based' | 'calendar_anchored',
+        interval_value: 1,
+        interval_unit: 'day' as 'day' | 'week' | 'month',
+        anchor_day_type: 'week' as 'week' | 'month', // F-74: diskriminator RADIO (via Select), bukan 2 field independen
+        anchor_day_of_week: 1,
+        anchor_day_of_month: 1,
+        date_window_weekdays: [] as number[],
+        date_window_dom_min: '' as number | '',
+        date_window_dom_max: '' as number | '',
+        max_active_instances: '' as number | '',
     });
 
     const [newChecklistText, setNewChecklistText] = useState('');
@@ -92,6 +137,11 @@ export default function TaskTemplateCreate({ project, members }: TaskTemplateCre
     // weekly {day_of_week}, monthly {day_of_month}. day_of_week/day_of_month lokal
     // (state form) TETAP ikut terkirim juga, tapi TaskTemplateController hanya
     // membaca field yang lolos validasi (recurrence_config), jadi aman diabaikan.
+    //
+    // AE-2b: anchor_config dibentuk dari anchor_day_type (F-74 diskriminator) --
+    // SELALU tepat 1 key (day_of_week XOR day_of_month), tidak pernah dua-duanya.
+    // date_window_config dikirim APA ADANYA (kosong = tak ada batasan, dibaca
+    // DateWindowGuard di server).
     transform((formData) => ({
         ...formData,
         recurrence_config:
@@ -100,6 +150,18 @@ export default function TaskTemplateCreate({ project, members }: TaskTemplateCre
                 : formData.task_type === 'monthly'
                   ? { day_of_month: formData.day_of_month }
                   : {},
+        anchor_config:
+            formData.anchor_strategy === 'calendar_anchored'
+                ? formData.anchor_day_type === 'week'
+                    ? { day_of_week: formData.anchor_day_of_week }
+                    : { day_of_month: formData.anchor_day_of_month }
+                : {},
+        date_window_config: {
+            weekdays: formData.date_window_weekdays,
+            dom_min: formData.date_window_dom_min === '' ? undefined : formData.date_window_dom_min,
+            dom_max: formData.date_window_dom_max === '' ? undefined : formData.date_window_dom_max,
+        },
+        max_active_instances: formData.max_active_instances === '' ? undefined : formData.max_active_instances,
     }));
 
     const submit: FormEventHandler = (e) => {
@@ -213,6 +275,212 @@ export default function TaskTemplateCreate({ project, members }: TaskTemplateCre
                                     <InputError message={errorBag['recurrence_config.day_of_month']} />
                                 </div>
                             )}
+
+                            <div className="grid gap-4 rounded-md border p-4">
+                                <HeadingSmall
+                                    title="Konfigurasi Automation Engine"
+                                    description="Atur KAPAN & SEBERAPA SERING template ini melahirkan task. 'Tipe pengulangan' di atas tetap kategori task -- jadwal SEBENARNYA ditentukan di sini (AE-2b)."
+                                />
+
+                                <div className="grid gap-2">
+                                    <Label htmlFor="anchor_strategy">Strategi jadwal</Label>
+                                    <Select
+                                        value={data.anchor_strategy}
+                                        onValueChange={(value) => setData('anchor_strategy', value as typeof data.anchor_strategy)}
+                                    >
+                                        <SelectTrigger id="anchor_strategy">
+                                            <SelectValue />
+                                        </SelectTrigger>
+                                        <SelectContent>
+                                            <SelectItem value="time_based">A — Interval tetap (tiap N hari/minggu/bulan)</SelectItem>
+                                            <SelectItem value="completion_based">B — Tunggu selesai (interval + periode sebelumnya SELESAI)</SelectItem>
+                                            <SelectItem value="calendar_anchored">C — Hari tetap (mis. tiap Senin, atau tanggal tertentu)</SelectItem>
+                                        </SelectContent>
+                                    </Select>
+                                    <InputError message={errors.anchor_strategy} />
+                                </div>
+
+                                {(data.anchor_strategy === 'time_based' || data.anchor_strategy === 'completion_based') && (
+                                    <div className="grid grid-cols-2 gap-4">
+                                        <div className="grid gap-2">
+                                            <Label htmlFor="interval_value">Tiap</Label>
+                                            <Input
+                                                id="interval_value"
+                                                type="number"
+                                                min={1}
+                                                value={data.interval_value}
+                                                onChange={(e) => setData('interval_value', Number(e.target.value))}
+                                                required
+                                            />
+                                            <InputError message={errors.interval_value} />
+                                        </div>
+                                        <div className="grid gap-2">
+                                            <Label htmlFor="interval_unit">Satuan</Label>
+                                            <Select
+                                                value={data.interval_unit}
+                                                onValueChange={(value) => setData('interval_unit', value as typeof data.interval_unit)}
+                                            >
+                                                <SelectTrigger id="interval_unit">
+                                                    <SelectValue />
+                                                </SelectTrigger>
+                                                <SelectContent>
+                                                    <SelectItem value="day">Hari</SelectItem>
+                                                    <SelectItem value="week">Minggu</SelectItem>
+                                                    <SelectItem value="month">Bulan</SelectItem>
+                                                </SelectContent>
+                                            </Select>
+                                            <InputError message={errors.interval_unit} />
+                                        </div>
+                                    </div>
+                                )}
+
+                                {data.anchor_strategy === 'completion_based' && (
+                                    <p className="text-xs text-muted-foreground">
+                                        Instance BARU hanya lahir kalau instance periode sebelumnya sudah SELESAI (mencegah backlog menumpuk).
+                                        Admin dinotifikasi SEKALI kalau macet menunggu (F-154).
+                                    </p>
+                                )}
+
+                                {data.anchor_strategy === 'calendar_anchored' && (
+                                    <>
+                                        <div className="grid gap-2">
+                                            <Label htmlFor="anchor_day_type">Jenis hari tetap</Label>
+                                            <Select
+                                                value={data.anchor_day_type}
+                                                onValueChange={(value) => setData('anchor_day_type', value as typeof data.anchor_day_type)}
+                                            >
+                                                <SelectTrigger id="anchor_day_type">
+                                                    <SelectValue />
+                                                </SelectTrigger>
+                                                <SelectContent>
+                                                    <SelectItem value="week">Hari dalam minggu (mis. tiap Senin)</SelectItem>
+                                                    <SelectItem value="month">Tanggal dalam bulan (mis. tgl 1)</SelectItem>
+                                                </SelectContent>
+                                            </Select>
+                                            <InputError message={errors.anchor_day_type} />
+                                        </div>
+
+                                        {data.anchor_day_type === 'week' && (
+                                            <div className="grid gap-2">
+                                                <Label htmlFor="anchor_day_of_week">Hari</Label>
+                                                <Select
+                                                    value={String(data.anchor_day_of_week)}
+                                                    onValueChange={(value) => setData('anchor_day_of_week', Number(value))}
+                                                >
+                                                    <SelectTrigger id="anchor_day_of_week">
+                                                        <SelectValue />
+                                                    </SelectTrigger>
+                                                    <SelectContent>
+                                                        {DAY_OPTIONS.map((day) => (
+                                                            <SelectItem key={day.value} value={day.value}>
+                                                                {day.label}
+                                                            </SelectItem>
+                                                        ))}
+                                                    </SelectContent>
+                                                </Select>
+                                                <InputError message={errorBag['anchor_config.day_of_week']} />
+                                            </div>
+                                        )}
+
+                                        {data.anchor_day_type === 'month' && (
+                                            <div className="grid gap-2">
+                                                <Label htmlFor="anchor_day_of_month">Tanggal</Label>
+                                                <Input
+                                                    id="anchor_day_of_month"
+                                                    type="number"
+                                                    min={1}
+                                                    max={31}
+                                                    value={data.anchor_day_of_month}
+                                                    onChange={(e) => setData('anchor_day_of_month', Number(e.target.value))}
+                                                    required
+                                                />
+                                                <p className="text-xs text-muted-foreground">
+                                                    Tanggal lebih besar dari jumlah hari bulan otomatis digeser ke hari TERAKHIR bulan itu
+                                                    (F-164, mis. tgl 31 di Februari → generate tgl 28/29).
+                                                </p>
+                                                <InputError message={errorBag['anchor_config.day_of_month']} />
+                                            </div>
+                                        )}
+                                    </>
+                                )}
+
+                                <p className="rounded-md bg-muted px-3 py-2 text-xs text-muted-foreground">
+                                    {describeSchedule(
+                                        data.anchor_strategy,
+                                        data.interval_value,
+                                        data.interval_unit,
+                                        data.anchor_day_type,
+                                        data.anchor_day_of_week,
+                                        data.anchor_day_of_month,
+                                    )}
+                                </p>
+
+                                <div className="grid gap-2">
+                                    <Label>Batasi hari boleh generate (opsional)</Label>
+                                    <div className="flex flex-wrap gap-3">
+                                        {DAY_OPTIONS.map((day) => (
+                                            <label key={day.value} className="flex items-center gap-1.5 text-sm">
+                                                <Checkbox
+                                                    checked={data.date_window_weekdays.includes(Number(day.value))}
+                                                    onCheckedChange={(checked) =>
+                                                        setData(
+                                                            'date_window_weekdays',
+                                                            checked === true
+                                                                ? [...data.date_window_weekdays, Number(day.value)]
+                                                                : data.date_window_weekdays.filter((d) => d !== Number(day.value)),
+                                                        )
+                                                    }
+                                                />
+                                                {day.label}
+                                            </label>
+                                        ))}
+                                    </div>
+                                    <p className="text-xs text-muted-foreground">Kosong = tak ada batasan hari.</p>
+                                </div>
+
+                                <div className="grid grid-cols-2 gap-4">
+                                    <div className="grid gap-2">
+                                        <Label htmlFor="date_window_dom_min">Tanggal minimum (opsional)</Label>
+                                        <Input
+                                            id="date_window_dom_min"
+                                            type="number"
+                                            min={1}
+                                            max={31}
+                                            value={data.date_window_dom_min}
+                                            onChange={(e) => setData('date_window_dom_min', e.target.value === '' ? '' : Number(e.target.value))}
+                                        />
+                                        <InputError message={errorBag['date_window_config.dom_min']} />
+                                    </div>
+                                    <div className="grid gap-2">
+                                        <Label htmlFor="date_window_dom_max">Tanggal maksimum (opsional)</Label>
+                                        <Input
+                                            id="date_window_dom_max"
+                                            type="number"
+                                            min={1}
+                                            max={31}
+                                            value={data.date_window_dom_max}
+                                            onChange={(e) => setData('date_window_dom_max', e.target.value === '' ? '' : Number(e.target.value))}
+                                        />
+                                        <InputError message={errorBag['date_window_config.dom_max']} />
+                                    </div>
+                                </div>
+
+                                <div className="grid gap-2">
+                                    <Label htmlFor="max_active_instances">Kuota maks instance belum-selesai (opsional)</Label>
+                                    <Input
+                                        id="max_active_instances"
+                                        type="number"
+                                        min={1}
+                                        value={data.max_active_instances}
+                                        onChange={(e) => setData('max_active_instances', e.target.value === '' ? '' : Number(e.target.value))}
+                                    />
+                                    <p className="text-xs text-muted-foreground">
+                                        Kosong = tak terbatas. Kalau instance belum-selesai sudah mencapai batas ini, generate berikutnya
+                                        di-skip sampai ada yang selesai.
+                                    </p>
+                                    <InputError message={errors.max_active_instances} />
+                                </div>
+                            </div>
 
                             <div className="grid grid-cols-2 gap-4">
                                 <div className="grid gap-2">

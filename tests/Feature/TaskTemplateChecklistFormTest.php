@@ -16,6 +16,10 @@
  * RISIKO      : Test "field absen tidak wipe" adalah pagar regresi — kalau hilang,
  *               admin yang cuma mengubah title lewat integrasi API lama (belum
  *               tahu field checklist_items) diam-diam MENGHAPUS checklist template.
+ *               F-78 (AE-2b): `anchor_strategy` jadi REQUIRED sejak AE-2b (F-158)
+ *               — payload di bawah DIPERBARUI menambahkan anchor_strategy=
+ *               time_based+interval (perilaku SENGAJA berubah, assertion asli
+ *               tiap test TIDAK diubah).
  * ==========================================================
  */
 
@@ -50,6 +54,7 @@ test('buat template dengan checklist_items menyimpan item dalam urutan position'
         'recurrence_config' => [],
         'default_assignees' => [],
         'checklist_items' => ['Langkah 1', 'Langkah 2'],
+        'anchor_strategy' => 'time_based', 'interval_value' => 1, 'interval_unit' => 'day', // AE-2b, F-78
     ]);
 
     $response->assertRedirect(route('task-templates.index', $project));
@@ -85,6 +90,7 @@ test('update template dengan checklist_items baru MENGGANTI seluruh daftar lama'
         'recurrence_config' => [],
         'default_assignees' => [],
         'checklist_items' => ['Baru 1', 'Baru 2'],
+        'anchor_strategy' => 'time_based', 'interval_value' => 1, 'interval_unit' => 'day', // AE-2b, F-78
     ]);
 
     $response->assertRedirect(route('task-templates.index', $project));
@@ -119,6 +125,7 @@ test('update template TANPA field checklist_items TIDAK menyentuh checklist yang
         'points' => 5,
         'recurrence_config' => [],
         'default_assignees' => [],
+        'anchor_strategy' => 'time_based', 'interval_value' => 1, 'interval_unit' => 'day', // AE-2b, F-78
     ]);
 
     $response->assertRedirect(route('task-templates.index', $project));

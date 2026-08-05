@@ -15,6 +15,11 @@
  * RISIKO      : Test A6 adalah pagar F-46 (template != task) — kalau update()
  *               diam-diam cascading ke instance lama, riwayat KPI instance itu
  *               berubah retroaktif padahal task-nya sendiri tidak pernah diedit.
+ *               F-78 (AE-2b): `anchor_strategy` jadi REQUIRED di Store/Update
+ *               Request sejak AE-2b (F-158) — payload store()/update() di bawah
+ *               DIPERBARUI menambahkan anchor_strategy=time_based+interval
+ *               (perilaku SENGAJA berubah, bukan ditambal; assertion asli
+ *               tiap test TIDAK diubah/dilonggarkan sama sekali).
  * ==========================================================
  */
 
@@ -49,6 +54,7 @@ test('admin bisa buat template daily', function () {
         'points' => 5,
         'recurrence_config' => [],
         'default_assignees' => [],
+        'anchor_strategy' => 'time_based', 'interval_value' => 1, 'interval_unit' => 'day', // AE-2b, F-78
     ]);
 
     $response->assertRedirect(route('task-templates.index', $project->id));
@@ -66,6 +72,7 @@ test('admin bisa buat template weekly dengan day_of_week', function () {
         'points' => 10,
         'recurrence_config' => ['day_of_week' => 3],
         'default_assignees' => [],
+        'anchor_strategy' => 'time_based', 'interval_value' => 1, 'interval_unit' => 'week', // AE-2b, F-78
     ]);
 
     $response->assertRedirect(route('task-templates.index', $project->id));
@@ -175,6 +182,7 @@ test('edit template TIDAK mengubah instance yang sudah tergenerate (A6/F-46)', f
         'points' => 999,
         'recurrence_config' => [],
         'default_assignees' => [],
+        'anchor_strategy' => 'time_based', 'interval_value' => 1, 'interval_unit' => 'day', // AE-2b, F-78
     ]);
 
     $response->assertRedirect(route('task-templates.index', $project->id));

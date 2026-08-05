@@ -4,14 +4,16 @@
  * ==========================================================
  * MODUL       : EdgeCaseTest
  * KLASIFIKASI : UTIL
- * TUJUAN      : FASE E (prompt AE-3) edge test intens, MySQL (F-83) — E1 miss-run
- *               catch-up-satu (F-152), E2 holiday-shift edge (libur beruntun +
- *               batas bulan, F-153/F-43), E3 Opsi B deadlock penuh (skip berulang
- *               + notif SEKALI, F-154), E4 CalendarAnchored day_of_month=31 di
- *               bulan pendek (perilaku terdefinisi, dilaporkan). E5 (idempotency
- *               F-61 + isolasi F-160) SUDAH dibuktikan di RunAutomationEngineCommandTest
- *               (AE-2) -- tidak diulang di sini supaya tidak duplikasi. E6 (regresi
- *               nol) dibuktikan lewat full `php artisan test` di laporan akhir,
+ * TUJUAN      : FASE E (prompt AE-3/AE-2b) edge test intens, MySQL (F-83) — E1
+ *               miss-run catch-up-satu (F-152), E2 holiday-shift edge (libur
+ *               beruntun + batas bulan, F-153/F-43), E3 Opsi B deadlock penuh
+ *               (skip berulang + notif SEKALI, F-154), E4 CalendarAnchored
+ *               day_of_month=31 di bulan pendek -- DIPERBARUI AE-2b (F-78/F-164):
+ *               SEMULA skip total (AE-3), Boss putuskan ganti jadi CLAMP ke akhir
+ *               bulan (pola F-101). E5 (idempotency F-61 + isolasi F-160) SUDAH
+ *               dibuktikan di RunAutomationEngineCommandTest (AE-2) -- tidak
+ *               diulang di sini supaya tidak duplikasi. E6 (regresi nol)
+ *               dibuktikan lewat full `php artisan test` di laporan akhir,
  *               bukan test individual.
  * DIPANGGIL   : php artisan test (Pest)
  * MEMANGGIL   : RunAutomationEngineCommand, HolidayShiftResolver, CalendarAnchoredStrategy
@@ -197,7 +199,13 @@ test('E3: sebelumnya TAK PERNAH selesai -> skip berulang 3 run, notif admin SEKA
 // E4: CalendarAnchored day_of_month=31 di bulan PENDEK (Feb) -- perilaku terdefinisi
 // ---------------------------------------------------------------------------
 
-test('E4: day_of_month=31 di Februari (28 hari) -> SKIP seluruh bulan itu (TIDAK di-clamp)', function () {
+test('E4: day_of_month=31 di Februari (28 hari) -> CLAMP ke akhir bulan, Pass (F-164, F-78 update dari skip)', function () {
+    // F-78: test ini SEBELUMNYA mengharapkan SKIP total (lihat commit AE-3) --
+    // Boss MEMUTUSKAN mengubah perilaku itu (F-164, registry) supaya "tanggal
+    // 31"/"akhir bulan" tetap generate di hari terakhir bulan pendek, pola sama
+    // F-101 (GenerateRecurringTasksCommand::naturalMonthlyDate() clamp lama).
+    // Diperbarui JUJUR, bukan ditambal -- assertion berubah SEUTUHNYA konsisten
+    // dengan perilaku baru CalendarAnchoredStrategy.
     $admin = User::factory()->admin()->create();
     $project = createEdgeProject($admin);
 
@@ -216,25 +224,22 @@ test('E4: day_of_month=31 di Februari (28 hari) -> SKIP seluruh bulan itu (TIDAK
         'anchor_config' => ['day_of_month' => 31],
     ]);
 
-    $ctx = new AutomationContext(Carbon::create(2026, 2, 28), collect(), collect(), [], []);
-    // KEPUTUSAN (dilaporkan ke Boss, bukan diam-diam): TIDAK di-clamp ke hari
-    // terakhir bulan seperti F-101 (clamp) engine lama -- day_of_month di
-    // CalendarAnchoredStrategy adalah PENCOCOKAN PERSIS (exact match), bulan
-    // yang tidak punya tanggal itu (Feb tidak punya 31) di-SKIP TOTAL, bukan
-    // digeser ke 28. Kalau Boss mau perilaku clamp (pola F-101), ini titik
-    // satu-satunya yang perlu diubah: CalendarAnchoredStrategy::evaluate().
-    $decision = (new CalendarAnchoredStrategy)->evaluate($template, $ctx);
+    // 2026 BUKAN kabisat -- Februari 28 hari, itulah "akhir bulan" hasil clamp.
+    $decisionOn28 = (new CalendarAnchoredStrategy)->evaluate($template, new AutomationContext(Carbon::create(2026, 2, 28), collect(), collect(), [], []));
+    expect($decisionOn28)->toBeNull(); // Pass -- 28 Feb = clamp(31, 28)
 
-    expect($decision)->not->toBeNull();
-    expect($decision->reason)->toBe('bukan-hari-tetap');
-
-    // Sepanjang Februari 2026 (28 hari), TIDAK ADA satu pun tanggal yang cocok.
-    $anyPassInFebruary = false;
+    // Sepanjang Februari 2026, HANYA tanggal 28 (hasil clamp) yang Pass -- 1-27 tetap Skip.
+    $passDays = [];
     for ($day = 1; $day <= 28; $day++) {
         $ctxDay = new AutomationContext(Carbon::create(2026, 2, $day), collect(), collect(), [], []);
         if ((new CalendarAnchoredStrategy)->evaluate($template, $ctxDay) === null) {
-            $anyPassInFebruary = true;
+            $passDays[] = $day;
         }
     }
-    expect($anyPassInFebruary)->toBeFalse();
+    expect($passDays)->toBe([28]);
+
+    // Kontrol: bulan PANJANG (Agustus, 31 hari) TETAP cocok PERSIS di tanggal 31
+    // -- clamp HANYA aktif kalau day_of_month > daysInMonth, bukan selalu geser.
+    $decisionAug31 = (new CalendarAnchoredStrategy)->evaluate($template, new AutomationContext(Carbon::create(2026, 8, 31), collect(), collect(), [], []));
+    expect($decisionAug31)->toBeNull();
 });

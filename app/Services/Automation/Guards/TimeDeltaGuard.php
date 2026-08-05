@@ -15,9 +15,14 @@
  * DATA KELUAR : null (Pass, sudah jatuh tempo) | Decision::skip('belum-waktunya')
  * RISIKO      : last_generated_date NULL (belum pernah generate sama sekali) WAJIB
  *               Pass langsung -- kalau tidak, template baru tidak akan pernah
- *               generate pertama kalinya. interval_unit di luar day/week/month untuk
- *               template is_active=true adalah data korup -- SENGAJA tidak ditangani
- *               di sini (biar UnhandledMatchError menembus ke try/catch per-template
+ *               generate pertama kalinya. interval_unit NULL (AE-2b: form TIDAK
+ *               mewajibkan interval untuk anchor calendar_anchored -- hari-tetap
+ *               dari CalendarAnchoredStrategy SUDAH cukup membatasi kapan boleh
+ *               generate, F-163) JUGA Pass langsung -- guard ini TIDAK menambah
+ *               syarat kalau template memang tidak mengkonfigurasi interval.
+ *               interval_unit di luar day/week/month/null untuk template
+ *               is_active=true adalah data korup -- SENGAJA tidak ditangani di
+ *               sini (biar UnhandledMatchError menembus ke try/catch per-template
  *               command, F-160, tercatat sebagai Decision::error, bukan diam-diam
  *               di-skip seolah valid).
  * ==========================================================
@@ -33,8 +38,8 @@ class TimeDeltaGuard implements AutomationGuard
 {
     public function check(TaskTemplate $template, AutomationContext $ctx): ?Decision
     {
-        if ($template->last_generated_date === null) {
-            return null; // Pass -- belum pernah generate, tidak ada due-line untuk dibandingkan
+        if ($template->last_generated_date === null || $template->interval_unit === null) {
+            return null; // Pass -- belum pernah generate ATAU tak ada interval dikonfigurasi (calendar_anchored)
         }
 
         $dueline = match ($template->interval_unit) {
