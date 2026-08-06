@@ -14,6 +14,7 @@
 import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
 import AppLayout from '@/layouts/app-layout';
+import { confirmAction } from '@/lib/swal';
 import { type BreadcrumbItem } from '@/types';
 import { Head, Link, router } from '@inertiajs/react';
 
@@ -35,8 +36,8 @@ export default function RolesIndex({ roles }: { roles: RoleRow[] }) {
         router.patch(route('roles.set-default', role.id), {}, { preserveScroll: true });
     };
 
-    const destroy = (role: RoleRow) => {
-        if (!confirm(`Hapus role "${role.role_name}"?`)) return;
+    const destroy = async (role: RoleRow) => {
+        if (!(await confirmAction(`Hapus role "${role.role_name}"?`, { danger: true }))) return;
         router.delete(route('roles.destroy', role.id), { preserveScroll: true });
     };
 

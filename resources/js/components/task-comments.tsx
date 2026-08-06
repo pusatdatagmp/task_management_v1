@@ -21,6 +21,7 @@ import { Button } from '@/components/ui/button';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import { Textarea } from '@/components/ui/textarea';
 import { useInitials } from '@/hooks/use-initials';
+import { confirmAction } from '@/lib/swal';
 import { router } from '@inertiajs/react';
 import { Fragment, useRef, useState } from 'react';
 
@@ -212,8 +213,8 @@ export default function TaskComments({ projectId, taskId, comments, projectMembe
         );
     };
 
-    const destroy = (comment: CommentData) => {
-        if (!confirm('Hapus komentar ini?')) return;
+    const destroy = async (comment: CommentData) => {
+        if (!(await confirmAction('Hapus komentar ini?', { danger: true }))) return;
         router.delete(route('comments.destroy', [projectId, taskId, comment.id]), { preserveScroll: true });
     };
 

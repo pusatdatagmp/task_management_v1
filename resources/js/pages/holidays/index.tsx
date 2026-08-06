@@ -19,6 +19,7 @@ import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
 import AppLayout from '@/layouts/app-layout';
+import { confirmAction } from '@/lib/swal';
 import { type BreadcrumbItem } from '@/types';
 import { Head, router, useForm } from '@inertiajs/react';
 import { FormEventHandler, useState } from 'react';
@@ -71,8 +72,8 @@ export default function HolidaysIndex({ holidays }: { holidays: HolidayRow[] }) 
         reset();
     };
 
-    const destroy = (holiday: HolidayRow) => {
-        if (confirm(`Hapus hari libur "${holiday.name}" (${formatDate(holiday.date)})?`)) {
+    const destroy = async (holiday: HolidayRow) => {
+        if (await confirmAction(`Hapus hari libur "${holiday.name}" (${formatDate(holiday.date)})?`, { danger: true })) {
             router.delete(route('holidays.destroy', holiday.id), { preserveScroll: true });
         }
     };

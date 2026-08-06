@@ -21,6 +21,7 @@ import { Button } from '@/components/ui/button';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import { Checkbox } from '@/components/ui/checkbox';
 import { Input } from '@/components/ui/input';
+import { confirmAction } from '@/lib/swal';
 import { router } from '@inertiajs/react';
 import { useState } from 'react';
 
@@ -75,8 +76,8 @@ export default function TaskChecklist({ projectId, taskId, items, canManageTask,
         );
     };
 
-    const destroy = (item: ChecklistItemData) => {
-        if (!confirm(`Hapus item checklist "${item.text}"?`)) return;
+    const destroy = async (item: ChecklistItemData) => {
+        if (!(await confirmAction(`Hapus item checklist "${item.text}"?`, { danger: true }))) return;
         router.delete(route('checklist-items.destroy', [projectId, taskId, item.id]), { preserveScroll: true });
     };
 

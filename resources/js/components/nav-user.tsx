@@ -1,3 +1,4 @@
+import SettingsModal from '@/components/settings-modal';
 import { DropdownMenu, DropdownMenuContent, DropdownMenuTrigger } from '@/components/ui/dropdown-menu';
 import { SidebarMenu, SidebarMenuButton, SidebarMenuItem, useSidebar } from '@/components/ui/sidebar';
 import { UserInfo } from '@/components/user-info';
@@ -6,11 +7,15 @@ import { useIsMobile } from '@/hooks/use-mobile';
 import { type SharedData } from '@/types';
 import { usePage } from '@inertiajs/react';
 import { ChevronsUpDown } from 'lucide-react';
+import { useState } from 'react';
 
 export function NavUser() {
     const { auth } = usePage<SharedData>().props;
     const { state } = useSidebar();
     const isMobile = useIsMobile();
+    // SUMBER: state modal Settings WAJIB di sini (induk DropdownMenu), bukan di
+    // dalam UserMenuContent -- DropdownMenuContent unmount saat menutup.
+    const [settingsOpen, setSettingsOpen] = useState(false);
 
     return (
         <SidebarMenu>
@@ -27,10 +32,12 @@ export function NavUser() {
                         align="end"
                         side={isMobile ? 'bottom' : state === 'collapsed' ? 'left' : 'bottom'}
                     >
-                        <UserMenuContent user={auth.user} />
+                        <UserMenuContent user={auth.user} onOpenSettings={() => setSettingsOpen(true)} />
                     </DropdownMenuContent>
                 </DropdownMenu>
             </SidebarMenuItem>
+
+            <SettingsModal open={settingsOpen} onOpenChange={setSettingsOpen} />
         </SidebarMenu>
     );
 }

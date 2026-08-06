@@ -18,6 +18,7 @@
 import { Alert, AlertDescription } from '@/components/ui/alert';
 import { Button } from '@/components/ui/button';
 import AppLayout from '@/layouts/app-layout';
+import { confirmAction } from '@/lib/swal';
 import { type BreadcrumbItem } from '@/types';
 import { Head, Link, router, useForm, usePage } from '@inertiajs/react';
 import { ArrowDown, ArrowUp } from 'lucide-react';
@@ -64,8 +65,8 @@ export default function TaskStatusesIndex({ project, statuses }: { project: { id
         router.patch(route('task-statuses.reorder', [project.id, status.id]), { direction }, { preserveScroll: true });
     };
 
-    const destroy = (status: StatusRow) => {
-        if (confirm(`Hapus status "${status.name}"?`)) {
+    const destroy = async (status: StatusRow) => {
+        if (await confirmAction(`Hapus status "${status.name}"?`, { danger: true })) {
             router.delete(route('task-statuses.destroy', [project.id, status.id]), { preserveScroll: true });
         }
     };

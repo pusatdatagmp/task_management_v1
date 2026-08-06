@@ -25,6 +25,7 @@ import AppLayout from '@/layouts/app-layout';
 import { PRIORITY_QUADRANT_COLOR, PRIORITY_QUADRANT_LABEL, type PriorityQuadrant } from '@/lib/priority-quadrant';
 import { type BreadcrumbItem, type SharedData } from '@/types';
 import { Head, Link, router, usePage } from '@inertiajs/react';
+import { motion } from 'framer-motion';
 
 interface UserOption {
     id: number;
@@ -289,8 +290,14 @@ export default function AllTasks({ tasks, projects, members, filters }: AllTasks
                             </tr>
                         </thead>
                         <tbody>
-                            {tasks.data.map((task) => (
-                                <tr key={task.id} className="border-b last:border-0">
+                            {tasks.data.map((task, index) => (
+                                <motion.tr
+                                    key={task.id}
+                                    className="border-b last:border-0"
+                                    initial={{ opacity: 0, y: 6 }}
+                                    animate={{ opacity: 1, y: 0 }}
+                                    transition={{ duration: 0.15, delay: Math.min(index, 10) * 0.02 }}
+                                >
                                     <td className="p-3">
                                         <div className="flex items-center gap-2">
                                             <Link href={route('tasks.show', [task.project.id, task.id])} className="font-medium hover:underline">
@@ -334,7 +341,7 @@ export default function AllTasks({ tasks, projects, members, filters }: AllTasks
                                             canApprove={can('task.approve')}
                                         />
                                     </td>
-                                </tr>
+                                </motion.tr>
                             ))}
 
                             {tasks.data.length === 0 && (

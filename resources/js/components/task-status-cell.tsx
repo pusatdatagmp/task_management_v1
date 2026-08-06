@@ -19,6 +19,7 @@
 // ==========================================================
 
 import { Button } from '@/components/ui/button';
+import { confirmAction, promptInput, showError } from '@/lib/swal';
 import { router } from '@inertiajs/react';
 
 export interface TaskStatusOption {
@@ -56,25 +57,34 @@ export default function TaskStatusCell({ projectId, task, statuses, currentUserI
             {
                 preserveScroll: true,
                 onError: (errors) => {
-                    if (errors.task_status_id) alert(errors.task_status_id);
+                    if (errors.task_status_id) showError(errors.task_status_id);
                 },
             },
         );
     };
 
-    const approve = () => {
-        const rating = prompt('Quality rating (1-5)?');
+    const approve = async () => {
+        const rating = await promptInput('Quality rating (1-5)?', {
+            title: 'Approve task',
+            inputType: 'number',
+            placeholder: '1-5',
+            validator: (value) => {
+                const n = Number(value);
+                if (!value || !Number.isInteger(n) || n < 1 || n > 5) return 'Isi angka 1-5.';
+                return null;
+            },
+        });
         if (!rating) return;
 
         router.patch(
             route('tasks.approve', [projectId, task.id]),
             { quality_rating: Number(rating) },
-            { preserveScroll: true, onError: (errors) => alert(errors.quality_rating ?? 'Approve gagal.') },
+            { preserveScroll: true, onError: (errors) => showError(errors.quality_rating ?? 'Approve gagal.') },
         );
     };
 
-    const reject = () => {
-        if (!confirm(`Tolak task "${task.title}"? Task kembali ke status kerja, rejection_count bertambah.`)) return;
+    const reject = async () => {
+        if (!(await confirmAction(`Tolak task "${task.title}"? Task kembali ke status kerja, rejection_count bertambah.`, { danger: true }))) return;
         router.patch(route('tasks.reject', [projectId, task.id]), {}, { preserveScroll: true });
     };
 

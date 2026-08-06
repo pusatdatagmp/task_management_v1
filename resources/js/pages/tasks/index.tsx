@@ -20,6 +20,7 @@ import TaskStatusCell, { type TaskStatusOption } from '@/components/task-status-
 import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
 import AppLayout from '@/layouts/app-layout';
+import { confirmAction } from '@/lib/swal';
 import { PRIORITY_QUADRANT_COLOR, PRIORITY_QUADRANT_LABEL, type PriorityQuadrant } from '@/lib/priority-quadrant';
 import { type BreadcrumbItem, type SharedData } from '@/types';
 import { Head, Link, router, usePage } from '@inertiajs/react';
@@ -119,8 +120,8 @@ export default function TasksIndex({ project, tasks, statuses, members, filters 
 
     const hasActiveFilter = filters.status.length > 0 || filters.assignee.length > 0 || filters.priority.length > 0 || filters.due !== 'all';
 
-    const destroy = (task: TaskRow) => {
-        if (!confirm(`Hapus task "${task.title}"?`)) return;
+    const destroy = async (task: TaskRow) => {
+        if (!(await confirmAction(`Hapus task "${task.title}"?`, { danger: true }))) return;
         router.delete(route('tasks.destroy', [project.id, task.id]), { preserveScroll: true });
     };
 

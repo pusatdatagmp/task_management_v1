@@ -15,6 +15,7 @@
 import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
 import AppLayout from '@/layouts/app-layout';
+import { confirmAction } from '@/lib/swal';
 import { type BreadcrumbItem, type SharedData } from '@/types';
 import { Head, Link, router, usePage } from '@inertiajs/react';
 
@@ -32,8 +33,8 @@ export default function ProjectsIndex({ projects }: { projects: ProjectRow[] }) 
     const { auth } = usePage<SharedData>().props;
     const can = (permission: string) => auth.permissions.includes(permission);
 
-    const archive = (project: ProjectRow) => {
-        if (confirm(`Arsipkan project "${project.name}"? Project yang diarsipkan tidak muncul lagi di daftar aktif.`)) {
+    const archive = async (project: ProjectRow) => {
+        if (await confirmAction(`Arsipkan project "${project.name}"? Project yang diarsipkan tidak muncul lagi di daftar aktif.`, { danger: true })) {
             router.patch(route('projects.archive', project.id));
         }
     };

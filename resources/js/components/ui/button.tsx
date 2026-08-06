@@ -1,5 +1,6 @@
 import { Slot } from '@radix-ui/react-slot';
 import { cva, type VariantProps } from 'class-variance-authority';
+import { motion } from 'framer-motion';
 import * as React from 'react';
 
 import { cn } from '@/lib/utils';
@@ -30,13 +31,38 @@ const buttonVariants = cva(
     },
 );
 
-export interface ButtonProps extends React.ButtonHTMLAttributes<HTMLButtonElement>, VariantProps<typeof buttonVariants> {
+// SUMBER: Omit onDrag*/onAnimation* -- framer-motion mendefinisikan ulang
+// signature event ini sendiri (gesture drag, BUKAN native HTML5 drag) dan
+// TABRAKAN tipe dengan React.ButtonHTMLAttributes bawaan. Nol Button di app
+// ini memakai native onDrag/onAnimationStart (drag task pakai @dnd-kit, beda
+// mekanisme sama sekali) -- aman dibuang dari kontrak tipe.
+export interface ButtonProps
+    extends Omit<React.ButtonHTMLAttributes<HTMLButtonElement>, 'onDrag' | 'onDragStart' | 'onDragEnd' | 'onAnimationStart' | 'onAnimationEnd'>,
+        VariantProps<typeof buttonVariants> {
     asChild?: boolean;
 }
 
+// SUMBER: micro-interaction (permintaan Boss) -- tap/hover scale halus di
+// SEMUA tombol app sekaligus (1 titik ubah, dampak luas). motion.create()
+// (API framer-motion v11+, BUKAN motion() lama) supaya Slot (asChild, dipakai
+// puluhan tempat utk bungkus <Link>) TETAP forward animasi ke elemen DOM anak
+// sesungguhnya. Radix Dialog/Dropdown/Sheet TIDAK disentuh (animasi bawaan
+// tailwindcss-animate tetap dipakai, di luar scope permintaan ini).
+const MotionButton = motion.create('button');
+const MotionSlot = motion.create(Slot);
+
 const Button = React.forwardRef<HTMLButtonElement, ButtonProps>(({ className, variant, size, asChild = false, ...props }, ref) => {
-    const Comp = asChild ? Slot : 'button';
-    return <Comp className={cn(buttonVariants({ variant, size, className }))} ref={ref} {...props} />;
+    const Comp = asChild ? MotionSlot : MotionButton;
+    return (
+        <Comp
+            className={cn(buttonVariants({ variant, size, className }))}
+            ref={ref}
+            whileTap={{ scale: 0.97 }}
+            whileHover={{ scale: 1.02 }}
+            transition={{ duration: 0.1 }}
+            {...props}
+        />
+    );
 });
 Button.displayName = 'Button';
 

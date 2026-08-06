@@ -19,6 +19,7 @@
 
 import { Button } from '@/components/ui/button';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
+import { confirmAction } from '@/lib/swal';
 import { router } from '@inertiajs/react';
 import { useRef, useState } from 'react';
 
@@ -74,8 +75,8 @@ export default function TaskAttachments({ projectId, taskId, attachments, canMan
         );
     };
 
-    const destroy = (attachment: AttachmentData) => {
-        if (!confirm(`Hapus lampiran "${attachment.file_name}"?`)) return;
+    const destroy = async (attachment: AttachmentData) => {
+        if (!(await confirmAction(`Hapus lampiran "${attachment.file_name}"?`, { danger: true }))) return;
         router.delete(route('attachments.destroy', [projectId, taskId, attachment.id]), { preserveScroll: true });
     };
 

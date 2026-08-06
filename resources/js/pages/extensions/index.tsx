@@ -15,6 +15,7 @@
 import { Button } from '@/components/ui/button';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import AppLayout from '@/layouts/app-layout';
+import { confirmAction, promptInput } from '@/lib/swal';
 import { type BreadcrumbItem } from '@/types';
 import { Head, router } from '@inertiajs/react';
 
@@ -38,14 +39,17 @@ interface ExtensionRow {
 const breadcrumbs: BreadcrumbItem[] = [{ title: 'Perpanjangan', href: '/pengaturan/perpanjangan' }];
 
 export default function ExtensionsIndex({ extensions }: { extensions: ExtensionRow[] }) {
-    const approve = (ext: ExtensionRow) => {
-        if (!confirm(`Setujui perpanjangan task "${ext.task.title}" untuk ${ext.requested_by.name}?`)) return;
+    const approve = async (ext: ExtensionRow) => {
+        if (!(await confirmAction(`Setujui perpanjangan task "${ext.task.title}" untuk ${ext.requested_by.name}?`))) return;
 
         router.patch(route('extensions.approve', ext.id), {}, { preserveScroll: true });
     };
 
-    const reject = (ext: ExtensionRow) => {
-        const note = prompt('Alasan penolakan (wajib diisi):');
+    const reject = async (ext: ExtensionRow) => {
+        const note = await promptInput('Alasan penolakan (wajib diisi):', {
+            title: 'Tolak perpanjangan',
+            validator: (value) => (!value.trim() ? 'Alasan wajib diisi.' : null),
+        });
         if (!note) return;
 
         router.patch(route('extensions.reject', ext.id), { review_note: note }, { preserveScroll: true });

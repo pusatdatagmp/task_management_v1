@@ -3,13 +3,18 @@ import { UserInfo } from '@/components/user-info';
 import { useMobileNavigation } from '@/hooks/use-mobile-navigation';
 import { type User } from '@/types';
 import { Link } from '@inertiajs/react';
-import { LogOut, Settings } from 'lucide-react';
+import { LogOut, UserRoundPen } from 'lucide-react';
 
 interface UserMenuContentProps {
     user: User;
+    // SUMBER: Settings sekarang MODAL (bukan navigasi Inertia ke halaman penuh
+    // yang sudah dipensiunkan) -- state open/close-nya WAJIB hidup di komponen
+    // INDUK dropdown (nav-user.tsx/app-header.tsx), bukan di sini, karena
+    // DropdownMenuContent unmount saat menutup (state di dalam item ikut hilang).
+    onOpenSettings: () => void;
 }
 
-export function UserMenuContent({ user }: UserMenuContentProps) {
+export function UserMenuContent({ user, onOpenSettings }: UserMenuContentProps) {
     const cleanup = useMobileNavigation();
 
     return (
@@ -21,11 +26,18 @@ export function UserMenuContent({ user }: UserMenuContentProps) {
             </DropdownMenuLabel>
             <DropdownMenuSeparator />
             <DropdownMenuGroup>
-                <DropdownMenuItem asChild>
-                    <Link className="block w-full" href={route('profile.edit')} as="button" prefetch onClick={cleanup}>
-                        <Settings className="mr-2" />
-                        Settings
-                    </Link>
+                <DropdownMenuItem
+                    onSelect={(e) => {
+                        // RISIKO (lihat header UserMenuContentProps): preventDefault
+                        // supaya Radix tidak mengembalikan fokus ke trigger dropdown
+                        // yang sudah tertutup, bentrok dengan fokus-trap Dialog baru.
+                        e.preventDefault();
+                        cleanup();
+                        onOpenSettings();
+                    }}
+                >
+                    <UserRoundPen className="mr-2" />
+                    Edit profile
                 </DropdownMenuItem>
             </DropdownMenuGroup>
             <DropdownMenuSeparator />

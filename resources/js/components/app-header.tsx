@@ -1,5 +1,6 @@
 import { Breadcrumbs } from '@/components/breadcrumbs';
 import { Icon } from '@/components/icon';
+import SettingsModal from '@/components/settings-modal';
 import { Avatar, AvatarFallback, AvatarImage } from '@/components/ui/avatar';
 import { Button } from '@/components/ui/button';
 import { DropdownMenu, DropdownMenuContent, DropdownMenuTrigger } from '@/components/ui/dropdown-menu';
@@ -12,6 +13,7 @@ import { cn } from '@/lib/utils';
 import { type BreadcrumbItem, type NavItem, type SharedData } from '@/types';
 import { Link, usePage } from '@inertiajs/react';
 import { BookOpen, Folder, LayoutGrid, Menu, Search } from 'lucide-react';
+import { useState } from 'react';
 import AppLogo from './app-logo';
 import AppLogoIcon from './app-logo-icon';
 
@@ -46,6 +48,10 @@ export function AppHeader({ breadcrumbs = [] }: AppHeaderProps) {
     const page = usePage<SharedData>();
     const { auth } = page.props;
     const getInitials = useInitials();
+    // SUMBER: state modal Settings (lihat komentar settings-modal.tsx) -- layout
+    // header ini SENDIRI tak dipakai app-layout.tsx (dead code starter-kit, cek
+    // grep import), tapi tetap perlu type-correct untuk tsc.
+    const [settingsOpen, setSettingsOpen] = useState(false);
     return (
         <>
             <div className="border-sidebar-border/80 border-b">
@@ -164,9 +170,11 @@ export function AppHeader({ breadcrumbs = [] }: AppHeaderProps) {
                                 </Button>
                             </DropdownMenuTrigger>
                             <DropdownMenuContent className="w-56" align="end">
-                                <UserMenuContent user={auth.user} />
+                                <UserMenuContent user={auth.user} onOpenSettings={() => setSettingsOpen(true)} />
                             </DropdownMenuContent>
                         </DropdownMenu>
+
+                        <SettingsModal open={settingsOpen} onOpenChange={setSettingsOpen} />
                     </div>
                 </div>
             </div>

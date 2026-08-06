@@ -4,40 +4,45 @@ namespace App\Http\Controllers\Settings;
 
 use App\Http\Controllers\Controller;
 use App\Http\Requests\Settings\ProfileUpdateRequest;
-use Illuminate\Contracts\Auth\MustVerifyEmail;
 use Illuminate\Http\RedirectResponse;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\Auth;
-use Inertia\Inertia;
-use Inertia\Response;
 
 class ProfileController extends Controller
 {
     /**
-     * Show the user's profile settings page.
-     */
-    public function edit(Request $request): Response
-    {
-        return Inertia::render('settings/profile', [
-            'mustVerifyEmail' => $request->user() instanceof MustVerifyEmail,
-            'status' => $request->session()->get('status'),
-        ]);
-    }
-
-    /**
      * Update the user's profile settings.
+     *
+     * SUMBER: back() (bukan to_route('profile.edit')) -- halaman penuh
+     * dipensiunkan, form sekarang selalu dipicu dari dalam SettingsModal
+     * (client-side, bisa dibuka dari halaman APA PUN), jadi tidak ada satu
+     * "halaman profil" tetap untuk dituju balik.
+     *
+     * BUSINESS RULE (permintaan Boss): user biasa (tanpa permission
+     * `user.manage`, F-90) TIDAK BOLEH ganti email sendiri -- cuma admin/role
+     * custom yang punya `user.manage` yang boleh. Field 'email' DIBUANG dari
+     * data yang di-fill kalau user tidak punya izin itu -- ENFORCEMENT DI SINI
+     * (server), bukan cuma disable input di UI (F-90-style: UI cuma hint,
+     * penegakan asli selalu server-side, sama pola task-status-cell.tsx).
      */
     public function update(ProfileUpdateRequest $request): RedirectResponse
     {
-        $request->user()->fill($request->validated());
+        $user = $request->user();
+        $validated = $request->validated();
 
-        if ($request->user()->isDirty('email')) {
-            $request->user()->email_verified_at = null;
+        if (! $user->can('user.manage')) {
+            unset($validated['email']);
         }
 
-        $request->user()->save();
+        $user->fill($validated);
 
-        return to_route('profile.edit');
+        if ($user->isDirty('email')) {
+            $user->email_verified_at = null;
+        }
+
+        $user->save();
+
+        return back();
     }
 
     /**
