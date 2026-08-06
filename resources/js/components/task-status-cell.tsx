@@ -13,9 +13,11 @@
 //               role custom bisa punya salah satu tanpa yang lain)
 // DATA KELUAR : PATCH status/approve/reject -> TaskTransitionService (server)
 // RISIKO      : Opsi target di dropdown cuma HINT UI (F-45 maju+1/mundur bebas,
-//               is_completed selalu dikecualikan) — validasi ASLI tetap di server
-//               (TaskTransitionService), jadi salah filter di sini paling buruk
-//               cuma bikin opsi hilang dari dropdown, BUKAN lubang keamanan.
+//               is_completed selalu dikecualikan sbg TARGET) — validasi ASLI tetap
+//               di server (TaskTransitionService), jadi salah filter di sini paling
+//               buruk cuma bikin opsi hilang dari dropdown, BUKAN lubang keamanan.
+//               Revisi 2026-08-06: task yang SUDAH is_completed (SUMBER, bukan
+//               target) sekarang terkunci permanen, dropdown diganti badge.
 // ==========================================================
 
 import { Button } from '@/components/ui/button';
@@ -103,6 +105,14 @@ export default function TaskStatusCell({ projectId, task, statuses, currentUserI
                 </Button>
             </div>
         );
+    }
+
+    // BUSINESS RULE (revisi 2026-08-06 item 3): task yang SUDAH Selesai terkunci
+    // permanen — cocok dengan guard server TaskTransitionService::transitionStatus().
+    // HINT UI saja (server yang menegakkan); tanpa ini dropdown tetap muncul dan
+    // gagal baru terlihat setelah klik (bukan salah, cuma UX buruk).
+    if (task.task_status.is_completed) {
+        return <span className="text-xs text-muted-foreground">Selesai — status terkunci</span>;
     }
 
     // BUSINESS RULE F-45: opsi target maju cuma position+1, mundur bebas ke posisi

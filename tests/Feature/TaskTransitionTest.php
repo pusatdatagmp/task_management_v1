@@ -172,6 +172,35 @@ test('approving a task in review freezes actual_minutes and fills completed_at (
         ->and($task->actual_minutes)->toBe(40);
 });
 
+test('a task that is already Selesai is locked permanently -- cannot move backward via status biasa (revisi 2026-08-06 item 3)', function () {
+    $admin = User::factory()->admin()->create();
+    $project = createTransitionProject($admin);
+    $review = TaskStatus::where('project_id', $project->id)->where('is_review', true)->firstOrFail();
+    $todo = TaskStatus::where('project_id', $project->id)->where('position', 0)->firstOrFail();
+    $inProgress = TaskStatus::where('project_id', $project->id)->where('is_work_state', true)->firstOrFail();
+    $task = createTransitionTask($project, $review, $admin);
+
+    $this->actingAs($admin)->patch(route('tasks.approve', [$project, $task]), ['quality_rating' => 5])
+        ->assertSessionDoesntHaveErrors();
+
+    $task->refresh();
+    $doneStatusId = $task->task_status_id;
+    $frozenActual = $task->actual_minutes;
+    expect($task->taskStatus->is_completed)->toBeTrue();
+
+    // Coba mundur ke Todo maupun In Progress -- KEDUANYA harus ditolak, bukan cuma posisi terjauh.
+    foreach ([$todo, $inProgress] as $target) {
+        $response = $this->actingAs($admin)->patch(route('tasks.status', [$project, $task]), [
+            'task_status_id' => $target->id,
+        ]);
+
+        $response->assertSessionHasErrors('task_status_id');
+        $task->refresh();
+        expect($task->task_status_id)->toBe($doneStatusId)
+            ->and($task->actual_minutes)->toBe($frozenActual);
+    }
+});
+
 test('member cannot change the status of a task assigned to someone else', function () {
     $admin = User::factory()->admin()->create();
     $project = createTransitionProject($admin);

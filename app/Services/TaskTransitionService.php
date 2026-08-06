@@ -24,7 +24,9 @@
  * DATA MASUK  : Task, TaskStatus tujuan, User pelaku (dari controller, sudah lolos FormRequest)
  * DATA KELUAR : tasks.task_status_id (+ approved_at/approved_by/quality_rating saat
  *               approve), task_time_segments.started_at/ended_at (F-138, start/hold/resume)
- * RISIKO      : SUMBER : F-45 — maju cuma boleh position+1, mundur bebas. F-28 — status
+ * RISIKO      : SUMBER : F-45 — maju cuma boleh position+1, mundur bebas KECUALI dari
+ *               is_completed (revisi 2026-08-06 item 3 — task Selesai terkunci permanen,
+ *               nol jalan keluar, cegah retroaktif F-39). F-28 — status
  *               is_review CUMA bisa keluar lewat approve()/reject(), generic changeStatus()
  *               MENOLAK task yang sedang is_review supaya quality_rating tidak pernah
  *               terlewat diisi. JANGAN hardcode nama status (F-44) — semua keputusan
@@ -251,6 +253,18 @@ class TaskTransitionService
         if ($currentStatus->is_review) {
             throw ValidationException::withMessages([
                 'task_status_id' => 'Task sedang di-review — gunakan approve/reject, bukan ubah status biasa.',
+            ]);
+        }
+
+        // BUSINESS RULE (revisi 2026-08-06 item 3, semangat F-39): task yang sudah
+        // is_completed TERKUNCI PERMANEN — approve() satu-satunya jalan MASUK (F-28),
+        // dan TIDAK ADA jalan KELUAR lagi lewat jalur mana pun. F-45 "mundur bebas"
+        // sengaja TIDAK berlaku di sini: kalau status boleh mundur dari Selesai,
+        // task bisa dibuka lagi lalu di-approve ULANG dengan actual_minutes baru —
+        // menulis ulang retroaktif angka KPI yang seharusnya beku selamanya.
+        if ($currentStatus->is_completed) {
+            throw ValidationException::withMessages([
+                'task_status_id' => 'Task sudah Selesai — status terkunci permanen, tidak bisa diubah lagi.',
             ]);
         }
 
