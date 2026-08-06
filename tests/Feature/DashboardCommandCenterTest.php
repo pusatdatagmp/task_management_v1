@@ -1040,3 +1040,39 @@ test('revisi 2026-08-06: Command Center Page -- Beban Tim viewer terbatas cuma d
     expect(collect($oldRows)->pluck('id')->sort()->values()->all())
         ->toBe(collect([$admin->id, $viewer->id, $other->id])->sort()->values()->all());
 });
+
+test('revisi 2026-08-06 (Boss): summary_cards.beban_harian ANGKANYA beda -- admin agregat semua orang, viewer terbatas cuma dirinya', function () {
+    $admin = User::factory()->admin()->create();
+    $viewer = ccRestrictedViewer($admin);
+    $others = User::factory()->count(3)->create(['organization_id' => $admin->organization_id]);
+    $project = createCcProject($admin, [$viewer->id, ...$others->pluck('id')]);
+    $todo = TaskStatus::where('project_id', $project->id)->where('position', 0)->firstOrFail();
+    $anchor = ccAnchor();
+    seedCcSchedule($admin, $anchor);
+    $this->travelTo($anchor);
+
+    // $viewer dapat 60 menit, TIAP $other dapat 120 menit -- due HARI INI JUGA
+    // (bukan besok) supaya seluruh menit masuk beban hari ini dalam 1 hari kerja
+    // (F-118 workloadSpread membagi rata estimated_minutes ke SEMUA hari kerja
+    // antara hari-ini..due_date -- due besok = 2 hari kerja = kepotong setengah,
+    // ketahuan lewat kegagalan test ini sebelum fix: actual 210, bukan 420).
+    createCcTask($project, $todo, $admin, [$viewer->id], 60, $anchor->copy()->setTime(17, 0, 0));
+    foreach ($others as $other) {
+        createCcTask($project, $todo, $admin, [$other->id], 120, $anchor->copy()->setTime(17, 0, 0));
+    }
+
+    $adminJson = $this->actingAs($admin)->getJson(route('dashboard.command-center', ['month' => '2026-08']))->json();
+    $viewerJson = $this->actingAs($viewer)->getJson(route('dashboard.command-center', ['month' => '2026-08']))->json();
+
+    // Admin: agregat SEMUA user aktif di organisasi ini (admin+viewer+3 others =
+    // 5 orang x 480 menit kapasitas = 2400; used = 60+120+120+120 = 420).
+    expect($adminJson['summary_cards']['beban_harian'])->toBe(['used_minutes' => 420, 'capacity_minutes' => 2400])
+        ->and($adminJson['summary_cards']['todo'])->toBe(4);
+
+    // Viewer terbatas: CUMA task miliknya sendiri (60 menit) & kapasitas 1 orang (480).
+    expect($viewerJson['summary_cards']['beban_harian'])->toBe(['used_minutes' => 60, 'capacity_minutes' => 480])
+        ->and($viewerJson['summary_cards']['todo'])->toBe(1);
+
+    // GUARD utama: angkanya BENAR-BENAR beda, bukan cuma restricted_to_self flag-nya.
+    expect($adminJson['summary_cards']['beban_harian'])->not->toBe($viewerJson['summary_cards']['beban_harian']);
+});

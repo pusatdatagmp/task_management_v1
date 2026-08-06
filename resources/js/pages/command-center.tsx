@@ -453,6 +453,13 @@ export default function CommandCenter({
         applyFilters({ month: monthKey } as unknown as Record<string, string | number | null>);
     };
 
+    // Revisi 2026-08-06 (permintaan Boss): label widget WAJIB beda antara admin
+    // (data agregat seluruh tim) dan viewer terbatas (data cuma dirinya sendiri)
+    // -- supaya tidak ada kesan angka yang sama artinya sama utk keduanya. Nol
+    // logic baru di sini, data-nya SUDAH beda dari backend (restrictedToSelf),
+    // ini MURNI teks penanda.
+    const scopeLabel = (base: string) => `${base} ${restrictedToSelf ? 'Saya' : 'Sistem'}`;
+
     // §12.5: tombol global Last Week/Last Month/Pilih Tanggal -- broadcast SATU
     // rentang ke KELIMA widget berbasis periode sekaligus (donut/progress/
     // kategori/top-10/recent). Heatmap & Workload sengaja TIDAK ikut (lihat
@@ -583,7 +590,13 @@ export default function CommandCenter({
 
             <div className={`flex flex-col gap-4 p-4 transition-opacity ${navigating ? 'opacity-60' : ''}`}>
                 <div className="flex flex-wrap items-center justify-between gap-2">
-                    <h1 className="text-xl font-semibold">Command Center</h1>
+                    <div>
+                        <h1 className="text-xl font-semibold">Command Center</h1>
+                        {/* Revisi 2026-08-06: penanda cakupan data di level halaman -- viewer
+                            terbatas (project.viewAll) WAJIB langsung sadar semua angka di
+                            bawah ini milik dirinya sendiri, bukan seluruh tim. */}
+                        {restrictedToSelf && <p className="text-xs text-muted-foreground">Menampilkan data milik kamu sendiri.</p>}
+                    </div>
                     <div className="flex flex-wrap items-center gap-2">
                         {/* §12.5: tombol global periode -- terapkan ke 5 widget berbasis due_date sekaligus */}
                         <Button type="button" variant="outline" size="sm" onClick={() => applyGlobalRange(presetLastWeek())}>
@@ -638,7 +651,7 @@ export default function CommandCenter({
                 <div className="grid grid-cols-2 gap-3 md:grid-cols-5">
                     <Card>
                         <CardHeader className="flex flex-row items-center justify-between space-y-0 p-4 pb-2">
-                            <CardTitle className="text-sm font-medium text-muted-foreground">Beban Harian</CardTitle>
+                            <CardTitle className="text-sm font-medium text-muted-foreground">{scopeLabel('Beban Harian')}</CardTitle>
                             <Clock className="h-4 w-4 text-muted-foreground" />
                         </CardHeader>
                         <CardContent className="p-4 pt-0 text-2xl font-semibold">
@@ -647,28 +660,28 @@ export default function CommandCenter({
                     </Card>
                     <Card>
                         <CardHeader className="flex flex-row items-center justify-between space-y-0 p-4 pb-2">
-                            <CardTitle className="text-sm font-medium text-muted-foreground">To Do</CardTitle>
+                            <CardTitle className="text-sm font-medium text-muted-foreground">{scopeLabel('To Do')}</CardTitle>
                             <ListTodo className="h-4 w-4 text-muted-foreground" />
                         </CardHeader>
                         <CardContent className="p-4 pt-0 text-2xl font-semibold">{cards.todo}</CardContent>
                     </Card>
                     <Card>
                         <CardHeader className="flex flex-row items-center justify-between space-y-0 p-4 pb-2">
-                            <CardTitle className="text-sm font-medium text-muted-foreground">In Progress</CardTitle>
+                            <CardTitle className="text-sm font-medium text-muted-foreground">{scopeLabel('In Progress')}</CardTitle>
                             <PlayCircle className="h-4 w-4 text-muted-foreground" />
                         </CardHeader>
                         <CardContent className="p-4 pt-0 text-2xl font-semibold">{cards.in_progress}</CardContent>
                     </Card>
                     <Card>
                         <CardHeader className="flex flex-row items-center justify-between space-y-0 p-4 pb-2">
-                            <CardTitle className="text-sm font-medium text-muted-foreground">Review</CardTitle>
+                            <CardTitle className="text-sm font-medium text-muted-foreground">{scopeLabel('Review')}</CardTitle>
                             <Eye className="h-4 w-4 text-muted-foreground" />
                         </CardHeader>
                         <CardContent className="p-4 pt-0 text-2xl font-semibold">{cards.review}</CardContent>
                     </Card>
                     <Card>
                         <CardHeader className="flex flex-row items-center justify-between space-y-0 p-4 pb-2">
-                            <CardTitle className="text-sm font-medium text-muted-foreground">Overdue</CardTitle>
+                            <CardTitle className="text-sm font-medium text-muted-foreground">{scopeLabel('Overdue')}</CardTitle>
                             <AlertTriangle className="h-4 w-4 text-muted-foreground" />
                         </CardHeader>
                         <CardContent className="p-4 pt-0 text-2xl font-semibold">{cards.overdue}</CardContent>
@@ -679,7 +692,7 @@ export default function CommandCenter({
                     {/* A3: Donut prioritas */}
                     <Card>
                         <CardHeader className="flex flex-col gap-2">
-                            <CardTitle className="text-base">Prioritas Tugas</CardTitle>
+                            <CardTitle className="text-base">{scopeLabel('Prioritas Tugas')}</CardTitle>
                             <RangeUserFilter
                                 from={filters.donut_from}
                                 to={filters.donut_to}
@@ -721,7 +734,7 @@ export default function CommandCenter({
                     {/* A4: distribusi progress */}
                     <Card>
                         <CardHeader className="flex flex-col gap-2">
-                            <CardTitle className="text-base">Distribusi Progress</CardTitle>
+                            <CardTitle className="text-base">{scopeLabel('Distribusi Progress')}</CardTitle>
                             <RangeUserFilter
                                 from={filters.progress_from}
                                 to={filters.progress_to}
@@ -768,7 +781,7 @@ export default function CommandCenter({
                     {/* A5: kategori tugas */}
                     <Card>
                         <CardHeader className="flex flex-col gap-2">
-                            <CardTitle className="text-base">Kategori Tugas</CardTitle>
+                            <CardTitle className="text-base">{scopeLabel('Kategori Tugas')}</CardTitle>
                             <RangeUserFilter
                                 from={filters.categories_from}
                                 to={filters.categories_to}
@@ -806,7 +819,7 @@ export default function CommandCenter({
         "Detail & filter" (menggantikan Link ke halaman dashboard lama). */}
                     <Card>
                         <CardHeader className="flex flex-row items-center justify-between space-y-0">
-                            <CardTitle className="text-base">Team Work Load — {team.date}</CardTitle>
+                            <CardTitle className="text-base">{scopeLabel('Team Work Load')} — {team.date}</CardTitle>
                             <Button type="button" variant="outline" size="sm" onClick={() => setWorkloadModalOpen(true)}>
                                 Detail & filter →
                             </Button>
@@ -871,7 +884,7 @@ export default function CommandCenter({
                     <Dialog open={workloadModalOpen} onOpenChange={setWorkloadModalOpen}>
                         <DialogContent className="max-h-[85vh] max-w-3xl overflow-y-auto">
                             <DialogHeader>
-                                <DialogTitle>Team Work Load — Detail &amp; Filter</DialogTitle>
+                                <DialogTitle>{scopeLabel('Team Work Load')} — Detail &amp; Filter</DialogTitle>
                             </DialogHeader>
 
                             <div className="flex flex-wrap items-end gap-3 text-sm">
@@ -1036,7 +1049,7 @@ export default function CommandCenter({
                     {/* A6: master calendar heatmap */}
                     <Card>
                         <CardHeader className="flex flex-row flex-wrap items-center justify-between gap-2 space-y-0">
-                            <CardTitle className="text-base">Kalender Beban Tim — {heatmap.month}</CardTitle>
+                            <CardTitle className="text-base">{scopeLabel('Kalender Beban')} — {heatmap.month}</CardTitle>
                             <div className="flex flex-wrap items-center gap-2">
                                 <UserOnlyFilter userId={filters.heatmap_user_id} users={filterUsers} onChange={(userId) => applyFilters({ heatmap_user_id: userId })} />
                                 <Button variant="outline" size="sm" onClick={() => goToMonth(shiftMonth(heatmap.month, -1))} disabled={navigating}>
@@ -1260,7 +1273,7 @@ export default function CommandCenter({
                     {/* A9: recent activity -- label APA ADANYA dari ActivityLogPresenter (F-106) */}
                     <Card>
                         <CardHeader className="flex flex-col gap-2">
-                            <CardTitle className="text-base">Aktivitas Terbaru</CardTitle>
+                            <CardTitle className="text-base">{scopeLabel('Aktivitas Terbaru')}</CardTitle>
                             <RangeUserFilter
                                 from={filters.activity_from}
                                 to={filters.activity_to}
@@ -1300,7 +1313,7 @@ export default function CommandCenter({
         + tombol Show more ke halaman "Semua Tugas" (tasks.all). */}
                     <Card>
                         <CardHeader className="flex flex-col gap-2">
-                            <CardTitle className="text-base">Top-10 Task Prioritas</CardTitle>
+                            <CardTitle className="text-base">{scopeLabel('Top-10 Task Prioritas')}</CardTitle>
                             <RangeUserFilter
                                 from={filters.top_tasks_from}
                                 to={filters.top_tasks_to}
