@@ -28,6 +28,9 @@ interface MyTaskRow {
     assignees: { id: number; name: string }[];
     project: { id: number; name: string; task_statuses: TaskStatusOption[] };
     live_counter: LiveCounterData | null;
+    // Revisi 2026-08-06 item 1: persentase progress (F-123 basis).
+    progress_percent: number;
+    checklist_items_count: number;
 }
 
 interface MyTasksProps {
@@ -81,6 +84,7 @@ export default function MyTasks({ groups }: MyTasksProps) {
                                                 <th className="p-3">Project</th>
                                                 <th className="p-3">Prioritas</th>
                                                 <th className="p-3">Status</th>
+                                                <th className="p-3">Progress</th>
                                                 <th className="p-3">Due date</th>
                                                 <th className="p-3">Aksi</th>
                                             </tr>
@@ -107,6 +111,13 @@ export default function MyTasks({ groups }: MyTasksProps) {
                                                         >
                                                             {task.task_status.name}
                                                         </Badge>
+                                                    </td>
+                                                    <td className="p-3">
+                                                        {task.checklist_items_count > 0 ? (
+                                                            <Badge variant="outline">{task.progress_percent}%</Badge>
+                                                        ) : (
+                                                            <span className="text-xs text-muted-foreground">-</span>
+                                                        )}
                                                     </td>
                                                     <td className="p-3">{new Date(task.due_date).toLocaleString('id-ID')}</td>
                                                     <td className="p-3">

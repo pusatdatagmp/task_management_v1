@@ -55,6 +55,9 @@ interface TaskRow {
     project: { id: number; name: string; task_statuses: TaskStatusOption[] };
     parent: { id: number; title: string } | null;
     live_counter: LiveCounterData | null;
+    // Revisi 2026-08-06 item 1: persentase progress (F-123 basis, freeze saat Selesai).
+    progress_percent: number;
+    checklist_items_count: number;
 }
 
 interface PaginatedTasks {
@@ -312,6 +315,7 @@ export default function AllTasks({ tasks, projects, members, filters }: AllTasks
                                 <th className="p-3">Project</th>
                                 <th className="p-3">Prioritas</th>
                                 <th className="p-3">Status</th>
+                                <th className="p-3">Progress</th>
                                 <th className="p-3">Assignee</th>
                                 <th className="p-3">Due date</th>
                                 <th className="p-3">Poin</th>
@@ -357,6 +361,13 @@ export default function AllTasks({ tasks, projects, members, filters }: AllTasks
                                             {task.task_status.name}
                                         </Badge>
                                     </td>
+                                    <td className="p-3">
+                                        {task.checklist_items_count > 0 || task.task_status.is_completed ? (
+                                            <Badge variant="outline">{task.progress_percent}%</Badge>
+                                        ) : (
+                                            <span className="text-xs text-muted-foreground">-</span>
+                                        )}
+                                    </td>
                                     <td className="p-3">{task.assignees.map((a) => a.name).join(', ') || '-'}</td>
                                     <td className="p-3">{new Date(task.due_date).toLocaleString('id-ID')}</td>
                                     <td className="p-3">{task.points}</td>
@@ -375,7 +386,7 @@ export default function AllTasks({ tasks, projects, members, filters }: AllTasks
 
                             {tasks.data.length === 0 && (
                                 <tr>
-                                    <td colSpan={8} className="p-8 text-center">
+                                    <td colSpan={9} className="p-8 text-center">
                                         <p className="text-muted-foreground">Tidak ada task yang cocok dengan filter ini.</p>
                                         {hasActiveFilter && (
                                             <Button type="button" variant="outline" size="sm" className="mt-2" onClick={resetFilters}>

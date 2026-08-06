@@ -323,3 +323,75 @@ test('task.manage bisa membuat subtask (audit F-90 -- kontrol positif)', functio
     $response->assertRedirect(route('tasks.index', $project));
     expect(Task::where('title', 'Subtask oleh admin')->where('parent_task_id', $parent->id)->exists())->toBeTrue();
 });
+
+test('progressPercent(): checklist kosong -> 0 kalau belum selesai (revisi 2026-08-06 item 1)', function () {
+    $admin = User::factory()->admin()->create();
+    $project = createTaskProject($admin);
+    $todo = TaskStatus::where('project_id', $project->id)->where('position', 0)->firstOrFail();
+    $task = Task::create([
+        'organization_id' => $admin->organization_id, 'project_id' => $project->id, 'task_status_id' => $todo->id,
+        'title' => 'Tanpa checklist', 'task_type' => 'tentative', 'estimated_minutes' => 60,
+        'due_date' => now()->addWeek(), 'created_by' => $admin->id,
+    ]);
+
+    expect($task->progressPercent())->toBe(0);
+});
+
+test('progressPercent(): task Selesai SELALU 100 walau checklist belum lengkap -- freeze (revisi 2026-08-06 item 1)', function () {
+    $admin = User::factory()->admin()->create();
+    $project = createTaskProject($admin);
+    $done = TaskStatus::where('project_id', $project->id)->where('is_completed', true)->firstOrFail();
+    $task = Task::create([
+        'organization_id' => $admin->organization_id, 'project_id' => $project->id, 'task_status_id' => $done->id,
+        'title' => 'Selesai dengan checklist bolong', 'task_type' => 'tentative', 'estimated_minutes' => 60,
+        'due_date' => now()->addWeek(), 'created_by' => $admin->id,
+    ]);
+    $task->checklistItems()->create(['organization_id' => $admin->organization_id, 'text' => 'A', 'position' => 0, 'is_done' => true]);
+    $task->checklistItems()->create(['organization_id' => $admin->organization_id, 'text' => 'B', 'position' => 1, 'is_done' => false]);
+
+    expect($task->fresh()->progressPercent())->toBe(100);
+});
+
+test('progressPercent(): checklist 2 dari 4 dicentang -> 50 (revisi 2026-08-06 item 1)', function () {
+    $admin = User::factory()->admin()->create();
+    $project = createTaskProject($admin);
+    $inProgress = TaskStatus::where('project_id', $project->id)->where('is_work_state', true)->firstOrFail();
+    $task = Task::create([
+        'organization_id' => $admin->organization_id, 'project_id' => $project->id, 'task_status_id' => $inProgress->id,
+        'title' => 'Checklist separuh', 'task_type' => 'tentative', 'estimated_minutes' => 60,
+        'due_date' => now()->addWeek(), 'created_by' => $admin->id,
+    ]);
+    foreach ([true, true, false, false] as $i => $done) {
+        $task->checklistItems()->create(['organization_id' => $admin->organization_id, 'text' => "Item {$i}", 'position' => $i, 'is_done' => $done]);
+    }
+
+    expect($task->fresh()->progressPercent())->toBe(50);
+});
+
+test('progressPercent() dari withChecklistCounts() (listing) IDENTIK dengan dari relasi eager-load (detail) -- satu sumber (revisi 2026-08-06 item 1)', function () {
+    $admin = User::factory()->admin()->create();
+    $project = createTaskProject($admin);
+    $inProgress = TaskStatus::where('project_id', $project->id)->where('is_work_state', true)->firstOrFail();
+    $task = Task::create([
+        'organization_id' => $admin->organization_id, 'project_id' => $project->id, 'task_status_id' => $inProgress->id,
+        'title' => 'Konsistensi listing vs detail', 'task_type' => 'tentative', 'estimated_minutes' => 60,
+        'due_date' => now()->addWeek(), 'created_by' => $admin->id,
+    ]);
+    foreach ([true, false, false] as $i => $done) {
+        $task->checklistItems()->create(['organization_id' => $admin->organization_id, 'text' => "Item {$i}", 'position' => $i, 'is_done' => $done]);
+    }
+
+    // Jalur "detail" (F-123 pattern show()): relasi checklistItems eager-loaded penuh.
+    $viaRelation = Task::with(['taskStatus', 'checklistItems'])->findOrFail($task->id);
+
+    // Jalur "listing" (index()/all()/myTasks()/Board): withCount() alias, TANPA
+    // eager-load relasi penuh -- membuktikan cabang fallback withCount() di
+    // progressPercent() menghasilkan angka SAMA PERSIS, bukan rumus kedua.
+    $viaWithCount = Task::withCount([
+        'checklistItems as checklist_items_count',
+        'checklistItems as checklist_done_items_count' => fn ($q) => $q->where('is_done', true),
+    ])->with('taskStatus')->findOrFail($task->id);
+
+    expect($viaRelation->progressPercent())->toBe(33)
+        ->and($viaWithCount->progressPercent())->toBe(33);
+});

@@ -67,6 +67,9 @@ interface CardData {
     is_work_state: boolean;
     assignees: UserOption[];
     children_count: number;
+    // Revisi 2026-08-06 item 1: persentase progress (F-123 basis).
+    progress_percent: number;
+    checklist_items_count: number;
     live_counter: LiveCounterData | null;
     due_status: 'overdue' | 'today' | null;
     can_drag: boolean;
@@ -156,6 +159,13 @@ function TaskCardContent({ card }: { card: CardData }) {
                     <Badge className="border-transparent bg-amber-500 text-[10px] text-white hover:bg-amber-500">Hari ini</Badge>
                 )}
                 {card.children_count > 0 && <span className="text-[10px] text-muted-foreground">{card.children_count} subtugas</span>}
+                {/* Revisi 2026-08-06 item 1: nol badge kalau checklist kosong (nol
+                    indikator granular, bukan "0%" membingungkan). */}
+                {card.checklist_items_count > 0 && (
+                    <Badge variant="outline" className="text-[10px]">
+                        {card.progress_percent}%
+                    </Badge>
+                )}
             </div>
 
             <div className="flex items-center justify-between gap-2">

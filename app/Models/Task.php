@@ -241,4 +241,47 @@ class Task extends Model
     {
         return $this->hasMany(TaskChecklistItem::class)->orderBy('position');
     }
+
+    /**
+     * KONTRAK: persentase progress per-task (revisi 2026-08-06 item 1) — checklist
+     * (F-123, "subtask" ringan) sebagai basis TUNGGAL, F-38 style: TURUNAN murni,
+     * NOL kolom DB baru. Task SUDAH is_completed -> SELALU 100 -- freeze OTOMATIS
+     * lewat status itu sendiri (F-39 sudah membekukannya permanen, F-45 sekarang
+     * juga mengunci mundur — lihat TaskTransitionService), tidak perlu simpan angka
+     * terpisah. Belum selesai + checklist KOSONG -> 0 (belum ada indikator granular,
+     * BUKAN dipaksa dianggap "sudah jalan"). Checklist ADA -> round(done/total*100),
+     * pola pembulatan SAMA dengan workloadSpread() (DashboardService, F-118).
+     *
+     * F-85: 3 sumber data checklist, DIPILIH berurutan supaya NOL N+1 di listing
+     * banyak task —
+     *   1. relationLoaded('checklistItems') -- TaskController::show() eager-load
+     *      penuh (dipakai juga untuk render daftar item), hitung dari koleksi
+     *      yang SUDAH ADA di memori, nol query tambahan.
+     *   2. checklist_items_count/checklist_done_items_count -- alias withCount()
+     *      yang caller (index()/all()/myTasks()/BoardController) WAJIB pasang di
+     *      query SEBELUM paginate()/get() kalau daftarnya banyak task.
+     *   3. Fallback query relasi langsung -- jaring pengaman kalau caller lupa
+     *      eager-load/withCount, aman dipakai HANYA untuk 1 task (show() lama
+     *      sebelum eager-load ditambah, atau pemanggilan ad-hoc di tinker/test).
+     */
+    public function progressPercent(): int
+    {
+        if ($this->taskStatus->is_completed) {
+            return 100;
+        }
+
+        if ($this->relationLoaded('checklistItems')) {
+            $total = $this->checklistItems->count();
+            $done = $this->checklistItems->where('is_done', true)->count();
+        } else {
+            $total = $this->checklist_items_count ?? $this->checklistItems()->count();
+            $done = $this->checklist_done_items_count ?? $this->checklistItems()->where('is_done', true)->count();
+        }
+
+        if ($total === 0) {
+            return 0;
+        }
+
+        return (int) round($done / $total * 100);
+    }
 }

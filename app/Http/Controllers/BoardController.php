@@ -63,7 +63,14 @@ class BoardController extends Controller
         $query = Task::where('project_id', $project->id)
             ->whereNull('parent_task_id')
             ->with(['taskStatus', 'assignees:id,name'])
-            ->withCount('children');
+            ->withCount('children')
+            // Revisi 2026-08-06 item 1 (F-85): alias SAMA PERSIS TaskController::
+            // withChecklistCounts() -- beda class, definisi identik sengaja tidak
+            // dishare (2 baris trivial, bukan kalkulator KPI, F-109 soal itu bukan soal ini).
+            ->withCount([
+                'checklistItems as checklist_items_count',
+                'checklistItems as checklist_done_items_count' => fn ($q) => $q->where('is_done', true),
+            ]);
 
         if (! empty($filters['assignee'])) {
             $query->whereHas('assignees', fn ($q) => $q->whereIn('users.id', $filters['assignee']));
@@ -97,6 +104,8 @@ class BoardController extends Controller
                 'is_work_state' => $task->taskStatus->is_work_state,
                 'assignees' => $task->assignees,
                 'children_count' => $task->children_count,
+                'progress_percent' => $task->progressPercent(), // revisi 2026-08-06 item 1
+                'checklist_items_count' => $task->checklist_items_count,
                 'live_counter' => $liveCounters[$task->id] ?? null,
                 // SUMBER: perbandingan tanggal MENTAH (pola sama TaskController::index()
                 // filter 'due') — BUKAN kalkulator KPI, F-109 tidak melarang ini.

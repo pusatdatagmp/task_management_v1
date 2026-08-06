@@ -13,7 +13,11 @@
  * MEMANGGIL   : Task, TaskStatus, TaskTransitionService, Symfony\...\HtmlSanitizer (F-82 A3)
  * DATA MASUK  : Form Task CRUD, form approve (quality_rating), aksi ubah status
  * DATA KELUAR : Inertia pages 'tasks/*'
- * RISIKO      : SUMBER : F-76 — {project}/{task} di URL di-scope oleh
+ * RISIKO      : SUMBER (revisi 2026-08-06 item 1): index()/all()/myTasks() WAJIB
+ *               bungkus query dengan self::withChecklistCounts() SEBELUM paginate()/
+ *               get() — progressPercent() (Task model) baca alias checklist_items_count/
+ *               checklist_done_items_count dari situ, lupa pasang = N+1 per baris (F-85).
+ *               SUMBER : F-76 — {project}/{task} di URL di-scope oleh
  *               ->scopeBindings() di route group (routes/web.php & routes/admin.php),
  *               BUKAN pengecekan manual per-method di sini lagi. Task yang bukan anak
  *               project di URL otomatis 404 dari routing (Project::tasks() relation).
@@ -41,6 +45,7 @@ use App\Services\LiveTaskCounter;
 use App\Services\TaskTransitionService;
 use App\Support\ActivityLogPresenter;
 use Carbon\Carbon;
+use Illuminate\Database\Eloquent\Builder;
 use Illuminate\Http\JsonResponse;
 use Illuminate\Http\RedirectResponse;
 use Illuminate\Http\Request;
@@ -71,8 +76,9 @@ class TaskController extends Controller
 
         $filters = $request->validated();
 
-        $query = $project->tasks()
-            ->with(['taskStatus', 'assignees:id,name', 'parent:id,title']);
+        $query = self::withChecklistCounts(
+            $project->tasks()->with(['taskStatus', 'assignees:id,name', 'parent:id,title'])
+        );
 
         if (! empty($filters['status'])) {
             $query->whereIn('task_status_id', $filters['status']);
@@ -117,6 +123,9 @@ class TaskController extends Controller
         $liveCounters = (new LiveTaskCounter)->forTasks($tasks->getCollection(), $user);
         $tasks->getCollection()->each(function (Task $task) use ($liveCounters) {
             $task->live_counter = $liveCounters[$task->id] ?? null;
+            // Revisi 2026-08-06 item 1: progress_percent (F-123 basis) — checklist_items_count/
+            // checklist_done_items_count SUDAH dimuat withChecklistCounts() di atas (F-85).
+            $task->progress_percent = $task->progressPercent();
         });
 
         return Inertia::render('tasks/index', [
@@ -230,6 +239,10 @@ class TaskController extends Controller
                     'text' => $item->text,
                     'is_done' => $item->is_done,
                 ]),
+                // Revisi 2026-08-06 item 1: checklistItems SUDAH eager-loaded di atas
+                // (baris 172-ish load()) -- progressPercent() pakai koleksi itu langsung,
+                // nol query tambahan (lihat KONTRAK Task::progressPercent()).
+                'progress_percent' => $task->progressPercent(),
                 'attachments' => $task->attachments->map(fn ($a) => [
                     'id' => $a->id,
                     'file_name' => $a->file_name,
@@ -274,17 +287,19 @@ class TaskController extends Controller
     {
         $user = $request->user();
 
-        $tasks = Task::whereHas('assignees', fn ($q) => $q->whereKey($user->id))
-            ->whereHas('taskStatus', fn ($q) => $q->where('is_completed', false))
-            ->with(['taskStatus', 'assignees:id,name', 'project:id,name', 'project.taskStatuses'])
-            ->orderBy('due_date')
-            ->get();
+        $tasks = self::withChecklistCounts(
+            Task::whereHas('assignees', fn ($q) => $q->whereKey($user->id))
+                ->whereHas('taskStatus', fn ($q) => $q->where('is_completed', false))
+                ->with(['taskStatus', 'assignees:id,name', 'project:id,name', 'project.taskStatuses'])
+                ->orderBy('due_date')
+        )->get();
 
         // F-94/B2: counter live per baris — di-batch SEKALI atas seluruh task
         // sebelum dikelompokkan (F-85), bukan per grup/per baris.
         $liveCounters = (new LiveTaskCounter)->forTasks($tasks, $user);
         $tasks->each(function (Task $task) use ($liveCounters) {
             $task->live_counter = $liveCounters[$task->id] ?? null;
+            $task->progress_percent = $task->progressPercent(); // revisi 2026-08-06 item 1
         });
 
         $now = Carbon::now();
@@ -321,8 +336,9 @@ class TaskController extends Controller
         // SUMBER: 'project.taskStatuses' (BUKAN cuma 'project:id,name') supaya
         // TaskStatusCell per baris (F-45/F-28) bisa bangun dropdown status project
         // MASING-MASING task — pola sama myTasks(), status TIDAK seragam lintas project.
-        $query = Task::query()
-            ->with(['taskStatus', 'assignees:id,name', 'project:id,name', 'project.taskStatuses', 'parent:id,title']);
+        $query = self::withChecklistCounts(
+            Task::query()->with(['taskStatus', 'assignees:id,name', 'project:id,name', 'project.taskStatuses', 'parent:id,title'])
+        );
 
         if (! empty($filters['project_id'])) {
             $query->where('project_id', $filters['project_id']);
@@ -385,6 +401,7 @@ class TaskController extends Controller
         $liveCounters = (new LiveTaskCounter)->forTasks($tasks->getCollection(), $user);
         $tasks->getCollection()->each(function (Task $task) use ($liveCounters) {
             $task->live_counter = $liveCounters[$task->id] ?? null;
+            $task->progress_percent = $task->progressPercent(); // revisi 2026-08-06 item 1
         });
 
         return Inertia::render('tasks/all', [
@@ -623,5 +640,23 @@ class TaskController extends Controller
         $service->submit($task, $request->user());
 
         return back();
+    }
+
+    /**
+     * KONTRAK: alias withCount() checklist (F-123) DIPAKAI Task::progressPercent()
+     * (revisi 2026-08-06 item 1, F-85 — nol N+1 di listing banyak task). Method
+     * static dipanggil SAMA PERSIS dari index()/all()/myTasks() supaya alias
+     * checklist_items_count/checklist_done_items_count TIDAK bisa drift antar
+     * listing (satu definisi, F-109).
+     *
+     * @param  Builder<Task>  $query
+     * @return Builder<Task>
+     */
+    private static function withChecklistCounts($query)
+    {
+        return $query->withCount([
+            'checklistItems as checklist_items_count',
+            'checklistItems as checklist_done_items_count' => fn ($q) => $q->where('is_done', true),
+        ]);
     }
 }

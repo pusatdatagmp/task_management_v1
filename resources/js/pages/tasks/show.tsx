@@ -106,6 +106,9 @@ interface TaskDetail {
     comments: CommentData[];
     activity_logs: ActivityLogRow[];
     live_counter: LiveCounterData | null;
+    // Revisi 2026-08-06 item 1: persentase progress (F-123 basis) -- SELALU 100
+    // kalau task_status.is_completed (freeze, Task::progressPercent()).
+    progress_percent: number;
 }
 
 interface TaskShowProps {
@@ -166,6 +169,12 @@ export default function TaskShow({ project, task, statuses, projectMembers }: Ta
                                 >
                                     {PRIORITY_QUADRANT_LABEL[task.priority_quadrant]}
                                 </Badge>
+                            )}
+                            {/* Revisi 2026-08-06 item 1: persentase progress (F-123 basis, freeze
+                                saat Selesai) -- checklist_items kosong DAN belum selesai = badge
+                                tidak tampil (nol indikator granular, bukan 0% membingungkan). */}
+                            {(task.checklist_items.length > 0 || task.task_status.is_completed) && (
+                                <Badge variant="outline">{task.progress_percent}% selesai</Badge>
                             )}
                         </div>
                         {task.parent && (
