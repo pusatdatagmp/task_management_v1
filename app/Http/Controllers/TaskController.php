@@ -243,10 +243,16 @@ class TaskController extends Controller
                 // (baris 172-ish load()) -- progressPercent() pakai koleksi itu langsung,
                 // nol query tambahan (lihat KONTRAK Task::progressPercent()).
                 'progress_percent' => $task->progressPercent(),
+                // Revisi 2026-08-06 item 4: content_type/url/body ikut dikirim --
+                // frontend render berbeda per mode (file=link download, link=buka
+                // tab baru, text=tampil apa adanya).
                 'attachments' => $task->attachments->map(fn ($a) => [
                     'id' => $a->id,
+                    'content_type' => $a->content_type,
                     'file_name' => $a->file_name,
                     'file_size' => $a->file_size,
+                    'url' => $a->url,
+                    'body' => $a->body,
                     'uploaded_by' => $a->uploadedBy,
                     'created_at' => $a->created_at,
                 ]),

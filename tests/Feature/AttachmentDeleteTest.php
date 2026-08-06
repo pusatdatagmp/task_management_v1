@@ -83,7 +83,7 @@ test('member cannot delete an attachment, even their own (F-105)', function () {
     $todo = TaskStatus::where('project_id', $project->id)->where('position', 0)->firstOrFail();
     $task = createDeleteTestTask($project, $todo, $admin, $member);
 
-    $this->actingAs($member)->post(route('attachments.store', [$project, $task]), ['file' => deleteTestPdf()])
+    $this->actingAs($member)->post(route('attachments.store', [$project, $task]), ['content_type' => 'file', 'file' => deleteTestPdf()])
         ->assertRedirect();
     $attachment = Attachment::where('task_id', $task->id)->firstOrFail();
 
@@ -103,7 +103,7 @@ test('admin can delete an attachment and it is logged (F-51)', function () {
     $todo = TaskStatus::where('project_id', $project->id)->where('position', 0)->firstOrFail();
     $task = createDeleteTestTask($project, $todo, $admin, $member);
 
-    $this->actingAs($member)->post(route('attachments.store', [$project, $task]), ['file' => deleteTestPdf()])
+    $this->actingAs($member)->post(route('attachments.store', [$project, $task]), ['content_type' => 'file', 'file' => deleteTestPdf()])
         ->assertRedirect();
     $attachment = Attachment::where('task_id', $task->id)->firstOrFail();
     $path = $attachment->file_path;
@@ -129,7 +129,7 @@ test('even admin cannot delete an attachment from an already approved task (F-10
     $review = TaskStatus::where('project_id', $project->id)->where('is_review', true)->firstOrFail();
     $task = createDeleteTestTask($project, $review, $admin, $member);
 
-    $this->actingAs($member)->post(route('attachments.store', [$project, $task]), ['file' => deleteTestPdf()])
+    $this->actingAs($member)->post(route('attachments.store', [$project, $task]), ['content_type' => 'file', 'file' => deleteTestPdf()])
         ->assertRedirect();
     $attachment = Attachment::where('task_id', $task->id)->firstOrFail();
 
@@ -154,9 +154,9 @@ test('member revision is append-only: two uploads leave two attachment rows', fu
     $todo = TaskStatus::where('project_id', $project->id)->where('position', 0)->firstOrFail();
     $task = createDeleteTestTask($project, $todo, $admin, $member);
 
-    $this->actingAs($member)->post(route('attachments.store', [$project, $task]), ['file' => deleteTestPdf('v1.pdf')])
+    $this->actingAs($member)->post(route('attachments.store', [$project, $task]), ['content_type' => 'file', 'file' => deleteTestPdf('v1.pdf')])
         ->assertRedirect();
-    $this->actingAs($member)->post(route('attachments.store', [$project, $task]), ['file' => deleteTestPdf('v2.pdf')])
+    $this->actingAs($member)->post(route('attachments.store', [$project, $task]), ['content_type' => 'file', 'file' => deleteTestPdf('v2.pdf')])
         ->assertRedirect();
 
     expect(Attachment::where('task_id', $task->id)->count())->toBe(2);

@@ -195,6 +195,7 @@ test('a task travels create -> board+list -> drag -> comment/mention -> approve,
 
     // === A1: ATTACHMENT + REVIEW + APPROVE -- freeze, kunci, dashboard beban turun ===
     $this->actingAs($member)->post(route('attachments.store', [$project, $task]), [
+        'content_type' => 'file',
         'file' => v10Pdf(),
     ])->assertRedirect()->assertSessionDoesntHaveErrors();
     $attachment = Attachment::where('task_id', $task->id)->firstOrFail();
@@ -214,6 +215,7 @@ test('a task travels create -> board+list -> drag -> comment/mention -> approve,
 
     // F-104/F-107: attachment terkunci TOTAL pasca-approve, bahkan admin.
     $this->actingAs($member)->post(route('attachments.store', [$project, $task]), [
+        'content_type' => 'file',
         'file' => v10Pdf('revisi.pdf'),
     ])->assertForbidden();
     $this->actingAs($admin)->delete(route('attachments.destroy', [$project, $task, $attachment]))

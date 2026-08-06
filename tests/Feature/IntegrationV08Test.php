@@ -123,6 +123,7 @@ test('recurring -> dashboard beban -> counter live -> attachment -> review -> ap
 
     // === PILAR 4: ATTACHMENT OUTPUT (F-49) — bebas selama task belum approved. ===
     $this->actingAs($member)->post(route('attachments.store', [$project, $task]), [
+        'content_type' => 'file',
         'file' => integrationPdf(),
     ])->assertRedirect()->assertSessionDoesntHaveErrors();
     $attachment = Attachment::where('task_id', $task->id)->firstOrFail();
@@ -158,6 +159,7 @@ test('recurring -> dashboard beban -> counter live -> attachment -> review -> ap
 
     // === PILAR 4 LAGI: ATTACHMENT TERKUNCI PASCA-APPROVE (F-104/F-107) ===
     $lockedUpload = $this->actingAs($member)->post(route('attachments.store', [$project, $task]), [
+        'content_type' => 'file',
         'file' => integrationPdf('revisi.pdf'),
     ]);
     $lockedUpload->assertForbidden();

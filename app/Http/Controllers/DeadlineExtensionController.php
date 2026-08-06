@@ -71,14 +71,21 @@ class DeadlineExtensionController extends Controller
 
             // F-49: evidence OPSIONAL (skema tidak mewajibkannya, beda dari `reason`
             // yang eksplisit wajib di data model) — infra sama dengan attachment output.
-            if ($request->hasFile('evidence')) {
-                Attachment::storeUploadedFile($request->file('evidence'), [
-                    'task_id' => $task->id,
-                    'deadline_extension_id' => $extension->id,
-                    'type' => 'evidence',
-                    'uploaded_by' => $user->id,
-                ]);
-            }
+            // Revisi 2026-08-06 item 4: 3 mode ISI (evidence_type), `type` tetap
+            // 'evidence' di ketiganya.
+            $evidenceAttributes = [
+                'task_id' => $task->id,
+                'deadline_extension_id' => $extension->id,
+                'type' => 'evidence',
+                'uploaded_by' => $user->id,
+            ];
+
+            match ($request->validated('evidence_type')) {
+                'file' => Attachment::storeUploadedFile($request->file('evidence_file'), $evidenceAttributes),
+                'link' => Attachment::storeLink($request->validated('evidence_url'), $evidenceAttributes),
+                'text' => Attachment::storeText($request->validated('evidence_text'), $evidenceAttributes),
+                default => null, // evidence_type null = tidak melampirkan apa pun (F-49 opsional)
+            };
         });
 
         return to_route('extensions.my');

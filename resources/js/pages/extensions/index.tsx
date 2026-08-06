@@ -19,9 +19,14 @@ import { confirmAction, promptInput } from '@/lib/swal';
 import { type BreadcrumbItem } from '@/types';
 import { Head, router } from '@inertiajs/react';
 
+type ContentType = 'file' | 'link' | 'text';
+
 interface AttachmentRef {
     id: number;
-    file_name: string;
+    content_type: ContentType;
+    file_name: string | null;
+    url: string | null;
+    body: string | null;
 }
 
 interface ExtensionRow {
@@ -84,13 +89,24 @@ export default function ExtensionsIndex({ extensions }: { extensions: ExtensionR
                                     {ext.attachments.length > 0 && (
                                         <div className="mt-2 flex flex-col gap-1">
                                             {ext.attachments.map((a) => (
-                                                <a
-                                                    key={a.id}
-                                                    href={route('attachments.download', [ext.task.project.id, ext.task_id, a.id])}
-                                                    className="text-xs text-primary hover:underline"
-                                                >
-                                                    Lihat bukti: {a.file_name}
-                                                </a>
+                                                <div key={a.id} className="text-xs">
+                                                    {a.content_type === 'file' && (
+                                                        <a
+                                                            href={route('attachments.download', [ext.task.project.id, ext.task_id, a.id])}
+                                                            className="text-primary hover:underline"
+                                                        >
+                                                            Lihat bukti: {a.file_name}
+                                                        </a>
+                                                    )}
+                                                    {a.content_type === 'link' && (
+                                                        <a href={a.url ?? '#'} target="_blank" rel="noopener noreferrer" className="text-primary hover:underline">
+                                                            🔗 Lihat bukti: {a.url}
+                                                        </a>
+                                                    )}
+                                                    {a.content_type === 'text' && (
+                                                        <p className="whitespace-pre-wrap break-words text-muted-foreground">Bukti: {a.body}</p>
+                                                    )}
+                                                </div>
                                             ))}
                                         </div>
                                     )}

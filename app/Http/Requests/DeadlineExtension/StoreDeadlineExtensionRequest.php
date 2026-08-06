@@ -6,6 +6,9 @@
  * KLASIFIKASI : DOMAIN
  * TUJUAN      : Validasi pengajuan perpanjangan deadline (F-50) — assignee task
  *               ATAU admin (F-95), evidence opsional lewat infra Attachment H5.
+ *               Revisi 2026-08-06 item 4: evidence_type (nullable) pilih MODE
+ *               (file/link/text) — TETAP opsional keseluruhan (beda dari Lampiran
+ *               Output yang content_type WAJIB), null = tidak melampirkan apa pun.
  * DIPANGGIL   : DeadlineExtensionController::store()
  * MEMANGGIL   : -
  * DATA MASUK  : Form "Perpanjangan Saya" — task dipilih dari dropdown (task_id di
@@ -44,7 +47,13 @@ class StoreDeadlineExtensionRequest extends FormRequest
             'requested_due_date' => ['required', 'date'],
             'additional_minutes' => ['nullable', 'integer', 'min:0'],
             'reason' => ['required', 'string', 'max:2000'],
-            'evidence' => ['nullable', 'file', 'mimes:pdf,jpg,jpeg,png,docx,xlsx,zip', 'max:10240'],
+            // Revisi 2026-08-06 item 4: evidence_type NULLABLE (beda dari
+            // StoreAttachmentRequest::content_type yang WAJIB) -- evidence
+            // TETAP seluruhnya opsional (F-49), null = tidak melampirkan.
+            'evidence_type' => ['nullable', Rule::in(['file', 'link', 'text'])],
+            'evidence_file' => ['required_if:evidence_type,file', 'file', 'mimes:pdf,jpg,jpeg,png,docx,xlsx,zip', 'max:10240'],
+            'evidence_url' => ['required_if:evidence_type,link', 'url', 'max:2048', 'regex:/^https?:\/\//i'],
+            'evidence_text' => ['required_if:evidence_type,text', 'string', 'max:10000'],
         ];
     }
 

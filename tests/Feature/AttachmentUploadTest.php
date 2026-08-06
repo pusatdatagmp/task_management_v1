@@ -92,6 +92,7 @@ test('assignee can upload output attachment to their own task', function () {
     $task = createAttachmentTask($project, $todo, $admin, $member);
 
     $response = $this->actingAs($member)->post(route('attachments.store', [$project, $task]), [
+        'content_type' => 'file',
         'file' => fakePdf(),
     ]);
 
@@ -118,6 +119,7 @@ test('non-assignee non-admin cannot upload output attachment (F-95)', function (
     $task = createAttachmentTask($project, $todo, $admin, $assignee);
 
     $response = $this->actingAs($bystander)->post(route('attachments.store', [$project, $task]), [
+        'content_type' => 'file',
         'file' => fakePdf(),
     ]);
 
@@ -137,6 +139,7 @@ test('file larger than 10MB is rejected', function () {
     $tooBig = UploadedFile::fake()->create('besar.pdf', 10241, 'application/pdf');
 
     $response = $this->actingAs($member)->post(route('attachments.store', [$project, $task]), [
+        'content_type' => 'file',
         'file' => $tooBig,
     ]);
 
@@ -158,11 +161,90 @@ test('an .exe renamed to .pdf is rejected by real content sniffing (A2)', functi
     $disguisedExe = realUploadedFile('dokumen.pdf', 'MZ'.str_repeat("\x90\x00", 200));
 
     $response = $this->actingAs($member)->post(route('attachments.store', [$project, $task]), [
+        'content_type' => 'file',
         'file' => $disguisedExe,
     ]);
 
     $response->assertSessionHasErrors('file');
     expect(Attachment::where('task_id', $task->id)->count())->toBe(0);
+});
+
+test('revisi 2026-08-06 item 4: sematkan link tersimpan tanpa file fisik', function () {
+    $admin = User::factory()->admin()->create();
+    $member = User::factory()->create(['organization_id' => $admin->organization_id]);
+    $project = createAttachmentProject($admin, [$member->id]);
+    $todo = TaskStatus::where('project_id', $project->id)->where('position', 0)->firstOrFail();
+    $task = createAttachmentTask($project, $todo, $admin, $member);
+
+    $response = $this->actingAs($member)->post(route('attachments.store', [$project, $task]), [
+        'content_type' => 'link',
+        'url' => 'https://drive.google.com/file/d/contoh',
+    ]);
+
+    $response->assertRedirect();
+    $response->assertSessionDoesntHaveErrors();
+
+    $attachment = Attachment::where('task_id', $task->id)->firstOrFail();
+    expect($attachment->content_type)->toBe('link')
+        ->and($attachment->url)->toBe('https://drive.google.com/file/d/contoh')
+        ->and($attachment->file_path)->toBeNull()
+        ->and($attachment->body)->toBeNull();
+});
+
+test('revisi 2026-08-06 item 4: link dengan scheme javascript: DITOLAK (XSS via klik)', function () {
+    $admin = User::factory()->admin()->create();
+    $member = User::factory()->create(['organization_id' => $admin->organization_id]);
+    $project = createAttachmentProject($admin, [$member->id]);
+    $todo = TaskStatus::where('project_id', $project->id)->where('position', 0)->firstOrFail();
+    $task = createAttachmentTask($project, $todo, $admin, $member);
+
+    $response = $this->actingAs($member)->post(route('attachments.store', [$project, $task]), [
+        'content_type' => 'link',
+        'url' => 'javascript:alert(1)',
+    ]);
+
+    $response->assertSessionHasErrors('url');
+    expect(Attachment::where('task_id', $task->id)->count())->toBe(0);
+});
+
+test('revisi 2026-08-06 item 4: tulis teks tersimpan tanpa file fisik', function () {
+    $admin = User::factory()->admin()->create();
+    $member = User::factory()->create(['organization_id' => $admin->organization_id]);
+    $project = createAttachmentProject($admin, [$member->id]);
+    $todo = TaskStatus::where('project_id', $project->id)->where('position', 0)->firstOrFail();
+    $task = createAttachmentTask($project, $todo, $admin, $member);
+
+    $response = $this->actingAs($member)->post(route('attachments.store', [$project, $task]), [
+        'content_type' => 'text',
+        'body' => 'Hasil kerja: sudah selesai, catatan tambahan di sini.',
+    ]);
+
+    $response->assertRedirect();
+    $response->assertSessionDoesntHaveErrors();
+
+    $attachment = Attachment::where('task_id', $task->id)->firstOrFail();
+    expect($attachment->content_type)->toBe('text')
+        ->and($attachment->body)->toBe('Hasil kerja: sudah selesai, catatan tambahan di sini.')
+        ->and($attachment->file_path)->toBeNull()
+        ->and($attachment->url)->toBeNull();
+});
+
+test('revisi 2026-08-06 item 4: download() 404 untuk attachment content_type=link/text (guard, bukan cuma HINT UI)', function () {
+    $admin = User::factory()->admin()->create();
+    $member = User::factory()->create(['organization_id' => $admin->organization_id]);
+    $project = createAttachmentProject($admin, [$member->id]);
+    $todo = TaskStatus::where('project_id', $project->id)->where('position', 0)->firstOrFail();
+    $task = createAttachmentTask($project, $todo, $admin, $member);
+
+    $this->actingAs($member)->post(route('attachments.store', [$project, $task]), [
+        'content_type' => 'link',
+        'url' => 'https://example.com/contoh',
+    ]);
+    $attachment = Attachment::where('task_id', $task->id)->firstOrFail();
+
+    $response = $this->actingAs($member)->get(route('attachments.download', [$project, $task, $attachment]));
+
+    $response->assertNotFound();
 });
 
 test('uploading to an already approved task is rejected (F-104)', function () {
@@ -182,6 +264,7 @@ test('uploading to an already approved task is rejected (F-104)', function () {
     expect($task->approved_at)->not->toBeNull();
 
     $response = $this->actingAs($member)->post(route('attachments.store', [$project, $task]), [
+        'content_type' => 'file',
         'file' => fakePdf(),
     ]);
 

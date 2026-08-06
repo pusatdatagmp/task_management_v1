@@ -83,7 +83,8 @@ test('assignee can submit an extension request with evidence, starting as pendin
         'requested_due_date' => now()->addDays(3)->format('Y-m-d H:i:s'),
         'additional_minutes' => 30,
         'reason' => 'Butuh waktu tambahan karena revisi scope.',
-        'evidence' => extEvidence(),
+        'evidence_type' => 'file',
+        'evidence_file' => extEvidence(),
     ]);
 
     $response->assertRedirect(route('extensions.my'));
@@ -97,6 +98,47 @@ test('assignee can submit an extension request with evidence, starting as pendin
     expect($evidence->type)->toBe('evidence')
         ->and($evidence->task_id)->toBe($task->id);
     Storage::disk('local')->assertExists($evidence->file_path);
+});
+
+test('revisi 2026-08-06 item 4: evidence berupa link tersimpan, type=evidence', function () {
+    $admin = User::factory()->admin()->create();
+    $member = User::factory()->create(['organization_id' => $admin->organization_id]);
+    $project = createExtProject($admin, [$member->id]);
+    $task = createExtTask($project, $admin, $member);
+
+    $response = $this->actingAs($member)->post(route('extensions.store'), [
+        'task_id' => $task->id,
+        'requested_due_date' => now()->addDays(3)->format('Y-m-d H:i:s'),
+        'reason' => 'Bukti ada di link ini.',
+        'evidence_type' => 'link',
+        'evidence_url' => 'https://drive.google.com/file/d/bukti',
+    ]);
+
+    $response->assertRedirect(route('extensions.my'));
+
+    $extension = DeadlineExtension::where('task_id', $task->id)->firstOrFail();
+    $evidence = Attachment::where('deadline_extension_id', $extension->id)->firstOrFail();
+    expect($evidence->type)->toBe('evidence')
+        ->and($evidence->content_type)->toBe('link')
+        ->and($evidence->url)->toBe('https://drive.google.com/file/d/bukti');
+});
+
+test('revisi 2026-08-06 item 4: evidence_type null -- pengajuan tetap sah tanpa lampiran apa pun (F-49 opsional)', function () {
+    $admin = User::factory()->admin()->create();
+    $member = User::factory()->create(['organization_id' => $admin->organization_id]);
+    $project = createExtProject($admin, [$member->id]);
+    $task = createExtTask($project, $admin, $member);
+
+    $response = $this->actingAs($member)->post(route('extensions.store'), [
+        'task_id' => $task->id,
+        'requested_due_date' => now()->addDays(3)->format('Y-m-d H:i:s'),
+        'reason' => 'Tanpa bukti.',
+    ]);
+
+    $response->assertRedirect(route('extensions.my'));
+
+    $extension = DeadlineExtension::where('task_id', $task->id)->firstOrFail();
+    expect(Attachment::where('deadline_extension_id', $extension->id)->count())->toBe(0);
 });
 
 test('a user who is not the assignee nor admin cannot submit an extension request (F-95)', function () {

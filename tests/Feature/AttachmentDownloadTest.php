@@ -79,7 +79,7 @@ test('assignee, project member, and admin can all download the attachment', func
     $todo = TaskStatus::where('project_id', $project->id)->where('position', 0)->firstOrFail();
     $task = createDownloadTestTask($project, $todo, $admin, $assignee);
 
-    $this->actingAs($assignee)->post(route('attachments.store', [$project, $task]), ['file' => downloadTestPdf()])
+    $this->actingAs($assignee)->post(route('attachments.store', [$project, $task]), ['content_type' => 'file', 'file' => downloadTestPdf()])
         ->assertRedirect();
     $attachment = Attachment::where('task_id', $task->id)->firstOrFail();
 
@@ -99,7 +99,7 @@ test('a member of another project gets 404 when trying to download, not 403 (F-9
     $todo = TaskStatus::where('project_id', $project->id)->where('position', 0)->firstOrFail();
     $task = createDownloadTestTask($project, $todo, $admin, $assignee);
 
-    $this->actingAs($assignee)->post(route('attachments.store', [$project, $task]), ['file' => downloadTestPdf()])
+    $this->actingAs($assignee)->post(route('attachments.store', [$project, $task]), ['content_type' => 'file', 'file' => downloadTestPdf()])
         ->assertRedirect();
     $attachment = Attachment::where('task_id', $task->id)->firstOrFail();
 
@@ -117,7 +117,7 @@ test('an attachment cannot be reached through a task/project it does not belong 
     $todoA = TaskStatus::where('project_id', $projectA->id)->where('position', 0)->firstOrFail();
     $taskA = createDownloadTestTask($projectA, $todoA, $admin, $assignee);
 
-    $this->actingAs($assignee)->post(route('attachments.store', [$projectA, $taskA]), ['file' => downloadTestPdf()])
+    $this->actingAs($assignee)->post(route('attachments.store', [$projectA, $taskA]), ['content_type' => 'file', 'file' => downloadTestPdf()])
         ->assertRedirect();
     $attachment = Attachment::where('task_id', $taskA->id)->firstOrFail();
 

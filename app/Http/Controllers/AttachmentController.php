@@ -64,11 +64,20 @@ class AttachmentController extends Controller
             'Task sudah disetujui — lampiran output dibekukan (F-104).'
         );
 
-        Attachment::storeUploadedFile($request->file('file'), [
+        $attributes = [
             'task_id' => $task->id,
             'type' => 'output',
             'uploaded_by' => $user->id,
-        ]);
+        ];
+
+        // Revisi 2026-08-06 item 4: 3 mode ISI (content_type), `type` tetap
+        // 'output' di ketiganya -- F-49 (output vs evidence) TIDAK berubah,
+        // cuma cara ISI-nya yang baru.
+        match ($request->validated('content_type')) {
+            'file' => Attachment::storeUploadedFile($request->file('file'), $attributes),
+            'link' => Attachment::storeLink($request->validated('url'), $attributes),
+            'text' => Attachment::storeText($request->validated('body'), $attributes),
+        };
 
         return back();
     }
@@ -87,6 +96,13 @@ class AttachmentController extends Controller
             $user->can('project.viewAll') || $project->members()->whereKey($user->id)->exists(),
             404
         );
+
+        // Revisi 2026-08-06 item 4: route ini HANYA valid utk content_type=file --
+        // link/text tidak punya file_path (null), Storage::download() akan meledak
+        // kalau dipaksa. Frontend tidak pernah render tombol download utk keduanya,
+        // tapi guard di sini WAJIB (bukan sekadar HINT UI) karena URL bisa diakses
+        // langsung.
+        abort_if($attachment->content_type !== 'file', 404);
 
         return Storage::disk('local')->download($attachment->file_path, $attachment->file_name);
     }
@@ -110,7 +126,13 @@ class AttachmentController extends Controller
             'Lampiran task yang sudah disetujui terkunci permanen.'
         );
 
-        Storage::disk('local')->delete($attachment->file_path);
+        // Revisi 2026-08-06 item 4: cuma content_type=file yang punya file fisik
+        // untuk dihapus -- link/text file_path null, Storage::delete(null) aman
+        // (no-op) tapi guard eksplisit lebih jelas niatnya.
+        if ($attachment->content_type === 'file') {
+            Storage::disk('local')->delete($attachment->file_path);
+        }
+
         $attachment->delete();
 
         return back();

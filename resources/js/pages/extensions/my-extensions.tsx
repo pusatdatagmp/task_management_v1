@@ -24,7 +24,7 @@ import { Textarea } from '@/components/ui/textarea';
 import AppLayout from '@/layouts/app-layout';
 import { type BreadcrumbItem } from '@/types';
 import { Head, useForm } from '@inertiajs/react';
-import { FormEventHandler, useRef } from 'react';
+import { FormEventHandler, useRef, useState } from 'react';
 
 interface TaskOption {
     id: number;
@@ -33,9 +33,14 @@ interface TaskOption {
     project: { id: number; name: string };
 }
 
+type ContentType = 'file' | 'link' | 'text';
+
 interface AttachmentRef {
     id: number;
-    file_name: string;
+    content_type: ContentType;
+    file_name: string | null;
+    url: string | null;
+    body: string | null;
 }
 
 interface ExtensionRow {
@@ -61,18 +66,27 @@ const statusBadge: Record<ExtensionRow['status'], { label: string; className: st
 
 export default function MyExtensions({ tasks, extensions }: { tasks: TaskOption[]; extensions: ExtensionRow[] }) {
     const evidenceRef = useRef<HTMLInputElement>(null);
+    // Revisi 2026-08-06 item 4: evidence_type null = tidak melampirkan apa pun
+    // (F-49 evidence TETAP opsional keseluruhan, beda dari Lampiran Output).
+    const [evidenceMode, setEvidenceMode] = useState<ContentType | null>(null);
     const { data, setData, post, processing, errors, reset } = useForm<{
         task_id: string;
         requested_due_date: string;
         additional_minutes: number;
         reason: string;
-        evidence: File | null;
+        evidence_type: ContentType | '';
+        evidence_file: File | null;
+        evidence_url: string;
+        evidence_text: string;
     }>({
         task_id: '',
         requested_due_date: '',
         additional_minutes: 0,
         reason: '',
-        evidence: null,
+        evidence_type: '',
+        evidence_file: null,
+        evidence_url: '',
+        evidence_text: '',
     });
 
     const submit: FormEventHandler = (e) => {
@@ -82,6 +96,7 @@ export default function MyExtensions({ tasks, extensions }: { tasks: TaskOption[
             forceFormData: true,
             onSuccess: () => {
                 reset();
+                setEvidenceMode(null);
                 if (evidenceRef.current) evidenceRef.current.value = '';
             },
         });
@@ -142,17 +157,62 @@ export default function MyExtensions({ tasks, extensions }: { tasks: TaskOption[
                                         <InputError message={errors.additional_minutes} />
                                     </div>
 
-                                    <div className="grid gap-2">
-                                        <Label htmlFor="evidence">Bukti pendukung (opsional)</Label>
-                                        <input
-                                            ref={evidenceRef}
-                                            id="evidence"
-                                            type="file"
-                                            className="text-sm"
-                                            accept=".pdf,.jpg,.jpeg,.png,.docx,.xlsx,.zip"
-                                            onChange={(e) => setData('evidence', e.target.files?.[0] ?? null)}
-                                        />
-                                        <InputError message={errors.evidence} />
+                                    <div className="grid gap-2 sm:col-span-2">
+                                        <Label>Bukti pendukung (opsional)</Label>
+                                        <div className="flex gap-1">
+                                            <Button
+                                                type="button"
+                                                size="sm"
+                                                variant={evidenceMode === null ? 'default' : 'outline'}
+                                                onClick={() => {
+                                                    setEvidenceMode(null);
+                                                    setData('evidence_type', '');
+                                                }}
+                                            >
+                                                Tanpa bukti
+                                            </Button>
+                                            {(['file', 'link', 'text'] as ContentType[]).map((m) => (
+                                                <Button
+                                                    key={m}
+                                                    type="button"
+                                                    size="sm"
+                                                    variant={evidenceMode === m ? 'default' : 'outline'}
+                                                    onClick={() => {
+                                                        setEvidenceMode(m);
+                                                        setData('evidence_type', m);
+                                                    }}
+                                                >
+                                                    {m === 'file' ? 'Upload File' : m === 'link' ? 'Sematkan Link' : 'Tulis Teks'}
+                                                </Button>
+                                            ))}
+                                        </div>
+                                        {evidenceMode === 'file' && (
+                                            <input
+                                                ref={evidenceRef}
+                                                type="file"
+                                                className="text-sm"
+                                                accept=".pdf,.jpg,.jpeg,.png,.docx,.xlsx,.zip"
+                                                onChange={(e) => setData('evidence_file', e.target.files?.[0] ?? null)}
+                                            />
+                                        )}
+                                        {evidenceMode === 'link' && (
+                                            <input
+                                                type="url"
+                                                placeholder="https://..."
+                                                value={data.evidence_url}
+                                                onChange={(e) => setData('evidence_url', e.target.value)}
+                                                className="h-9 rounded-md border border-input bg-background px-2 text-sm"
+                                            />
+                                        )}
+                                        {evidenceMode === 'text' && (
+                                            <Textarea
+                                                placeholder="Tulis bukti pendukung..."
+                                                value={data.evidence_text}
+                                                onChange={(e) => setData('evidence_text', e.target.value)}
+                                                rows={3}
+                                            />
+                                        )}
+                                        <InputError message={errors.evidence_type ?? errors.evidence_file ?? errors.evidence_url ?? errors.evidence_text} />
                                     </div>
                                 </div>
 
@@ -199,13 +259,24 @@ export default function MyExtensions({ tasks, extensions }: { tasks: TaskOption[
                                     {ext.attachments.length > 0 && (
                                         <div className="mt-2 flex flex-col gap-1">
                                             {ext.attachments.map((a) => (
-                                                <a
-                                                    key={a.id}
-                                                    href={route('attachments.download', [ext.task.project.id, ext.task_id, a.id])}
-                                                    className="text-xs text-primary hover:underline"
-                                                >
-                                                    Lihat bukti: {a.file_name}
-                                                </a>
+                                                <div key={a.id} className="text-xs">
+                                                    {a.content_type === 'file' && (
+                                                        <a
+                                                            href={route('attachments.download', [ext.task.project.id, ext.task_id, a.id])}
+                                                            className="text-primary hover:underline"
+                                                        >
+                                                            Lihat bukti: {a.file_name}
+                                                        </a>
+                                                    )}
+                                                    {a.content_type === 'link' && (
+                                                        <a href={a.url ?? '#'} target="_blank" rel="noopener noreferrer" className="text-primary hover:underline">
+                                                            🔗 Lihat bukti: {a.url}
+                                                        </a>
+                                                    )}
+                                                    {a.content_type === 'text' && (
+                                                        <p className="whitespace-pre-wrap break-words text-muted-foreground">Bukti: {a.body}</p>
+                                                    )}
+                                                </div>
                                             ))}
                                         </div>
                                     )}
