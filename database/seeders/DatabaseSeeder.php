@@ -22,24 +22,24 @@ class DatabaseSeeder extends Seeder
         // 3. Buat Akun Admin
         User::create([
             'organization_id' => $organization->id,
-            'name'            => 'Admin Boss',
-            'email'           => 'admin@deevatech.test',
-            'password'        => bcrypt('password'),
-            'role_id'         => $roles['admin']->id,
+            'name' => 'Admin Boss',
+            'email' => 'admin@deevatech.test',
+            'password' => bcrypt('password'),
+            'role_id' => $roles['admin']->id,
             'employment_type' => 'internal',
-            'is_active'       => true,
+            'is_active' => true,
         ]);
 
         // 4. Buat Akun Members (9 Member)
         collect(range(1, 9))->each(function (int $i) use ($organization, $roles) {
             User::create([
                 'organization_id' => $organization->id,
-                'name'            => "Member {$i}",
-                'email'           => "member{$i}@deevatech.test",
-                'password'        => bcrypt('password'),
-                'role_id'         => $roles['member']->id,
+                'name' => "Member {$i}",
+                'email' => "member{$i}@deevatech.test",
+                'password' => bcrypt('password'),
+                'role_id' => $roles['member']->id,
                 'employment_type' => 'internal',
-                'is_active'       => true,
+                'is_active' => true,
             ]);
         });
     }

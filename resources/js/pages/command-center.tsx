@@ -414,7 +414,6 @@ export default function CommandCenter({
     heatmap,
     top_tasks: topTasks,
     recent_activity: recentActivity,
-    workload_top5: workloadTop5,
     status_projects: statusProjects,
     team,
     filters,

@@ -393,6 +393,19 @@ test('jumlah query command-center TETAP KONSTAN walau task/user/log bertambah ba
     seedCcSchedule($admin, $anchor);
     $this->travelTo($anchor);
 
+    // GUARD (F-78, ditemukan H9): actingAs() WAJIB sebelum SEMUA penulisan data,
+    // termasuk batch 'kecil' di bawah -- Auth::id() dipakai LogsActivity sebagai
+    // activity_logs.user_id. Sebelum fix ini, 3 task awal ditulis TANPA actingAs()
+    // -> user_id NULL utk seluruhnya -> ActivityLogPresenter batch query 'user'
+    // (DashboardController::recentActivity(), with('user:id,name')) di-skip total
+    // oleh Eloquent (BelongsTo eager load tidak query kalau SEMUA FK null di batch).
+    // Batch 'besar' ditulis SETELAH actingAs() pertama (baris di bawah) -> user_id
+    // terisi -> query itu MUNCUL -> beda 41 vs 42 padahal BUKAN N+1 yang tumbuh
+    // dengan volume data, cuma efek unauthenticated-vs-authenticated yang tak
+    // sengaja ikut berubah di antara dua pengukuran. actingAs() di sini menyamakan
+    // kondisi KEDUA batch supaya satu-satunya variabel yang berubah = volume data.
+    $this->actingAs($admin);
+
     foreach ($members as $member) {
         createCcTask($project, $todo, $admin, [$member->id], 60, Carbon::create(2026, 8, 7, 17, 0, 0), 'p2', 'daily');
     }
