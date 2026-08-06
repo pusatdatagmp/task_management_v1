@@ -15,6 +15,11 @@
 //               terisi (keputusan Boss): task_statuses per-project, kolom Kanban lintas
 //               project tidak punya arti tunggal. Jangan tampilkan tombol ini tanpa
 //               project_id — bisa mengarah ke route('tasks.board', undefined).
+//               Revisi 2026-08-06 item 2/6: "Tugas Baru" pakai state LOKAL targetProject
+//               (TERPISAH dari filters.project_id) — pola sama task-templates/all.tsx.
+//               Task selalu milik 1 project (F-5), nol versi lintas-project — tombol
+//               reuse route('tasks.create') project-scoped APA ADANYA (F-109, nol
+//               endpoint/validasi baru), cuma disabled sampai project dipilih.
 // ==========================================================
 
 import TaskLiveCounter, { type LiveCounterData } from '@/components/task-live-counter';
@@ -26,6 +31,7 @@ import { PRIORITY_QUADRANT_COLOR, PRIORITY_QUADRANT_LABEL, type PriorityQuadrant
 import { type BreadcrumbItem, type SharedData } from '@/types';
 import { Head, Link, router, usePage } from '@inertiajs/react';
 import { motion } from 'framer-motion';
+import { useState } from 'react';
 
 interface UserOption {
     id: number;
@@ -112,6 +118,10 @@ export default function AllTasks({ tasks, projects, members, filters }: AllTasks
     const { auth } = usePage<SharedData>().props;
     const can = (permission: string) => auth.permissions.includes(permission);
 
+    // Revisi 2026-08-06 item 2/6: target project untuk "Tugas Baru" -- state SENDIRI,
+    // TERPISAH dari filters.project_id (filter listing, beda tujuan dari target create).
+    const [targetProject, setTargetProject] = useState<string>('');
+
     // SUMBER: kirim OBJEK BARU (bukan spread URL saat ini) supaya 'page' reset ke 1
     // tiap filter berubah — pola sama tasks/index.tsx (C6).
     const applyFilters = (overrides: Partial<Filters>) => {
@@ -161,7 +171,7 @@ export default function AllTasks({ tasks, projects, members, filters }: AllTasks
             <div className="flex flex-col gap-4 p-4">
                 <div className="flex items-center justify-between">
                     <h1 className="text-xl font-semibold">Semua Tugas</h1>
-                    <div className="flex gap-2">
+                    <div className="flex items-center gap-2">
                         {/* F-109/keputusan Boss: Kanban cuma valid kalau 1 project dipilih —
                             task_statuses per-project, kolom lintas-project tidak punya arti tunggal. */}
                         {filters.project_id ? (
@@ -170,6 +180,25 @@ export default function AllTasks({ tasks, projects, members, filters }: AllTasks
                             </Button>
                         ) : (
                             <span className="self-center text-xs text-muted-foreground">Pilih 1 project untuk lihat Board View</span>
+                        )}
+                        {can('task.manage') && (
+                            <>
+                                <select
+                                    className="h-9 rounded-md border border-input bg-background px-2 text-sm"
+                                    value={targetProject}
+                                    onChange={(e) => setTargetProject(e.target.value)}
+                                >
+                                    <option value="">Pilih project...</option>
+                                    {projects.map((p) => (
+                                        <option key={p.id} value={p.id}>
+                                            {p.name}
+                                        </option>
+                                    ))}
+                                </select>
+                                <Button disabled={!targetProject} asChild={!!targetProject}>
+                                    {targetProject ? <Link href={route('tasks.create', targetProject)}>Tugas Baru</Link> : <span>Tugas Baru</span>}
+                                </Button>
+                            </>
                         )}
                     </div>
                 </div>
