@@ -9,6 +9,8 @@
 // DATA KELUAR : POST form -> TaskController::store()
 // RISIKO      : task_type SENGAJA cuma tentative|project (Hari-4 §D3) —
 //               daily/weekly/monthly lahir dari task_templates + recurring engine v0.8.
+//               Revisi 2026-08-06 item 5: checklist_items (F-123, "subtask" ringan)
+//               ikut dikirim, pola input IDENTIK task-templates/create.tsx.
 // ==========================================================
 
 import HeadingSmall from '@/components/heading-small';
@@ -24,7 +26,7 @@ import AppLayout from '@/layouts/app-layout';
 import { PRIORITY_QUADRANT_OPTIONS, type PriorityQuadrant } from '@/lib/priority-quadrant';
 import { type BreadcrumbItem } from '@/types';
 import { Head, useForm } from '@inertiajs/react';
-import { FormEventHandler } from 'react';
+import { FormEventHandler, useState } from 'react';
 
 interface UserOption {
     id: number;
@@ -72,7 +74,25 @@ export default function TaskCreate({ project, members, parentOptions }: TaskCrea
         due_date: defaultDueDate(),
         assignees: [] as number[],
         parent_task_id: '' as number | '',
+        // Revisi 2026-08-06 item 5: checklist ("subtask" ringan, F-123) diisi
+        // LANGSUNG saat buat task — pola IDENTIK task-templates/create.tsx.
+        checklist_items: [] as string[],
     });
+
+    const [newChecklistText, setNewChecklistText] = useState('');
+
+    const addChecklistItem = () => {
+        if (!newChecklistText.trim()) return;
+        setData('checklist_items', [...data.checklist_items, newChecklistText.trim()]);
+        setNewChecklistText('');
+    };
+
+    const removeChecklistItem = (index: number) => {
+        setData(
+            'checklist_items',
+            data.checklist_items.filter((_, i) => i !== index),
+        );
+    };
 
     const submit: FormEventHandler = (e) => {
         e.preventDefault();
@@ -221,6 +241,40 @@ export default function TaskCreate({ project, members, parentOptions }: TaskCrea
                                     {members.length === 0 && <span className="text-muted-foreground">Project ini belum punya member.</span>}
                                 </div>
                                 <InputError message={errors.assignees} />
+                            </div>
+
+                            <div className="grid gap-2">
+                                <HeadingSmall
+                                    title="Checklist / Subtask"
+                                    description="Syarat kerja ringan (F-123) — gate transisi ->review menolak submit kalau ada item belum dicentang."
+                                />
+                                <div className="flex flex-col gap-2">
+                                    {data.checklist_items.map((text, index) => (
+                                        <div key={index} className="flex items-center gap-2">
+                                            <span className="flex-1 rounded-md border px-3 py-1.5 text-sm">{text}</span>
+                                            <Button type="button" variant="outline" size="sm" onClick={() => removeChecklistItem(index)}>
+                                                Hapus
+                                            </Button>
+                                        </div>
+                                    ))}
+                                    <div className="flex items-center gap-2">
+                                        <Input
+                                            placeholder="Tambah item checklist/subtask..."
+                                            value={newChecklistText}
+                                            onChange={(e) => setNewChecklistText(e.target.value)}
+                                            onKeyDown={(e) => {
+                                                if (e.key === 'Enter') {
+                                                    e.preventDefault();
+                                                    addChecklistItem();
+                                                }
+                                            }}
+                                        />
+                                        <Button type="button" size="sm" onClick={addChecklistItem} className="shrink-0">
+                                            Tambah
+                                        </Button>
+                                    </div>
+                                </div>
+                                <InputError message={errors.checklist_items} />
                             </div>
 
                             <Button disabled={processing}>Simpan</Button>

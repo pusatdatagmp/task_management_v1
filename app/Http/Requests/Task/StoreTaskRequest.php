@@ -54,6 +54,10 @@ class StoreTaskRequest extends FormRequest
                 'nullable',
                 Rule::exists('tasks', 'id')->where('project_id', $project->id)->whereNull('deleted_at'),
             ],
+            // Revisi 2026-08-06 item 5 — checklist ("subtask" ringan, F-123) bisa
+            // diisi LANGSUNG saat buat task, pola identik StoreTaskTemplateRequest.
+            'checklist_items' => ['sometimes', 'array'],
+            'checklist_items.*' => ['string', 'max:500'],
         ];
     }
 

@@ -483,7 +483,7 @@ class TaskController extends Controller
             $statusId = TaskStatus::where('project_id', $project->id)->orderBy('position')->value('id');
 
             $task = Task::create([
-                ...$request->safe()->except(['assignees']),
+                ...$request->safe()->except(['assignees', 'checklist_items']),
                 'project_id' => $project->id,
                 'task_status_id' => $statusId,
                 'created_by' => Auth::id(),
@@ -492,6 +492,19 @@ class TaskController extends Controller
             // F-51: sync() (bukan query manual ke task_user) supaya TaskUserObserver
             // menangkap event assigned untuk tiap assignee.
             $task->assignees()->sync($request->validated('assignees') ?? []);
+
+            // Revisi 2026-08-06 item 5: checklist ("subtask" ringan, F-123) diisi
+            // LANGSUNG saat create -- pola IDENTIK TaskTemplateController::syncChecklistItems()
+            // (F-109, nol logic baru). Task BARU dijamin belum punya checklist apa pun,
+            // jadi aman create langsung tanpa hapus-dulu (beda dari update() template
+            // yang perlu hapus-lalu-buat-ulang).
+            foreach (array_values($request->validated('checklist_items') ?? []) as $position => $text) {
+                $task->checklistItems()->create([
+                    'organization_id' => $project->organization_id,
+                    'text' => $text,
+                    'position' => $position,
+                ]);
+            }
         });
 
         return to_route('tasks.index', $project);

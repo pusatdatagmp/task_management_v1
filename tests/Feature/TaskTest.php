@@ -56,6 +56,46 @@ test('creating a task assigns the status with the smallest position (D7)', funct
     expect($task->task_status_id)->toBe($todo->id);
 });
 
+test('checklist_items dikirim saat create task langsung tersimpan sebagai task_checklist_items (revisi 2026-08-06 item 5)', function () {
+    $admin = User::factory()->admin()->create();
+    $project = createTaskProject($admin);
+
+    $response = $this->actingAs($admin)->post(route('tasks.store', $project), [
+        'title' => 'Task dengan checklist saat create',
+        'task_type' => 'tentative',
+        'estimated_minutes' => 60,
+        'points' => 10,
+        'due_date' => now()->addWeek()->toDateTimeString(),
+        'checklist_items' => ['Langkah 1', 'Langkah 2'],
+    ]);
+
+    $response->assertRedirect(route('tasks.index', $project));
+
+    $task = Task::where('project_id', $project->id)->where('title', 'Task dengan checklist saat create')->firstOrFail();
+    $items = $task->checklistItems()->orderBy('position')->get();
+
+    expect($items->pluck('text')->all())->toBe(['Langkah 1', 'Langkah 2'])
+        ->and($items->pluck('organization_id')->unique()->all())->toBe([$admin->organization_id]);
+});
+
+test('create task TANPA checklist_items tidak error, task lahir tanpa checklist (revisi 2026-08-06 item 5)', function () {
+    $admin = User::factory()->admin()->create();
+    $project = createTaskProject($admin);
+
+    $response = $this->actingAs($admin)->post(route('tasks.store', $project), [
+        'title' => 'Task tanpa checklist',
+        'task_type' => 'tentative',
+        'estimated_minutes' => 60,
+        'points' => 10,
+        'due_date' => now()->addWeek()->toDateTimeString(),
+    ]);
+
+    $response->assertRedirect(route('tasks.index', $project));
+
+    $task = Task::where('project_id', $project->id)->where('title', 'Task tanpa checklist')->firstOrFail();
+    expect($task->checklistItems()->count())->toBe(0);
+});
+
 test('due_date is required when creating a task (F-31)', function () {
     $admin = User::factory()->admin()->create();
     $project = createTaskProject($admin);
