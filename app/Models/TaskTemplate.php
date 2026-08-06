@@ -40,6 +40,10 @@ class TaskTemplate extends Model
         'points',
         'priority',
         'recurrence_config',
+        // Revisi 2026-08-06 item 7: nullable, null = perilaku LAMA (due_date =
+        // target_date, sama hari). Terisi = jumlah HARI KERJA dari hari lahir
+        // sampai jatuh tempo (GenerateTaskAction::execute()).
+        'due_offset_days',
         'default_assignees',
         'is_active',
         'last_generated_date',

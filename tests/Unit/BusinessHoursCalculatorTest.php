@@ -261,3 +261,45 @@ test('F-43: libur jatuh di akhir pekan -> tidak dihitung ganda (sudah 0 dari akh
 
     expect($this->calculator->overlapMinutes($start, $end, $this->schedules, $holidays))->toBe(120);
 });
+
+// Revisi 2026-08-06 item 7 -- addBusinessDays(), dipakai deadline tugas berulang
+// (due_offset_days, GenerateTaskAction).
+test('addBusinessDays: Senin +1 hari kerja = Selasa (revisi 2026-08-06 item 7)', function () {
+    $from = Carbon::create(2024, 1, 8); // Senin
+    $result = $this->calculator->addBusinessDays($from, 1, $this->schedules, noHolidays());
+
+    expect($result->toDateString())->toBe('2024-01-09'); // Selasa
+});
+
+test('addBusinessDays: Jumat +1 hari kerja LOMPAT akhir pekan = Senin berikutnya (revisi 2026-08-06 item 7)', function () {
+    $from = Carbon::create(2024, 1, 5); // Jumat
+    $result = $this->calculator->addBusinessDays($from, 1, $this->schedules, noHolidays());
+
+    expect($result->toDateString())->toBe('2024-01-08'); // Senin
+});
+
+test('addBusinessDays: +5 hari kerja dari Senin = Senin minggu berikutnya (lompat 1 akhir pekan penuh, revisi 2026-08-06 item 7)', function () {
+    $from = Carbon::create(2024, 1, 8); // Senin
+    $result = $this->calculator->addBusinessDays($from, 5, $this->schedules, noHolidays());
+
+    expect($result->toDateString())->toBe('2024-01-15'); // Senin minggu berikutnya
+});
+
+test('addBusinessDays: hari libur di tengah rentang ikut dilompati, bukan cuma akhir pekan (revisi 2026-08-06 item 7)', function () {
+    // Selasa 2024-01-09 libur nasional -- dari Senin +2 hari kerja seharusnya
+    // Rabu (Senin sendiri tak dihitung, Selasa dilompati krn libur, Rabu=1, Kamis=2).
+    $holidays = collect([new Holiday(['date' => '2024-01-09', 'name' => 'Contoh Libur'])]);
+    $from = Carbon::create(2024, 1, 8); // Senin
+
+    $result = $this->calculator->addBusinessDays($from, 2, $this->schedules, $holidays);
+
+    expect($result->toDateString())->toBe('2024-01-11'); // Kamis
+});
+
+test('addBusinessDays: kembalikan null kalau organisasi nol WorkSchedule (guard config korup, revisi 2026-08-06 item 7)', function () {
+    $from = Carbon::create(2024, 1, 8);
+
+    $result = $this->calculator->addBusinessDays($from, 1, collect(), noHolidays());
+
+    expect($result)->toBeNull();
+});

@@ -55,6 +55,10 @@ class StoreTaskTemplateRequest extends FormRequest
             'estimated_minutes' => ['required', 'integer', 'min:1'],
             'points' => ['required', 'integer', 'min:0'],
             'is_active' => ['nullable', 'boolean'],
+            // Revisi 2026-08-06 item 7: nullable = perilaku LAMA (due_date = hari
+            // lahir, sama hari) — nol sampai admin sengaja isi. GenerateTaskAction
+            // yang menerjemahkan jadi hari KERJA maju (BusinessHoursCalculator).
+            'due_offset_days' => ['nullable', 'integer', 'min:1', 'max:365'],
 
             // BUSINESS RULE A4: bentuk recurrence_config beda per task_type. daily
             // TIDAK divalidasi di sini (A4: "config kosong/diabaikan") — controller

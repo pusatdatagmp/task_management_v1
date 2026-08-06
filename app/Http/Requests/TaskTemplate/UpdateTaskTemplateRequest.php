@@ -46,6 +46,8 @@ class UpdateTaskTemplateRequest extends FormRequest
             'estimated_minutes' => ['required', 'integer', 'min:1'],
             'points' => ['required', 'integer', 'min:0'],
             'is_active' => ['nullable', 'boolean'],
+            // Revisi 2026-08-06 item 7 — lihat StoreTaskTemplateRequest.
+            'due_offset_days' => ['nullable', 'integer', 'min:1', 'max:365'],
 
             'recurrence_config' => ['array'],
             'recurrence_config.day_of_week' => ['required_if:task_type,weekly', 'integer', 'between:1,7'],

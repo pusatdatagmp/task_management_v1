@@ -97,6 +97,9 @@ export default function TaskTemplateCreate({ project, members }: TaskTemplateCre
         priority: 'normal',
         estimated_minutes: 60,
         points: 0,
+        // Revisi 2026-08-06 item 7: nullable ('' di form = null saat dikirim) --
+        // kosong = perilaku LAMA (due_date = hari lahir, sama hari, F-78).
+        due_offset_days: '' as number | '',
         day_of_week: 1,
         day_of_month: 1,
         is_active: true as boolean,
@@ -162,6 +165,7 @@ export default function TaskTemplateCreate({ project, members }: TaskTemplateCre
             dom_max: formData.date_window_dom_max === '' ? undefined : formData.date_window_dom_max,
         },
         max_active_instances: formData.max_active_instances === '' ? undefined : formData.max_active_instances,
+        due_offset_days: formData.due_offset_days === '' ? undefined : formData.due_offset_days, // revisi 2026-08-06 item 7
     }));
 
     const submit: FormEventHandler = (e) => {
@@ -508,6 +512,24 @@ export default function TaskTemplateCreate({ project, members }: TaskTemplateCre
                                     />
                                     <InputError message={errors.points} />
                                 </div>
+                            </div>
+
+                            <div className="grid gap-2">
+                                <Label htmlFor="due_offset_days">Tenggat (hari kerja setelah muncul)</Label>
+                                <Input
+                                    id="due_offset_days"
+                                    type="number"
+                                    min={1}
+                                    max={365}
+                                    placeholder="Kosong = jatuh tempo hari yang sama (perilaku lama)"
+                                    value={data.due_offset_days}
+                                    onChange={(e) => setData('due_offset_days', e.target.value === '' ? '' : Number(e.target.value))}
+                                />
+                                <p className="text-xs text-muted-foreground">
+                                    Berapa hari KERJA (lewati akhir pekan/libur) setelah task ini muncul, sampai jatuh tempo. Kosong = task
+                                    langsung jatuh tempo di hari yang sama saat lahir.
+                                </p>
+                                <InputError message={errors.due_offset_days} />
                             </div>
 
                             <label className="flex items-center gap-2 text-sm">

@@ -182,6 +182,47 @@ class BusinessHoursCalculator
     }
 
     /**
+     * KONTRAK: revisi 2026-08-06 item 7 — maju TEPAT $days HARI KERJA dari $from
+     * (dipakai GenerateTaskAction untuk deadline tugas berulang, due_offset_days).
+     * $from SENDIRI TIDAK dihitung sebagai salah satu dari $days (tenggat SELALU
+     * strictly setelah hari task lahir — offset=1 berarti "besok hari kerja
+     * berikutnya", bukan "hari ini"). isBusinessDay() di-REUSE (F-72/F-76 — SATU
+     * sumber "hari kerja" yang sama dipakai overlapMinutes()/countBusinessDays()/
+     * HolidayShiftResolver DAN method ini, bukan kalkulator keempat).
+     *
+     * GUARD: batas 3650 hari kalender (~10 tahun) mencegah loop nyaris tak
+     * berhingga kalau organisasi tidak punya satu pun WorkSchedule hari kerja
+     * terdaftar (pola sama HolidayShiftResolver::MAX_SHIFT_DAYS) — null WAJIB
+     * ditangani pemanggil (GenerateTaskAction fallback ke due_date=target_date
+     * lama, BUKAN diam-diam dianggap "hari ini").
+     *
+     * @param  Collection<int, WorkSchedule>  $schedules
+     * @param  Collection<int, Holiday>  $holidays
+     */
+    public function addBusinessDays(Carbon $from, int $days, Collection $schedules, Collection $holidays): ?Carbon
+    {
+        $holidayDates = $holidays->map(fn (Holiday $h) => $h->date->toDateString())->flip();
+        $cursor = $from->copy()->startOfDay();
+        $counted = 0;
+        $calendarDaysWalked = 0;
+
+        while ($counted < $days) {
+            $cursor->addDay();
+            $calendarDaysWalked++;
+
+            if ($calendarDaysWalked > 3650) {
+                return null;
+            }
+
+            if ($this->isBusinessDay($cursor, $schedules, $holidayDates)) {
+                $counted++;
+            }
+        }
+
+        return $cursor;
+    }
+
+    /**
      * KONTRAK: SATU tempat yang menentukan "$day ini hari kerja atau bukan" —
      * libur (F-43) DULU (menang atas schedule, libur yang jatuh di hari kerja
      * tetap bukan hari kerja), baru days_of_week schedule yang berlaku PER HARI

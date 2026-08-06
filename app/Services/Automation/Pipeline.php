@@ -81,6 +81,6 @@ class Pipeline
             return Decision::error('resolver-gagal-cari-hari-kerja')->withDeltaDays($deltaDays);
         }
 
-        return $this->action->execute($template, $targetDate, $ctx->nowWib, $ctx->schedules)->withDeltaDays($deltaDays);
+        return $this->action->execute($template, $targetDate, $ctx->nowWib, $ctx->schedules, $ctx->holidays)->withDeltaDays($deltaDays);
     }
 }

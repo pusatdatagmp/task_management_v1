@@ -152,6 +152,51 @@ test('F-5: automation_run_log terisi organization_id benar', function () {
     expect($log->organization_id)->toBe($admin->organization_id);
 });
 
+test('revisi 2026-08-06 item 7: due_offset_days NULL -> due_date = target_date SAMA PERSIS (perilaku lama, F-78)', function () {
+    $admin = User::factory()->admin()->create();
+    $project = createCommandTestProject($admin);
+    seedCommandSchedule($admin, Carbon::create(2026, 1, 1));
+    $template = createCommandTestTemplate($project); // due_offset_days default null
+
+    $this->travelTo(Carbon::create(2026, 8, 3, 0, 1, 0)); // Senin
+    $this->artisan('automation:run')->assertSuccessful();
+
+    $task = Task::where('task_template_id', $template->id)->firstOrFail();
+    expect($task->due_date->toDateString())->toBe('2026-08-03')
+        ->and($task->due_date->format('H:i'))->toBe('17:00');
+});
+
+test('revisi 2026-08-06 item 7: due_offset_days=2 -> due_date maju 2 HARI KERJA dari target_date', function () {
+    $admin = User::factory()->admin()->create();
+    $project = createCommandTestProject($admin);
+    seedCommandSchedule($admin, Carbon::create(2026, 1, 1));
+    $template = createCommandTestTemplate($project, ['due_offset_days' => 2]);
+
+    $this->travelTo(Carbon::create(2026, 8, 3, 0, 1, 0)); // Senin
+    $this->artisan('automation:run')->assertSuccessful();
+
+    $task = Task::where('task_template_id', $template->id)->firstOrFail();
+    // Senin lahir, Senin+1=Selasa, Senin+2=Rabu -- due_date Rabu 2026-08-05.
+    expect($task->due_date->toDateString())->toBe('2026-08-05')
+        ->and($task->due_date->format('H:i'))->toBe('17:00');
+    // period_key (kunci idempotency F-61) TETAP tanggal LAHIR, bukan tanggal
+    // tenggat -- offset TIDAK BOLEH mengubah identitas periode generate.
+    expect($task->period_key)->toBe('2026-08-03');
+});
+
+test('revisi 2026-08-06 item 7: due_offset_days=1 dari Jumat -> LOMPAT akhir pekan ke Senin', function () {
+    $admin = User::factory()->admin()->create();
+    $project = createCommandTestProject($admin);
+    seedCommandSchedule($admin, Carbon::create(2026, 1, 1));
+    $template = createCommandTestTemplate($project, ['due_offset_days' => 1]);
+
+    $this->travelTo(Carbon::create(2026, 8, 7, 0, 1, 0)); // Jumat
+    $this->artisan('automation:run')->assertSuccessful();
+
+    $task = Task::where('task_template_id', $template->id)->firstOrFail();
+    expect($task->due_date->toDateString())->toBe('2026-08-10'); // Senin berikutnya
+});
+
 test('is_active=false: query command TIDAK memuat template ini sama sekali (pre-filter F1)', function () {
     // ActiveTemplateGuard sendiri sudah diuji lepas di AutomationGuardsTest (G1) --
     // di sini pagar bahwa command TIDAK menghasilkan baris run_log untuk template

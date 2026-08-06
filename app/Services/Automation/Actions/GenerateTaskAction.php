@@ -12,7 +12,9 @@
  * DIPANGGIL   : Pipeline (HANYA setelah seluruh Guard Pass + Resolver hasilkan target_date)
  * MEMANGGIL   : Task, TaskStatus, TaskChecklistItem (via relasi), ActivityLog
  *               (assignee di-drop, F-86/F-51), TaskTemplate::update()
- * DATA MASUK  : TaskTemplate, target_date (hasil HolidayShiftResolver), now_WIB
+ * DATA MASUK  : TaskTemplate, target_date (hasil HolidayShiftResolver), now_WIB,
+ *               schedules+holidays organisasi (F-85, revisi 2026-08-06 item 7 —
+ *               due_offset_days butuh keduanya buat addBusinessDays())
  * DATA KELUAR : tasks baru + task_checklist_items instance + template.last_generated_date
  * RISIKO      : SUMBER F-61 idempotency -- cek unique (task_template_id, period_key)
  *               SEBELUM insert, DAN tangkap UniqueConstraintViolationException
@@ -28,11 +30,13 @@
 namespace App\Services\Automation\Actions;
 
 use App\Models\ActivityLog;
+use App\Models\Holiday;
 use App\Models\Task;
 use App\Models\TaskStatus;
 use App\Models\TaskTemplate;
 use App\Models\WorkSchedule;
 use App\Services\Automation\Decision;
+use App\Services\BusinessHoursCalculator;
 use Carbon\Carbon;
 use Illuminate\Database\UniqueConstraintViolationException;
 use Illuminate\Support\Collection;
@@ -42,8 +46,10 @@ class GenerateTaskAction
 {
     /**
      * @param  Collection<int, WorkSchedule>  $schedules  organisasi ini (F-85, dimuat command)
+     * @param  Collection<int, Holiday>  $holidays  organisasi ini (F-85, dimuat command) —
+     *                                              revisi 2026-08-06 item 7, dipakai due_offset_days.
      */
-    public function execute(TaskTemplate $template, Carbon $targetDate, Carbon $nowWib, Collection $schedules): Decision
+    public function execute(TaskTemplate $template, Carbon $targetDate, Carbon $nowWib, Collection $schedules, Collection $holidays): Decision
     {
         $periodKey = $targetDate->toDateString();
 
@@ -52,22 +58,36 @@ class GenerateTaskAction
         }
 
         try {
-            return DB::transaction(function () use ($template, $targetDate, $nowWib, $schedules, $periodKey) {
+            return DB::transaction(function () use ($template, $targetDate, $nowWib, $schedules, $holidays, $periodKey) {
                 $project = $template->project;
 
                 $statusId = TaskStatus::where('project_id', $template->project_id)->orderBy('position')->value('id');
 
+                // Revisi 2026-08-06 item 7: due_offset_days terisi -> tenggat MAJU N
+                // hari KERJA dari target_date (BusinessHoursCalculator::addBusinessDays(),
+                // F-72/76 reuse — SATU sumber "hari kerja" sama dipakai HolidayShiftResolver).
+                // null (default, template lama SEBELUM kolom ini ada) -> perilaku LAMA
+                // TIDAK BERUBAH sama sekali (F-78): due_date = target_date, sama hari.
+                $dueDateBase = $targetDate;
+                if ($template->due_offset_days !== null) {
+                    $shifted = (new BusinessHoursCalculator)->addBusinessDays($targetDate, $template->due_offset_days, $schedules, $holidays);
+                    // GUARD: null (organisasi nol WorkSchedule hari kerja terdaftar,
+                    // config korup) -> fallback diam-diam ke perilaku lama, BUKAN
+                    // gagalkan seluruh generate task cuma karena deadline tak terhitung.
+                    $dueDateBase = $shifted ?? $targetDate;
+                }
+
                 $schedule = $schedules
-                    ->filter(fn ($s) => $s->effective_from->lessThanOrEqualTo($targetDate))
+                    ->filter(fn ($s) => $s->effective_from->lessThanOrEqualTo($dueDateBase))
                     ->sortByDesc('effective_from')
                     ->first();
 
                 // SUMBER: pola identik GenerateRecurringTasksCommand -- due_date =
-                // target_date pada jam end_time work_schedule berlaku; tanpa config,
+                // $dueDateBase pada jam end_time work_schedule berlaku; tanpa config,
                 // akhir hari (BUKAN 00:00, supaya tidak disalahartikan "sudah lewat").
                 $dueDate = $schedule
-                    ? $targetDate->copy()->setTimeFromTimeString((string) $schedule->end_time)
-                    : $targetDate->copy()->endOfDay();
+                    ? $dueDateBase->copy()->setTimeFromTimeString((string) $schedule->end_time)
+                    : $dueDateBase->copy()->endOfDay();
 
                 $memberIds = $project->members()->pluck('users.id');
                 $assigneeIds = collect($template->default_assignees)->intersect($memberIds)->values();
