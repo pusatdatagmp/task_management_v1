@@ -5,16 +5,22 @@
 //               Gate transisi ->review (F-127) ditegakkan SERVER-side di
 //               TaskTransitionService, komponen ini MURNI CRUD + tampilan progress,
 //               nol validasi gate di sini (server yang menolak submit kalau bolong).
+//               Revisi 2026-08-06 (Boss): (1) tambah item SEKARANG task.manage
+//               SATU-SATUNYA — assignee tidak lagi bisa tambah item baru (dulu
+//               boleh, dicabut). (2) centang (toggle) HANYA aktif saat
+//               isWorkState=true (task sudah "Mulai", F-44/H7/F-132/F-138) —
+//               checkbox disabled + hint teks saat task masih TODO/Review/Selesai.
 // DIPANGGIL   : tasks/show.tsx
 // MEMANGGIL   : route('checklist-items.store'/'update'/'toggle'/'destroy')
 // DATA MASUK  : projectId/taskId, items[] (dari TaskController::show()),
 //               canManageTask (F-90 task.manage — tambah/ubah teks/hapus),
-//               isAssignee (F-95 — centang + tambah item)
+//               isWorkState (task.task_status.is_work_state — gate toggle)
 // DATA KELUAR : POST/PUT/PATCH/DELETE -> TaskChecklistItemController
-// RISIKO      : SUMBER : tombol tambah/edit/hapus di sini HANYA HINT UI (pola sama
-//               task-attachments.tsx) — validasi ASLI (task.manage vs assignee)
-//               tetap di TaskChecklistItemController. Progress (done/total) MURNI
-//               dari items[] yang sama yang dipakai gate server, nol hitung ganda.
+// RISIKO      : SUMBER : tombol tambah/edit/hapus/centang di sini HANYA HINT UI
+//               (pola sama task-attachments.tsx) — validasi ASLI (task.manage
+//               only utk tambah, is_work_state utk toggle) tetap di
+//               TaskChecklistItemController. Progress (done/total) MURNI dari
+//               items[] yang sama yang dipakai gate server, nol hitung ganda.
 // ==========================================================
 
 import { Button } from '@/components/ui/button';
@@ -37,14 +43,18 @@ interface TaskChecklistProps {
     items: ChecklistItemData[];
     canManageTask: boolean;
     isAssignee: boolean;
+    isWorkState: boolean;
 }
 
-export default function TaskChecklist({ projectId, taskId, items, canManageTask, isAssignee }: TaskChecklistProps) {
+export default function TaskChecklist({ projectId, taskId, items, canManageTask, isAssignee, isWorkState }: TaskChecklistProps) {
     const [newText, setNewText] = useState('');
     const [editingId, setEditingId] = useState<number | null>(null);
     const [editText, setEditText] = useState('');
 
-    const canAdd = canManageTask || isAssignee;
+    // Revisi 2026-08-06: tambah item = task.manage ONLY (assignee dicabut).
+    const canAdd = canManageTask;
+    // Centang cuma boleh kalau task SEDANG dikerjakan (F-44 flag, bukan nama status).
+    const canToggle = (canManageTask || isAssignee) && isWorkState;
     const doneCount = items.filter((i) => i.is_done).length;
 
     const addItem = () => {
@@ -91,9 +101,13 @@ export default function TaskChecklist({ projectId, taskId, items, canManageTask,
             <CardContent className="flex flex-col gap-2">
                 {items.length === 0 && <p className="text-sm text-muted-foreground">Belum ada item checklist.</p>}
 
+                {items.length > 0 && !isWorkState && (
+                    <p className="text-xs text-muted-foreground">Task belum dimulai — centang checklist aktif setelah task "Mulai" dikerjakan.</p>
+                )}
+
                 {items.map((item) => (
                     <div key={item.id} className="flex items-center gap-2 text-sm">
-                        <Checkbox checked={item.is_done} onCheckedChange={() => toggle(item)} disabled={!canAdd} />
+                        <Checkbox checked={item.is_done} onCheckedChange={() => toggle(item)} disabled={!canToggle} />
 
                         {editingId === item.id ? (
                             <div className="flex flex-1 items-center gap-2">

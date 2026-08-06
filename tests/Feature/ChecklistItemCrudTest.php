@@ -4,18 +4,24 @@
  * ==========================================================
  * MODUL       : ChecklistItemCrudTest
  * KLASIFIKASI : UTIL
- * TUJUAN      : Verifikasi kepemilikan checklist item (F-123, keputusan Boss
- *               LANGKAH 0 v1.2 H5): task.manage tambah/ubah-teks/hapus ("syarat
- *               kerja"); assignee task ini mencentang (toggle) DAN boleh menambah
- *               item baru, TAPI tidak bisa ubah teks/hapus item; outsider (bukan
- *               task.manage, bukan assignee) ditolak semua aksi (F-95).
+ * TUJUAN      : Verifikasi kepemilikan checklist item (F-123, revisi Boss
+ *               2026-08-06 — MENGGANTI keputusan LANGKAH 0 v1.2 H5 lama):
+ *               task.manage SATU-SATUNYA yang boleh tambah/ubah-teks/hapus
+ *               ("syarat kerja"); assignee task ini CUMA boleh mencentang
+ *               (toggle), TIDAK BISA lagi tambah item baru, ubah teks, atau
+ *               hapus; toggle sendiri HANYA jalan saat task is_work_state=true
+ *               (belum "Mulai" = ditolak 422, bukan 403 — soal state, bukan izin);
+ *               outsider (bukan task.manage, bukan assignee) ditolak semua aksi (F-95).
  * DIPANGGIL   : php artisan test (Pest)
  * MEMANGGIL   : TaskChecklistItemController
  * DATA MASUK  : -
  * DATA KELUAR : Assertion pass/fail
- * RISIKO      : Test "assignee tidak bisa hapus/ubah teks" adalah pagar kepemilikan
- *               — kalau lubang, assignee bisa membuang syarat kerja yang ditetapkan
- *               task.manage sebelum submit review, membuat gate F-127 percuma.
+ * RISIKO      : Test "assignee tidak bisa hapus/ubah teks/tambah" adalah pagar
+ *               kepemilikan — kalau lubang, assignee bisa membuang/menambah syarat
+ *               kerja yang ditetapkan task.manage sebelum submit review, membuat
+ *               gate F-127 percuma. Test "toggle ditolak saat belum is_work_state"
+ *               adalah pagar state — kalau lubang, progress checklist bisa dicentang
+ *               sebelum task benar-benar "Mulai" dikerjakan (H7/F-132/F-138).
  * ==========================================================
  */
 
@@ -59,6 +65,32 @@ function createChecklistCrudTask(Project $project, User $admin, array $assigneeI
     return $task;
 }
 
+/**
+ * KONTRAK: revisi 2026-08-06 -- task dibuat LANGSUNG di status is_work_state=true
+ * (position 1, "IN PROGRESS" default seed), dipakai test toggle checklist yang
+ * BUTUH task sudah "Mulai" dikerjakan (beda dari createChecklistCrudTask() yang
+ * selalu TODO).
+ */
+function createChecklistCrudTaskInProgress(Project $project, User $admin, array $assigneeIds = []): Task
+{
+    $inProgress = TaskStatus::where('project_id', $project->id)->where('position', 1)->firstOrFail();
+
+    $task = Task::create([
+        'organization_id' => $admin->organization_id,
+        'project_id' => $project->id,
+        'task_status_id' => $inProgress->id,
+        'title' => 'Checklist CRUD task (in progress) '.uniqid(),
+        'task_type' => 'tentative',
+        'estimated_minutes' => 60,
+        'due_date' => now()->addWeek(),
+        'created_by' => $admin->id,
+    ]);
+
+    $task->assignees()->sync($assigneeIds);
+
+    return $task;
+}
+
 test('task.manage bisa tambah item checklist', function () {
     $admin = User::factory()->admin()->create();
     $project = createChecklistCrudProject($admin);
@@ -70,7 +102,7 @@ test('task.manage bisa tambah item checklist', function () {
     expect($task->checklistItems()->where('text', 'Item admin')->exists())->toBeTrue();
 });
 
-test('assignee bisa tambah item checklist (langkah tambahan yang ditemukan)', function () {
+test('revisi 2026-08-06: assignee TIDAK BISA LAGI tambah item checklist (task.manage only)', function () {
     $admin = User::factory()->admin()->create();
     $assignee = User::factory()->create(['organization_id' => $admin->organization_id]);
     $project = createChecklistCrudProject($admin, [$assignee->id]);
@@ -78,8 +110,8 @@ test('assignee bisa tambah item checklist (langkah tambahan yang ditemukan)', fu
 
     $response = $this->actingAs($assignee)->post(route('checklist-items.store', [$project, $task]), ['text' => 'Item assignee']);
 
-    $response->assertSessionDoesntHaveErrors();
-    expect($task->checklistItems()->where('text', 'Item assignee')->exists())->toBeTrue();
+    $response->assertForbidden();
+    expect($task->checklistItems()->where('text', 'Item assignee')->exists())->toBeFalse();
 });
 
 test('outsider (bukan task.manage, bukan assignee) ditolak tambah item checklist (F-95)', function () {
@@ -94,11 +126,11 @@ test('outsider (bukan task.manage, bukan assignee) ditolak tambah item checklist
     expect($task->checklistItems()->where('text', 'Item outsider')->exists())->toBeFalse();
 });
 
-test('assignee bisa toggle is_done', function () {
+test('assignee bisa toggle is_done SAAT task sedang dikerjakan (is_work_state)', function () {
     $admin = User::factory()->admin()->create();
     $assignee = User::factory()->create(['organization_id' => $admin->organization_id]);
     $project = createChecklistCrudProject($admin, [$assignee->id]);
-    $task = createChecklistCrudTask($project, $admin, [$assignee->id]);
+    $task = createChecklistCrudTaskInProgress($project, $admin, [$assignee->id]);
     $item = $task->checklistItems()->create(['organization_id' => $admin->organization_id, 'text' => 'x', 'position' => 0]);
 
     $this->actingAs($assignee)->patch(route('checklist-items.toggle', [$project, $task, $item]))->assertSessionDoesntHaveErrors();
@@ -106,11 +138,23 @@ test('assignee bisa toggle is_done', function () {
     expect($item->fresh()->is_done)->toBeTrue();
 });
 
+test('revisi 2026-08-06: toggle is_done DITOLAK (422) kalau task masih TODO -- belum "Mulai" (F-44/H7)', function () {
+    $admin = User::factory()->admin()->create();
+    $assignee = User::factory()->create(['organization_id' => $admin->organization_id]);
+    $project = createChecklistCrudProject($admin, [$assignee->id]);
+    $task = createChecklistCrudTask($project, $admin, [$assignee->id]); // TODO, is_work_state=false
+    $item = $task->checklistItems()->create(['organization_id' => $admin->organization_id, 'text' => 'x', 'position' => 0]);
+
+    $this->actingAs($assignee)->patch(route('checklist-items.toggle', [$project, $task, $item]))->assertSessionHasErrors('checklist');
+
+    expect($item->fresh()->is_done)->toBeFalse();
+});
+
 test('outsider ditolak toggle is_done (F-95)', function () {
     $admin = User::factory()->admin()->create();
     $outsider = User::factory()->create(['organization_id' => $admin->organization_id]);
     $project = createChecklistCrudProject($admin, [$outsider->id]);
-    $task = createChecklistCrudTask($project, $admin);
+    $task = createChecklistCrudTaskInProgress($project, $admin);
     $item = $task->checklistItems()->create(['organization_id' => $admin->organization_id, 'text' => 'x', 'position' => 0]);
 
     $this->actingAs($outsider)->patch(route('checklist-items.toggle', [$project, $task, $item]))->assertForbidden();

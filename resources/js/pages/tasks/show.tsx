@@ -313,6 +313,7 @@ export default function TaskShow({ project, task, statuses, projectMembers }: Ta
                             items={task.checklist_items}
                             canManageTask={can('task.manage')}
                             isAssignee={task.assignees.some((a) => a.id === auth.user.id)}
+                            isWorkState={task.task_status.is_work_state}
                         />
 
                         <TaskAttachments
