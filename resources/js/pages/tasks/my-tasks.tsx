@@ -5,8 +5,18 @@
 //               di-assign ke user login, dikelompokkan Terlambat/Hari ini/Minggu
 //               ini/Nanti (D2). Task selesai TIDAK ditampilkan (D6 — ini daftar
 //               kerja aktif, bukan riwayat/dashboard).
+//               Revisi 2026-08-06: search (judul) + filter Project SISI BROWSER
+//               (dataset kecil, sudah termuat penuh -- nol round-trip server,
+//               beda pola dari tasks/index.tsx/all.tsx yang server-side karena
+//               skala ribuan task lintas organisasi). Filter berlaku DI DALAM
+//               tiap kelompok Terlambat/Hari ini/dst, pengelompokan TETAP utuh.
+//               Board View: F-109 (Kanban cuma valid 1 project) -- link muncul
+//               HANYA saat filter Project mempersempit ke SATU project, REUSE
+//               route Board yang sudah ada (tasks/all.tsx pola sama), + query
+//               assignee=diri sendiri supaya board yang terbuka cuma kartu milikku.
 // DIPANGGIL   : TaskController::myTasks()
-// MEMANGGIL   : TaskStatusCell (ubah status lewat jalur F-45/F-28 yang sama)
+// MEMANGGIL   : TaskStatusCell (ubah status lewat jalur F-45/F-28 yang sama),
+//               route('tasks.board') (F-109, nol kode board baru)
 // DATA MASUK  : groups {overdue, today, this_week, later} — masing-masing array task
 // DATA KELUAR : Aksi ubah status (lihat TaskStatusCell)
 // RISIKO      : -
@@ -15,9 +25,11 @@
 import TaskLiveCounter, { type LiveCounterData } from '@/components/task-live-counter';
 import TaskStatusCell, { type TaskStatusOption } from '@/components/task-status-cell';
 import { Badge } from '@/components/ui/badge';
+import { Button } from '@/components/ui/button';
 import AppLayout from '@/layouts/app-layout';
 import { type BreadcrumbItem, type SharedData } from '@/types';
-import { Head, usePage } from '@inertiajs/react';
+import { Head, Link, usePage } from '@inertiajs/react';
+import { useMemo, useState } from 'react';
 
 interface MyTaskRow {
     id: number;
@@ -56,12 +68,69 @@ export default function MyTasks({ groups }: MyTasksProps) {
     const can = (permission: string) => auth.permissions.includes(permission);
     const totalCount = SECTIONS.reduce((sum, s) => sum + groups[s.key].length, 0);
 
+    const [search, setSearch] = useState('');
+    const [projectId, setProjectId] = useState<number | ''>('');
+
+    // SUMBER: daftar project dropdown DITURUNKAN dari data yang sudah ada
+    // (union semua task di groups), bukan query terpisah -- project yang
+    // muncul di sini WAJIB punya minimal 1 task aktif milik user ini.
+    const projectOptions = useMemo(() => {
+        const map = new Map<number, string>();
+        SECTIONS.forEach((s) => groups[s.key].forEach((t) => map.set(t.project.id, t.project.name)));
+        return Array.from(map, ([id, name]) => ({ id, name })).sort((a, b) => a.name.localeCompare(b.name));
+    }, [groups]);
+
+    const matchesFilter = (task: MyTaskRow) =>
+        (!search.trim() || task.title.toLowerCase().includes(search.trim().toLowerCase())) && (!projectId || task.project.id === projectId);
+
+    const filteredGroups: MyTasksProps['groups'] = {
+        overdue: groups.overdue.filter(matchesFilter),
+        today: groups.today.filter(matchesFilter),
+        this_week: groups.this_week.filter(matchesFilter),
+        later: groups.later.filter(matchesFilter),
+    };
+    const filteredCount = SECTIONS.reduce((sum, s) => sum + filteredGroups[s.key].length, 0);
+    const hasActiveFilter = search.trim() !== '' || projectId !== '';
+
     return (
         <AppLayout breadcrumbs={breadcrumbs}>
             <Head title="Task Saya" />
 
             <div className="flex flex-col gap-6 p-4">
-                <h1 className="text-xl font-semibold">Task Saya</h1>
+                <div className="flex flex-wrap items-center justify-between gap-2">
+                    <h1 className="text-xl font-semibold">Task Saya</h1>
+                    {totalCount > 0 && (
+                        <div className="flex flex-wrap items-center gap-2">
+                            <input
+                                type="text"
+                                placeholder="Cari judul..."
+                                value={search}
+                                onChange={(e) => setSearch(e.target.value)}
+                                className="h-9 w-48 rounded-md border border-input bg-background px-2 text-sm"
+                            />
+                            <select
+                                className="h-9 rounded-md border border-input bg-background px-2 text-sm"
+                                value={projectId}
+                                onChange={(e) => setProjectId(e.target.value ? Number(e.target.value) : '')}
+                            >
+                                <option value="">Semua Project</option>
+                                {projectOptions.map((p) => (
+                                    <option key={p.id} value={p.id}>
+                                        {p.name}
+                                    </option>
+                                ))}
+                            </select>
+                            {/* F-109: Board cuma valid 1 project -- muncul HANYA saat filter
+                                mempersempit ke satu project. assignee=diriku supaya board yang
+                                terbuka cuma tampilkan kartu milikku, bukan seluruh project. */}
+                            {projectId !== '' && (
+                                <Button variant="outline" size="sm" asChild>
+                                    <Link href={`${route('tasks.board', projectId)}?assignee[]=${auth.user.id}`}>Board View</Link>
+                                </Button>
+                            )}
+                        </div>
+                    )}
+                </div>
 
                 {totalCount === 0 && (
                     <p className="rounded-lg border p-6 text-center text-muted-foreground">
@@ -69,12 +138,32 @@ export default function MyTasks({ groups }: MyTasksProps) {
                     </p>
                 )}
 
+                {totalCount > 0 && filteredCount === 0 && (
+                    <p className="rounded-lg border p-6 text-center text-muted-foreground">
+                        Tidak ada task yang cocok dengan filter ini.
+                        {hasActiveFilter && (
+                            <Button
+                                type="button"
+                                variant="ghost"
+                                size="sm"
+                                className="ml-2"
+                                onClick={() => {
+                                    setSearch('');
+                                    setProjectId('');
+                                }}
+                            >
+                                Reset filter
+                            </Button>
+                        )}
+                    </p>
+                )}
+
                 {SECTIONS.map(
                     (section) =>
-                        groups[section.key].length > 0 && (
+                        filteredGroups[section.key].length > 0 && (
                             <div key={section.key} className="flex flex-col gap-2">
                                 <h2 className="text-sm font-semibold text-muted-foreground">
-                                    {section.label} ({groups[section.key].length})
+                                    {section.label} ({filteredGroups[section.key].length})
                                 </h2>
                                 <div className="overflow-x-auto rounded-lg border">
                                     <table className="w-full text-left text-sm">
@@ -90,7 +179,7 @@ export default function MyTasks({ groups }: MyTasksProps) {
                                             </tr>
                                         </thead>
                                         <tbody>
-                                            {groups[section.key].map((task) => (
+                                            {filteredGroups[section.key].map((task) => (
                                                 <tr key={task.id} className="border-b last:border-0">
                                                     <td className="p-3 font-medium">
                                                         <div className="flex flex-col gap-1">
