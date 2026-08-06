@@ -48,6 +48,19 @@
  *               di route, BUKAN dicek manual di sini (F-90). F-4: commandCenter()
  *               TIDAK BOLEH mengeluarkan rupiah/skor-kinerja — prio_score di top_tasks
  *               HANYA bobot urutan Eisenhower (F-122), bukan skor kinerja.
+ *               Revisi 2026-08-06 (permintaan Boss): Command Center (commandCenter()/
+ *               commandCenterPage() SAJA — index()/summary()/loadRows() dashboard
+ *               3-angka lama TIDAK disentuh, tetap tampil semua user) DIBATASI ke
+ *               data viewer SENDIRI kalau dia TIDAK punya project.viewAll (izin
+ *               yang SUDAH ADA, pola pembeda SAMA dipakai Semua Tugas/Search F-34/
+ *               F-140 — admin selalu punya, role custom lain default TIDAK).
+ *               $restrictToSelf FORCE seluruh filter *_user_id (abaikan apa pun
+ *               yang dikirim query string — SERVER guard, bukan HINT UI, supaya
+ *               viewer terbatas tidak bisa intip user lain lewat manipulasi URL)
+ *               + kosongkan status_projects (widget per-proyek, nol makna "punya
+ *               siapa" untuk viewer terbatas, keputusan Boss). commandCenterPayload()
+ *               kirim balik 'restricted_to_self' supaya frontend tahu kapan
+ *               sembunyikan widget/dropdown yang tidak relevan.
  * ==========================================================
  */
 
@@ -108,7 +121,11 @@ class DashboardController extends Controller
      */
     public function commandCenter(Request $request, DashboardService $service): JsonResponse
     {
-        return response()->json($this->commandCenterPayload($request, $service));
+        // Revisi 2026-08-06: viewer TANPA project.viewAll dibatasi ke data
+        // sendiri (lihat RISIKO header modul).
+        $restrictToSelf = ! $request->user()->can('project.viewAll');
+
+        return response()->json($this->commandCenterPayload($request, $service, $restrictToSelf));
     }
 
     /**
@@ -124,17 +141,24 @@ class DashboardController extends Controller
      */
     public function commandCenterPage(Request $request, DashboardService $service): Response
     {
-        [$teamDate, $teamRows] = $this->loadRows($request, $service);
+        // Revisi 2026-08-06: viewer TANPA project.viewAll dibatasi ke data
+        // sendiri -- berlaku juga ke section "Beban Tim" (loadRows() di sini),
+        // TAPI index()/summary() (dashboard 3-angka lama, route terpisah) TIDAK
+        // memanggil dengan flag ini sama sekali, jadi TETAP tampil semua user
+        // (keputusan Boss: restriksi cuma di Command Center).
+        $restrictToSelf = ! $request->user()->can('project.viewAll');
+        [$teamDate, $teamRows] = $this->loadRows($request, $service, $restrictToSelf);
 
         return Inertia::render('command-center', [
-            ...$this->commandCenterPayload($request, $service),
+            ...$this->commandCenterPayload($request, $service, $restrictToSelf),
             'team' => [
                 'date' => $teamDate->toDateString(),
                 // SUMBER (permintaan Boss): dikirim balik SEMATA supaya modal
                 // "Detail & filter" bisa render <input>/<select> TERKONTROL --
                 // ?user_id= di sini REUSE param yang SAMA dibaca loadRows() di
-                // atas, nol filter/param baru di backend.
-                'selected_user_id' => $request->filled('user_id') ? $request->integer('user_id') : null,
+                // atas, nol filter/param baru di backend. Viewer terbatas: SELALU
+                // dirinya sendiri, abaikan ?user_id= yang dikirim (server guard).
+                'selected_user_id' => $restrictToSelf ? $request->user()->id : ($request->filled('user_id') ? $request->integer('user_id') : null),
                 'rows' => $teamRows,
             ],
         ]);
@@ -161,9 +185,14 @@ class DashboardController extends Controller
      *   SUDAH ADA, bukan param baru) -- F-118 itu proyeksi maju dari SATU
      *   tanggal, bukan agregat rentang; filter user = sempitkan roster $users.
      *
+     * Revisi 2026-08-06: $restrictToSelf (viewer TANPA project.viewAll) FORCE
+     * setiap filter *_user_id ke id viewer sendiri -- SERVER guard (bukan HINT
+     * UI), abaikan apa pun yang dikirim query string. status_projects kosong
+     * (widget per-proyek, nol makna "punya siapa" untuk viewer terbatas).
+     *
      * @return array<string, mixed>
      */
-    private function commandCenterPayload(Request $request, DashboardService $service): array
+    private function commandCenterPayload(Request $request, DashboardService $service, bool $restrictToSelf = false): array
     {
         $filterRules = [
             'donut_from' => ['nullable', 'date'], 'donut_to' => ['nullable', 'date'], 'donut_user_id' => ['nullable', 'integer'],
@@ -208,33 +237,57 @@ class DashboardController extends Controller
         // tak dipakai sama sekali.
         $workloadDate = ($filters['workload_date'] ?? null) ? Carbon::parse((string) $filters['workload_date']) : $date;
 
-        // Roster TIM PENUH (bukan cuma admin yang login) -- heatmap/workload adalah
-        // pandangan TIM, sengaja TIDAK ikut filter ?user_id= milik dashboard 3-angka
-        // lama (F-52/loadRows()), supaya angka agregat selalu utuh satu tim.
-        $users = User::where('is_active', true)->orderBy('name')->get();
+        $viewerId = $request->user()->id;
+
+        // Revisi 2026-08-06: roster TIM PENUH HANYA kalau viewer punya
+        // project.viewAll -- viewer terbatas cuma dapat DIRINYA SENDIRI di sini,
+        // jadi SELURUH turunan roster ini (heatmap/workload/filter_users) di
+        // bawah otomatis ikut sempit, nol logic tambahan per widget.
+        $users = User::where('is_active', true)
+            ->when($restrictToSelf, fn ($q) => $q->whereKey($viewerId))
+            ->orderBy('name')
+            ->get();
+
+        // Revisi 2026-08-06: viewer terbatas -> SETIAP filter *_user_id
+        // DIPAKSA ke dirinya sendiri, TERLEPAS apa pun yang dikirim query
+        // string (SERVER guard -- lihat RISIKO header modul, bukan HINT UI).
+        $donutUserId = $restrictToSelf ? $viewerId : ($filters['donut_user_id'] ?? null);
+        $progressUserId = $restrictToSelf ? $viewerId : ($filters['progress_user_id'] ?? null);
+        $categoriesUserId = $restrictToSelf ? $viewerId : ($filters['categories_user_id'] ?? null);
+        $topTasksUserId = $restrictToSelf ? $viewerId : ($filters['top_tasks_user_id'] ?? null);
+        $activityUserId = $restrictToSelf ? $viewerId : ($filters['activity_user_id'] ?? null);
 
         // Addendum 5-kartu: progressDistribution() dipanggil SEKALI, dipakai DUA
         // kali (key lama 'progress_distribution' DAN summary_cards di bawah) --
-        // supaya nol query dobel (F-85). TIDAK ikut filter (§12.5 cuma menyebut
-        // 7 widget: donut/progress/kategori/kalender/workload/recent/top-10 --
-        // 5 kartu ringkas TETAP statis, sesuai keputusan Boss 2026-07-29).
-        $progressDistribution = $this->progressDistribution(null, null, null);
+        // supaya nol query dobel (F-85). TIDAK ikut filter WIDGET (§12.5 cuma
+        // menyebut 7 widget: donut/progress/kategori/kalender/workload/recent/
+        // top-10 -- 5 kartu ringkas TETAP statis, sesuai keputusan Boss
+        // 2026-07-29) -- TAPI restriksi 2026-08-06 beda sumbu (batas keamanan,
+        // bukan pilihan filter admin), jadi TETAP kena $restrictToSelf.
+        $progressDistribution = $this->progressDistribution(null, null, $restrictToSelf ? $viewerId : null);
 
-        $heatmapUsers = $filters['heatmap_user_id'] ?? null
+        // Revisi 2026-08-06: viewer terbatas -> filter heatmap/workload_user_id
+        // JUGA diabaikan (bukan cuma dibiarkan menyempitkan $users yang sudah
+        // 1 orang jadi KOSONG kalau id yang dikirim bukan dirinya sendiri --
+        // itu masih AMAN/nol bocor data, tapi hasilnya "heatmap kosong" padahal
+        // seharusnya "heatmap dirinya sendiri"). $restrictToSelf eksplisit
+        // menonaktifkan filter ini, konsisten dengan *_user_id lain di atas.
+        $heatmapUsers = (! $restrictToSelf && ($filters['heatmap_user_id'] ?? null))
             ? $users->where('id', $filters['heatmap_user_id'])->values()
             : $users;
-        $workloadUsers = $filters['workload_user_id'] ?? null
+        $workloadUsers = (! $restrictToSelf && ($filters['workload_user_id'] ?? null))
             ? $users->where('id', $filters['workload_user_id'])->values()
             : $users;
 
         return [
             'date' => $date->toDateString(),
-            'donut_priority' => $this->donutPriority($filters['donut_from'] ?? null, $filters['donut_to'] ?? null, $filters['donut_user_id'] ?? null),
-            'progress_distribution' => $this->progressDistribution($filters['progress_from'] ?? null, $filters['progress_to'] ?? null, $filters['progress_user_id'] ?? null),
-            'task_categories' => $this->taskCategories($filters['categories_from'] ?? null, $filters['categories_to'] ?? null, $filters['categories_user_id'] ?? null),
+            'restricted_to_self' => $restrictToSelf,
+            'donut_priority' => $this->donutPriority($filters['donut_from'] ?? null, $filters['donut_to'] ?? null, $donutUserId),
+            'progress_distribution' => $this->progressDistribution($filters['progress_from'] ?? null, $filters['progress_to'] ?? null, $progressUserId),
+            'task_categories' => $this->taskCategories($filters['categories_from'] ?? null, $filters['categories_to'] ?? null, $categoriesUserId),
             'heatmap' => $this->heatmap($service, $heatmapUsers, $request->query('month'), $today),
-            'top_tasks' => $this->topTasks($filters['top_tasks_from'] ?? null, $filters['top_tasks_to'] ?? null, $filters['top_tasks_user_id'] ?? null),
-            'recent_activity' => $this->recentActivity($filters['activity_from'] ?? null, $filters['activity_to'] ?? null, $filters['activity_user_id'] ?? null),
+            'top_tasks' => $this->topTasks($filters['top_tasks_from'] ?? null, $filters['top_tasks_to'] ?? null, $topTasksUserId),
+            'recent_activity' => $this->recentActivity($filters['activity_from'] ?? null, $filters['activity_to'] ?? null, $activityUserId),
             // A8/F-96/F-118: workload top-5 REUSE forUsers() -- SATU sumber sama
             // dengan dashboard 3-angka lama, tinggal disortir & dipotong 5.
             // v1.2 DS-4: "periode" widget ini = $date (anchor tunggal, dari ?date=
@@ -246,10 +299,12 @@ class DashboardController extends Controller
                 ->sortByDesc('beban')
                 ->take(5)
                 ->values(),
-            'summary_cards' => $this->summaryCards($service, $users, $today, $progressDistribution),
+            'summary_cards' => $this->summaryCards($service, $users, $today, $progressDistribution, $restrictToSelf ? $viewerId : null),
             // v1.2 DS-4 §12.5: widget "Status Project" -- COUNTS per proyek (BUKAN
             // derivasi status-label F-125, itu urusan halaman Proyek nanti).
-            'status_projects' => $this->statusProjects(),
+            // Revisi 2026-08-06: widget ini per-PROYEK, nol makna "punya siapa" --
+            // kosong untuk viewer terbatas (keputusan Boss), bukan di-scope.
+            'status_projects' => $restrictToSelf ? [] : $this->statusProjects(),
             // F-109: filter aktif dikirim balik supaya frontend bisa render
             // selector ter-isi (pola SAMA ActivityLogController::index() -- state
             // datang dari URL lewat backend, bukan disimpan di localStorage FE).
@@ -327,9 +382,10 @@ class DashboardController extends Controller
      * kalau admin sedang melihat tanggal lain di dashboard lama.
      *
      * @param  array<string, int>  $progressDistribution  hasil progressDistribution(), REUSE dari commandCenter() (F-85, nol query dobel).
+     * @param  int|null  $userId  revisi 2026-08-06 -- viewer terbatas (project.viewAll) diteruskan ke overdueCount(); null = agregat org penuh (perilaku lama).
      * @return array{beban_harian: array{used_minutes:int, capacity_minutes:int}, todo:int, in_progress:int, review:int, overdue:int}
      */
-    private function summaryCards(DashboardService $service, Collection $users, Carbon $today, array $progressDistribution): array
+    private function summaryCards(DashboardService $service, Collection $users, Carbon $today, array $progressDistribution, ?int $userId = null): array
     {
         // F-118 SATU SUMBER: dailyLoadTotals() -- method publik yang sama dipakai
         // heatmap (A5) -- dipanggil ULANG di sini (bukan reuse hasil heatmap)
@@ -351,7 +407,7 @@ class DashboardController extends Controller
             'review' => $progressDistribution['review'],
             // F-44: pola IDENTIK TaskController::search() filter 'overdue' -- due_date
             // < sekarang DAN belum completed. REUSE definisi, bukan definisi baru.
-            'overdue' => $this->overdueCount(),
+            'overdue' => $this->overdueCount($userId),
         ];
     }
 
@@ -359,11 +415,14 @@ class DashboardController extends Controller
      * KONTRAK: jumlah task belum-selesai dengan due_date sudah lewat -- pola
      * IDENTIK TaskController::search() filter 'overdue' (F-44 flag, bukan nama
      * status) dan BoardController::due_status.
+     *
+     * @param  int|null  $userId  revisi 2026-08-06 -- terisi utk viewer terbatas (menyempit ke assignee), null = agregat org penuh (perilaku lama).
      */
-    private function overdueCount(): int
+    private function overdueCount(?int $userId = null): int
     {
         return Task::where('due_date', '<', Carbon::now())
             ->whereHas('taskStatus', fn ($q) => $q->where('is_completed', false))
+            ->when($userId, fn ($q) => $q->whereHas('assignees', fn ($a) => $a->whereKey($userId)))
             ->count();
     }
 
@@ -650,9 +709,15 @@ class DashboardController extends Controller
      * adanya ke DashboardService::forUsers() (rumus TIDAK disentuh, H2 sudah
      * teruji 162 test, lihat CLAUDE.md §4 "JANGAN ubah DashboardService").
      *
+     * Revisi 2026-08-06: $restrictToSelf HANYA dikirim true oleh
+     * commandCenterPage() (viewer Command Center tanpa project.viewAll) --
+     * index()/summary() (dashboard 3-angka lama) SELALU panggil dengan default
+     * false, jadi perilakunya PERSIS SAMA seperti sebelum revisi ini (keputusan
+     * Boss: restriksi cuma di Command Center).
+     *
      * @return array{0: Carbon, 1: array<int, array<string, mixed>>}
      */
-    private function loadRows(Request $request, DashboardService $service): array
+    private function loadRows(Request $request, DashboardService $service, bool $restrictToSelf = false): array
     {
         // GUARD: tanggal dari query string divalidasi lewat Carbon::parse yang
         // ketat terhadap format acak (format tak dikenal -> exception, bukan
@@ -665,8 +730,11 @@ class DashboardController extends Controller
         // login. is_active=true — user nonaktif (F-16, diblokir tanpa dihapus)
         // tidak relevan ditampilkan di dashboard kerja hari ini. F-52/A6: filter
         // ?user_id= OPSIONAL, mempersempit ke satu user tanpa mengubah rumus.
+        // Revisi 2026-08-06: $restrictToSelf FORCE ke user login sendiri,
+        // ABAIKAN ?user_id= apa pun yang dikirim (SERVER guard).
         $users = User::where('is_active', true)
-            ->when($request->filled('user_id'), fn ($q) => $q->whereKey($request->integer('user_id')))
+            ->when($restrictToSelf, fn ($q) => $q->whereKey($request->user()->id))
+            ->when(! $restrictToSelf && $request->filled('user_id'), fn ($q) => $q->whereKey($request->integer('user_id')))
             ->orderBy('name')
             ->get();
 

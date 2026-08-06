@@ -23,7 +23,9 @@
  * ==========================================================
  */
 
+use App\Models\Permission;
 use App\Models\Project;
+use App\Models\Role;
 use App\Models\Task;
 use App\Models\TaskStatus;
 use App\Models\User;
@@ -32,6 +34,26 @@ use App\Services\DashboardService;
 use Illuminate\Support\Carbon;
 use Illuminate\Support\Facades\DB;
 use Inertia\Testing\AssertableInertia;
+
+/**
+ * KONTRAK: revisi 2026-08-06 -- viewer Command Center dengan dashboard.view TAPI
+ * TANPA project.viewAll (custom role, BUKAN admin). Dipakai membuktikan restriksi
+ * "cuma lihat data sendiri" (F-90, reuse project.viewAll sebagai basis pembeda).
+ */
+function ccRestrictedViewer(User $orgSeed, bool $withProjectViewAll = false): User
+{
+    $role = Role::create([
+        'organization_id' => $orgSeed->organization_id,
+        'role_name' => 'CC Restricted '.uniqid(),
+        'is_system' => false,
+        'is_default' => false,
+    ]);
+
+    $permissionNames = $withProjectViewAll ? ['dashboard.view', 'project.viewAll'] : ['dashboard.view'];
+    $role->permissions()->attach(Permission::whereIn('permission_name', $permissionNames)->pluck('id'));
+
+    return User::factory()->create(['organization_id' => $orgSeed->organization_id, 'role_id' => $role->id]);
+}
 
 function createCcProject(User $admin, array $memberIds = []): Project
 {
@@ -903,4 +925,118 @@ test('team.rows halaman command-center IDENTIK rows dashboard lama, satu sumber 
 
     $oldRows = $oldPage->viewData('page')['props']['rows'];
     $newPage->assertInertia(fn (AssertableInertia $p) => $p->where('team.rows', $oldRows));
+});
+
+// =============================================================================
+// Revisi 2026-08-06 (permintaan Boss) -- viewer TANPA project.viewAll dibatasi
+// ke data sendiri di Command Center. Dashboard 3-angka lama TIDAK disentuh.
+// =============================================================================
+
+test('revisi 2026-08-06: viewer TANPA project.viewAll -- restricted_to_self=true, semua widget cuma data sendiri', function () {
+    $admin = User::factory()->admin()->create();
+    $viewer = ccRestrictedViewer($admin);
+    $other = User::factory()->create(['organization_id' => $admin->organization_id]);
+    $project = createCcProject($admin, [$viewer->id, $other->id]);
+    $todo = TaskStatus::where('project_id', $project->id)->where('position', 0)->firstOrFail();
+    $anchor = ccAnchor();
+    seedCcSchedule($admin, $anchor);
+    $this->travelTo($anchor);
+
+    createCcTask($project, $todo, $admin, [$viewer->id], 60, $anchor->copy()->addDays(2), 'p1');
+    createCcTask($project, $todo, $admin, [$other->id], 60, $anchor->copy()->addDays(2), 'p2');
+
+    $response = $this->actingAs($viewer)->getJson(route('dashboard.command-center', ['month' => '2026-08']));
+    $response->assertOk();
+    $json = $response->json();
+
+    expect($json['restricted_to_self'])->toBeTrue()
+        // Cuma task milik $viewer (p1) yang terhitung, task $other (p2) TIDAK.
+        ->and($json['donut_priority'])->toBe(['p1' => 1, 'p2' => 0, 'p3' => 0, 'p4' => 0, 'none' => 0])
+        // Widget per-proyek nol makna "punya siapa" -- kosong (keputusan Boss).
+        ->and($json['status_projects'])->toBe([])
+        // Dropdown filter cuma berisi DIRINYA SENDIRI.
+        ->and($json['filter_users'])->toHaveCount(1)
+        ->and($json['filter_users'][0]['id'])->toBe($viewer->id);
+
+    expect(collect($json['top_tasks'])->pluck('id')->all())->toBe([
+        Task::where('project_id', $project->id)->whereHas('assignees', fn ($q) => $q->whereKey($viewer->id))->value('id'),
+    ]);
+});
+
+test('revisi 2026-08-06: viewer terbatas TIDAK BISA intip user lain lewat manipulasi query string (SERVER guard, bukan HINT UI)', function () {
+    $admin = User::factory()->admin()->create();
+    $viewer = ccRestrictedViewer($admin);
+    $other = User::factory()->create(['organization_id' => $admin->organization_id]);
+    $project = createCcProject($admin, [$viewer->id, $other->id]);
+    $todo = TaskStatus::where('project_id', $project->id)->where('position', 0)->firstOrFail();
+    $anchor = ccAnchor();
+    seedCcSchedule($admin, $anchor);
+    $this->travelTo($anchor);
+
+    createCcTask($project, $todo, $admin, [$viewer->id], 60, $anchor->copy()->addDays(2), 'p1');
+    createCcTask($project, $todo, $admin, [$other->id], 60, $anchor->copy()->addDays(2), 'p3');
+
+    // $viewer mencoba lihat data $other lewat URL manipulation -- HARUS diabaikan.
+    $response = $this->actingAs($viewer)->getJson(route('dashboard.command-center', [
+        'month' => '2026-08',
+        'donut_user_id' => $other->id,
+        'top_tasks_user_id' => $other->id,
+        'activity_user_id' => $other->id,
+        'heatmap_user_id' => $other->id,
+        'workload_user_id' => $other->id,
+    ]));
+
+    $response->assertOk();
+    $json = $response->json();
+
+    // Tetap p1 ($viewer punya), BUKAN p3 ($other punya) -- filter query diabaikan.
+    expect($json['donut_priority'])->toBe(['p1' => 1, 'p2' => 0, 'p3' => 0, 'p4' => 0, 'none' => 0])
+        ->and($json['heatmap']['active_user_count'])->toBe(1)
+        ->and(collect($json['workload_top5'])->pluck('id')->all())->toBe([$viewer->id]);
+});
+
+test('revisi 2026-08-06: viewer DENGAN project.viewAll (role custom, bukan admin) tetap lihat SEMUA data', function () {
+    $admin = User::factory()->admin()->create();
+    $fullViewer = ccRestrictedViewer($admin, withProjectViewAll: true);
+    $other = User::factory()->create(['organization_id' => $admin->organization_id]);
+    $project = createCcProject($admin, [$fullViewer->id, $other->id]);
+    $todo = TaskStatus::where('project_id', $project->id)->where('position', 0)->firstOrFail();
+    $anchor = ccAnchor();
+    seedCcSchedule($admin, $anchor);
+    $this->travelTo($anchor);
+
+    createCcTask($project, $todo, $admin, [$fullViewer->id], 60, $anchor->copy()->addDays(2), 'p1');
+    createCcTask($project, $todo, $admin, [$other->id], 60, $anchor->copy()->addDays(2), 'p2');
+
+    $json = $this->actingAs($fullViewer)->getJson(route('dashboard.command-center', ['month' => '2026-08']))->json();
+
+    expect($json['restricted_to_self'])->toBeFalse()
+        ->and($json['donut_priority'])->toBe(['p1' => 1, 'p2' => 1, 'p3' => 0, 'p4' => 0, 'none' => 0]);
+});
+
+test('revisi 2026-08-06: Command Center Page -- Beban Tim viewer terbatas cuma dirinya, TAPI Dashboard 3-angka lama TETAP tampil semua user (restriksi cuma Command Center)', function () {
+    $admin = User::factory()->admin()->create();
+    $viewer = ccRestrictedViewer($admin);
+    $other = User::factory()->create(['organization_id' => $admin->organization_id]);
+    createCcProject($admin, [$viewer->id, $other->id]); // side effect: project+members+statuses org ini
+    $anchor = ccAnchor();
+    seedCcSchedule($admin, $anchor);
+    $this->travelTo($anchor);
+
+    // Command Center: Beban Tim (team.rows) HANYA berisi $viewer, walau
+    // $viewer coba intip user lain lewat ?user_id= (SERVER guard).
+    $ccPage = $this->actingAs($viewer)->get(route('dashboard.overview', ['user_id' => $other->id]));
+    $ccPage->assertOk();
+    $ccTeamRows = $ccPage->viewData('page')['props']['team']['rows'];
+    expect($ccTeamRows)->toHaveCount(1)
+        ->and($ccTeamRows[0]['id'])->toBe($viewer->id)
+        ->and($ccPage->viewData('page')['props']['team']['selected_user_id'])->toBe($viewer->id);
+
+    // Dashboard 3-angka LAMA (route terpisah) -- TIDAK direstriksi sama sekali,
+    // $viewer (dashboard.view saja) tetap lihat SEMUA user (keputusan Boss).
+    $oldPage = $this->actingAs($viewer)->get(route('dashboard'));
+    $oldPage->assertOk();
+    $oldRows = $oldPage->viewData('page')['props']['rows'];
+    expect(collect($oldRows)->pluck('id')->sort()->values()->all())
+        ->toBe(collect([$admin->id, $viewer->id, $other->id])->sort()->values()->all());
 });

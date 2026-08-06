@@ -167,6 +167,11 @@ interface FilterUser {
 
 interface CommandCenterProps {
     date: string;
+    // Revisi 2026-08-06: viewer TANPA project.viewAll -- seluruh widget di atas
+    // sudah DIBATASI ke data sendiri di backend (server guard). Flag ini MURNI
+    // dipakai frontend untuk sembunyikan widget yang nol makna buat viewer
+    // terbatas (Status Project -- per-proyek, bukan per-orang, keputusan Boss).
+    restricted_to_self: boolean;
     summary_cards: SummaryCards;
     donut_priority: Record<'p1' | 'p2' | 'p3' | 'p4' | 'none', number>;
     progress_distribution: { selesai: number; review: number; progress: number; todo: number };
@@ -407,6 +412,7 @@ function UserOnlyFilter({ userId, users, onChange }: { userId: number | null; us
 }
 
 export default function CommandCenter({
+    restricted_to_self: restrictedToSelf,
     summary_cards: cards,
     donut_priority: donut,
     progress_distribution: progress,
@@ -951,7 +957,12 @@ export default function CommandCenter({
                     </Dialog>
 
                     {/* §12.5: widget "Status Project" -- COUNTS top-5 proyek (BUKAN
-        derivasi status-label F-125, itu tugas halaman Proyek nanti). */}
+        derivasi status-label F-125, itu tugas halaman Proyek nanti).
+        Revisi 2026-08-06: disembunyikan utk viewer terbatas -- widget ini
+        per-PROYEK, nol makna "punya siapa" (keputusan Boss), backend juga
+        sudah kirim array kosong utk viewer ini, cuma disembunyikan total
+        di sini biar tidak nongol kartu kosong tanpa konteks. */}
+                    {!restrictedToSelf && (
                     <Card>
                         <CardHeader className="flex flex-row items-center justify-between space-y-0">
                             <CardTitle className="text-base">Status Project</CardTitle>
@@ -1017,7 +1028,7 @@ export default function CommandCenter({
                             </table>
                         </CardContent>
                     </Card>
-
+                    )}
 
                 </div>
 
