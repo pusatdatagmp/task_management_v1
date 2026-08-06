@@ -287,3 +287,48 @@ Membuat ketiganya "seperti mockup" = MELANGGAR finding. Saat pass visual, sentuh
 ### 12.7 Urutan design (F-144)
 DS-1 token+sidebar+shell → DS-2 branding → DS-3 tema+gradasi → DS-4 fidelity dashboard
 (Status Project + filter per-widget). Lalu resume H7 (timer) dst dalam gaya baru.
+
+---
+
+## §13. AUTOMATION ENGINE (v1.3) — Dynamic Event & Condition-Driven
+
+Recurring engine berevolusi jadi engine berbasis **interval + kondisi**. Spek detail:
+`SPEK-AUTOMATION-ENGINE-v1.3.md`. Keputusan terkunci (F-151..F-161):
+
+### 13.1 Arsitektur (F-158) — pipa 4 lapisan extensible
+**TRIGGER -> CONDITION (Guard chain) -> RESOLVER -> ACTION.** Tambah syarat=tambah Guard,
+tambah anchor=tambah Strategy, tambah pemicu=tambah Trigger — TANPA rewrite engine. Filosofi
+data-driven sama dgn RBAC (F-90). Tiap evaluasi -> objek Decision, di-log ke `automation_run_log`.
+
+### 13.2 Komponen yang DIBANGUN (scope terkunci F-161)
+- **Guards:** TimeDelta (interval tercapai) · AnchorStrategy (A/B/C) · ActiveTemplate · **DateWindow**
+  (batasi hari kerja/rentang tanggal/hari-dalam-bulan) · **Quota** (maks N task belum-selesai).
+- **Strategies (anchor):** **TimeBased (A)** selalu jalan · **CompletionBased (B)** tunggu periode
+  sebelumnya SELESAI (cegah pile-up) · **CalendarAnchored (C)** hari tetap (mis. "selalu tgl 1").
+- **Triggers:** Cron (00:01 WIB) · Manual (sweep). *EventTrigger = interface slot, belum dibangun.*
+- **Resolver:** HolidayShift (forward-shift, F-153).
+
+### 13.3 PERULANGAN DINAMIS (kapabilitas kunci)
+Interval BEBAS via `interval_value` + `interval_unit` — "tiap 3 hari", "tiap 9 hari", "tiap 2 minggu",
+apa pun. Boss atur SENDIRI lewat **Form Konfigurasi Template (AE-2b)**: interval, anchor A/B/C,
+date-window, quota + preview jadwal berikutnya. (Engine lama hanya harian/mingguan/bulanan tetap — diganti.)
+
+### 13.4 Alur per-run (00:01 WIB)
+Cron -> fetch template Active -> [TimeDelta: delta>=interval?] -> [Anchor A/B/C] -> [Guard lain:
+DateWindow/Quota] -> [HolidayShift target_date] -> [GENERATE + salin checklist F-123] ->
+[mutasi last_generated + period_key]. Tiap keputusan di-log.
+
+### 13.5 Exception & aturan (perubahan dari engine lama)
+- **Miss-run = catch-up SATU** (self-heal via delta+last_generated) — F-152 **mengganti F-100** no-backfill.
+- **Libur/weekend = Forward-Shift SEMUA tipe termasuk harian** — F-153 **mengubah F-102** (dulu harian=skip).
+- **Opsi B deadlock** (sebelumnya tak pernah selesai) -> **notif admin** (kolaborasi F-114), sekali, tak paksa — F-154.
+- **Idempotency** (F-61): unique `(template_id, period_key)` — cron dobel tak generate ganda.
+- **Timezone** (F-69): WIB eksplisit, jangan tanggal UTC. **Bulk** (F-85): chunk + preload.
+
+### 13.6 Build approach (F-160) & §7 final (F-159)
+- Set guard/strategy dibangun LEBIH LENGKAP · **GANTI TOTAL** engine lama (cutover setelah teruji) ·
+  isolasi kegagalan PER-TEMPLATE (try/catch, log, lanjut).
+- `period_key`=tanggal periode · notif block sekali · `automation_run_log`=tabel DB (queryable, future UI) ·
+  migrasi template lama -> time_based + interval dari recurrence lama.
+
+### 13.7 Rencana: AE-1 skema -> AE-2 pipeline -> AE-2b form konfigurasi -> AE-3 Opsi B+notif+CUTOVER -> AE-4 (opsional) UI riwayat.

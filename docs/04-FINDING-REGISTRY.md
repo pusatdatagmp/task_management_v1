@@ -85,7 +85,7 @@
 | **F-61** | `last_generated_date` = idempotency guard | 🟢 | BF §3 |
 | **F-62** | Jumlah extension per user = metrik KPI v1.5 | 🟢 | BF §4 |
 | **F-63** | **Multi-assignee: realisasi & poin dibagi atau digandakan?** | 🟡 **sebelum v0.8** | BF §12 |
-| **F-64** | Finding baru mulai dari F-151 | 🟢 | CLAUDE §2 |
+| **F-64** | Finding baru mulai dari F-165 | 🟢 | CLAUDE §2 |
 | **F-65** | **Laravel 12 bug-fix berakhir ±Agu 2026** — keputusan Boss tetap L12. Upgrade ke L13 wajib dijadwalkan | 🟡 **AKTIF** | Tutorial §0 |
 | **F-66** | **Segmen menyeberang perubahan `work_schedules`** → v0.5 pakai config aktif saat `started_at`. Resolusi per-hari → v0.8 | 🟢 | H2 §C2 |
 | **F-67** | **Guard FULLTEXT harus EXCLUDE sqlite, bukan INCLUDE mysql** — driver `mariadb` bikin search mati diam-diam | 🟢 | H2 §B1 |
@@ -170,8 +170,22 @@
 | **F-146** | 🟡 **Bug laten PRE-EXISTING `ui/sidebar.tsx` ~404:** `hsl(var(--sidebar-border))` nesting hsl() ganda (invalid sebelum sesi ini) → shadow rail tak render. Tak disentuh DS-1 (di luar scope). Fix saat sentuh sidebar.tsx | 🟡 **TERBUKA** | v1.2 debt |
 | **F-147** | 🔵 **SELESAI — 3 nav disabled semua AKTIF** (Semua Tugas+Tugas Berulang 5f245fe, Setelan c972b04). Nol dead-end tersisa | 🔵 **selesai** | v1.2 |
 | **F-148** | 🔵 **DIPERBAIKI (DS-4b)** — 7 param `*_user_id` di-cast ke int di backend, kontrak API jujur | 🔵 **selesai** | v1.2 |
-| **F-149** | 🔴 **PROTOKOL COMMIT WAJIB.** Setiap sesi Claude Code selesai → `git add -A && git commit` (kode + docs) sebagai LANGKAH TERAKHIR, sebelum lapor. Kerja uncommitted = RAPUH: 2× hilang (docs untracked, lalu kode filter DS-4 lenyap dari working tree). Prompt ke depan sertakan langkah commit wajib. Registry hanya boleh klaim "ada" untuk yang SUDAH di-commit | 🟢 | v1.2 |
+| **F-149** | 🔴 **PROTOKOL COMMIT WAJIB** tiap sesi selesai. **KLARIFIKASI (AE-2):** commit di-SCOPE ke file sesi itu sendiri (`git add <file>`), BUKAN `git add -A` mentah — kalau working tree punya perubahan TAK TERKAIT (mis. UI Boss), `git add -A` melanggar "1 commit=1 perubahan logis". Kerja uncommitted = rapuh. Registry hanya klaim "ada" untuk yang SUDAH di-commit | 🟢 | v1.2 |
 | **F-150** | 🔵 **BERSIH (DS-2)** — lint error DS-1 (app-logo/NavFooter) hilang saat file ditulis ulang untuk branding. Lint 0 error/warning | 🔵 **selesai** | v1.2 |
+| **F-151** | **AUTOMATION ENGINE evolusi: Dynamic Event & Condition-Driven** (revisi recurring). Cron 00:01 WIB → fetch template Active → Time-Delta `DateDiff(now_WIB, last_generated) >= interval` → **Anchor Strategy** (A=time-based / B=completion-based) → Holiday Shift → generate → mutasi state (task + last_generated). Menyempurnakan F-100/101/102/104/61 | 🟢 | v1.3 AE |
+| **F-152** | **Miss-run = CATCH-UP SATU** (self-heal via delta+last_generated), MENGGANTI F-100 no-backfill. Beberapa periode terlewat → generate 1 (periode kini), set last_generated=today. Idempotent (F-61): cron 2× tak generate ganda (kunci template_id+periode). Command bisa manual (sweep) | 🟢 | v1.3 AE |
+| **F-153** | **Holiday/weekend = Forward-Shift SEMUA tipe TERMASUK harian** (Boss) — MENGUBAH F-102 (dulu harian=skip). Geser ke hari kerja berikutnya (reuse F-43). Efek pile-up (Opsi A harian) dimitigasi last_generated tracking + Opsi B completion-gate | 🟢 | v1.3 AE |
+| **F-154** | **Anchor Opsi B (completion-based): task sebelum belum SELESAI → SKIP** (cegah backlog). Deadlock (sebelumnya tak pernah selesai) → **NOTIFIKASI ADMIN** (kategori kolaborasi F-114, bukan lifecycle trigger), tidak silent, tidak paksa. Hindari spam: notif sekali/ambang, bukan tiap run | 🟢 | v1.3 AE |
+| **F-155** | **Subtask create/kelola = HANYA `task.manage`** (admin/pembuat); MEMBER hanya update progress lewat CHECKLIST (18134f9, direkonsiliasi dari laporan sistem). Konsisten F-95/F-127 | 🟢 | v1.2 |
+| **F-156** | **Dependency `framer-motion` + `sweetalert2` DISETUJUI Boss** (retroaktif, jejak approval CLAUDE.md §4). framer-motion=micro-interaksi; sweetalert2=alert (lib/swal.ts). Sah dipakai | 🟢 | v1.2 |
+| **F-157** | **RULE: user tanpa `user.manage` TAK bisa ganti email sendiri** (ditegakkan SERVER, diratifikasi Boss). Keamanan identitas. Field profil lain (nama, password) tetap boleh | 🟢 | v1.2 |
+| **F-158** | **Automation Engine ARSITEKTUR EXTENSIBLE: pipa TRIGGER -> CONDITION(Guard chain) -> RESOLVER -> ACTION.** Anchor = Strategy pattern (TimeBased/CompletionBased, key-registered). Condition = Guard komposabel berurutan (TimeDelta, AnchorStrategy, +future). Tiap evaluasi -> objek Decision (action/reason/target_date). Config data-driven (F-90 filosofi). Pipeline trigger-agnostic -> siap future EventTrigger. Tambah kondisi=tambah Guard, tambah anchor=tambah Strategy, TANPA rewrite engine | 🟢 | v1.3 AE |
+| **F-159** | **§7 automation FINAL:** (1) period_key = TANGGAL periode terjadwal (readable + kunci idempotency dgn template_id); (2) notif block = SEKALI saat blocked_since di-set, clear saat selesai (anti-spam); (3) automation_run_log = TABEL DB (queryable -> future UI riwayat automation); (4) migrasi template lama -> anchor_strategy=time_based, interval diturunkan dari recurrence lama | 🟢 | v1.3 AE |
+| **F-160** | **Automation Engine BUILD APPROACH (Boss):** (1) bangun set guard/strategy LEBIH LENGKAP sejak awal (bukan minimal); (2) GANTI TOTAL engine recurring lama (cutover bersih + migrasi template + test menyeluruh, hanya setelah AE teruji penuh); (3) isolasi kegagalan PER-TEMPLATE (try/catch, log, lanjut yang lain). Set guard/strategy konkret menunggu konfirmasi Boss | 🟢 | v1.3 AE |
+| **F-161** | **Automation Engine SCOPE KONKRET (Boss):** Guards = TimeDelta+AnchorStrategy+ActiveTemplate (inti) + **DateWindow** (batasi hari/tanggal/hari-dalam-bulan) + **Quota** (maks N belum-selesai). Strategies = TimeBased(A)+CompletionBased(B)+**CalendarAnchored(C, hari tetap mis. tgl 1)** — 3 dibangun. Triggers = Cron+Manual (EventTrigger = INTERFACE slot saja, tak dibangun — belum ada use-case). Resolver = HolidayShift | 🟢 | v1.3 AE |
+| **F-162** | 🔵 **DITUTUP (AE-3 cutover 5176563)** — `tasks:generate-recurring` dicabut dari scheduler; `automation:run` satu-satunya generator (verified schedule:list + Schedule::events introspeksi). Command lama utuh @deprecated (rollback). Nol double-gen | 🔵 **selesai** | v1.3 AE |
+| **F-163** | 🔵 **DRIFT anchor hari-tetap pasca miss-run:** template weekly/monthly dimigrasi ke `time_based` (interval bergulir dari last_generated). Setelah miss-run, catch-up set last_generated=hari-eval → anchor hari-tetap (mis. tiap Senin/tgl-1) BERGESER. Akar: hari-tetap seharusnya `calendar_anchored`, bukan time_based. DB dev kosong (belum menggigit). SELESAI (AE-2b 0fefe75) — migrasi korektif idempotent, weekly/monthly→calendar_anchored (bukti angka), daily tetap, pilihan manual Boss tak tertimpa | 🔵 **selesai** | v1.3 AE |
+| **F-164** | 🔵 **CalendarAnchored day_of_month>28 = SKIP bulan pendek** (E4, mis. tgl 31 di Feb → skip total), BUKAN clamp akhir-bulan (F-101 lama). Untuk semantik "akhir bulan"/"tgl 31", perlu opsi CLAMP. SELESAI (AE-2b) — CalendarAnchored clamp akhir-bulan (tgl31 Feb→28, bukti [28]); E4 diperbarui F-78 | 🔵 **selesai** | v1.3 AE |
 
 ---
 
@@ -1077,3 +1091,112 @@ Boss lapor Setelan hilang. DS-2 SUDAH committed (c972b04) → kode kemungkinan u
 3. Git revert (dicek).
 
 Prompt FIX-SETELAN dibuat: diagnosa 3 kemungkinan → perbaiki → COMMIT wajib (F-149). Pola berulang "UI hilang" = hampir selalu build/serve basi ATAU permission belum seed — BUKAN kode hilang (karena sudah commit).
+
+---
+
+## CATATAN — 2026-08-04 — REKONSILIASI dari laporan sistem (drift terungkap)
+
+Laporan sistem (Claude Code) ungkap: registry/tracker Jarvis TERTINGGAL. Kenyataan repo v1.2 ~72% (bukan 68%). Yang SUDAH committed tapi belum teraudit Jarvis:
+- **DS-3 editor tema (49170d7)** — SELESAI (F-143/144/145 sudah tercatat; implementasi kini terkonfirmasi committed).
+- **10 commit tambahan (belum teraudit, direkonsiliasi):** d4c3643 Log Aktivitas 4 kartu · 1903b2b CommandCenter Top-10 sortable+workload modal · 0e05432 Leaderboard Top-3/Bottom-3 cards · 619a33d Pengguna&Peran 2-kolom · 8f59288 Tema pisah token teks-button · bcff7ac..2618793 Kalender Beban Tim modal (4 commit) · 18134f9 subtask=task.manage (→ F-155).
+
+**Belum benar-benar dikerjakan:** H7 (timer work-state), H8 (Meetings — migration+model ADA, controller BELUM), H9 (buffer+tutup F-97).
+
+🔴 **3 ISU WORKING-TREE (belum committed, butuh KEPUTUSAN Boss):**
+1. Refactor Setelan personal → modal (32 file, hapus 3 route settings/*, DatabaseSeeder −421 baris termasuk header klasifikasi §3.1) → 1 TEST GAGAL (query count 41→42).
+2. 2 DEPENDENCY baru (framer-motion, sweetalert2) TANPA approval (langgar CLAUDE.md §4).
+3. BUSINESS RULE baru: user tanpa user.manage tak bisa ganti email sendiri (server-enforced) — belum diputuskan.
+
+🔴 **PELAJARAN PROSES:** kerja di luar loop prompt→audit → registry jadi fiksi. Perlu: setiap sesi Claude Code dilaporkan balik ATAU rekonsiliasi berkala seperti ini.
+
+---
+
+## CATATAN — 2026-08-04 — keputusan working-tree: RAPIKAN & COMMIT refactor Setelan-modal
+
+Boss: deps approve keduanya (F-156), rule email setuju (F-157). Q1 tak dijawab eksplisit → diinterpretasi RAPIKAN & COMMIT (approve deps+rule = pertahankan refactor). Prompt pembersihan: fix test query-regression (41→42, prefer balik 41) + kembalikan header §3.1 DatabaseSeeder + 2 lint debt → commit (F-149). Kalau Boss mau stash, koreksi.
+
+---
+
+## CATATAN — 2026-08-04 — Automation Engine: arsitektur extensible + §7 final; blueprint diperbarui
+
+Boss: fokus Automation Engine, JANGAN sentuh kode UI yang Boss ubah sendiri (prompt rapikan-modal DIBATALKAN). Update alur+logika agar mudah dikembangkan + update blueprint.
+
+**F-158** arsitektur extensible (Trigger->Guard-chain->Resolver->Action; Strategy anchor; Decision+log; data-driven; siap event-driven). **F-159** §7 final (period_key=tanggal, notif-sekali, run_log=tabel, migrasi time_based).
+
+SPEK-AUTOMATION-ENGINE-v1.3 diperkaya §8 (arsitektur extensible) + §7 diresolusi. Blueprint utama +§13. Working-tree UI = urusan Boss (tak disentuh).
+
+---
+
+## CATATAN — 2026-08-04 — v1.3 AE-1 (skema) lulus, committed 84d5e74
+
+**LULUS.** 4 migration (8 kolom template + period_key/unique + automation_run_log + data-migration). Down diuji nyata (rollback+re-apply). 5 test skema + 21 recurring lama utuh (F-121). Full 367 pass, 1 fail = bug PRE-EXISTING DashboardCommandCenterTest (42≠41, dari refactor UI manual Boss — dikonfirmasi via git stash, BUKAN dari AE-1).
+
+**Judgment benar:** (a) org_id di automation_run_log = kepatuhan F-5 (permanen, tak perlu approval baru); (b) FK reuse `task_template_id` (bukan kolom baru); (c) down-migration InnoDB FK-index fix (index tunggal sebelum drop composite) — diverifikasi rollback nyata.
+
+**Bukti migrasi:** DB dev kosong → 0 baris kena; logika dibuktikan E2 (3 legacy → konversi benar, idempotent).
+
+**OPEN:** bug DashboardCommandCenterTest (query 41→42, area UI Boss) masih terbuka — perlu keputusan Boss (fix query double-load / update test / biarkan). Kolom AE belum dibaca logika (murni skema, aman). NEXT: AE-2 pipeline.
+
+---
+
+## CATATAN — 2026-08-04 — v1.3 AE-2 (pipeline) lulus, committed 9ae19a5
+
+**LULUS.** 394 pass (+27), 1 known-fail (UI Boss, tak nambah). Pipeline extensible penuh (5 guard, 3 strategy registry-key, HolidayShift, GenerateAction, command+scheduler WIB). Idempotency berlapis (F-61) + isolasi (F-160) diuji.
+
+**Menonjol:** (a) bug reason-overflow varchar(255) yang mematahkan isolasi ketemu+fix (Str::limit 250); (b) BusinessHoursCalculator::isBusinessDay reuse (F-72/76, bukan kalkulator ke-3); (c) commit di-scope ke file AE-2 (BENAR — koreksi 'git add -A' Jarvis, lihat F-149 klarifikasi).
+
+**Deviasi diterima:** ActiveTemplateGuard selalu-pass di prod (pre-filter query) tapi tetap class terpisah utk future trigger (F-158) · 'shift' = generate dgn tanggal digeser + label log beda (interpretasi masuk akal, diterima).
+
+🔴 **F-162 DUAL-ENGINE:** 2 scheduler aktif → double-gen saat deploy. Tutup di AE-3 (cutover) atau nonaktifkan scheduler baru dulu. Laten (deploy ditahan).
+
+**Minor:** reason varchar(255) dijaga Str::limit di Command, tapi tak otomatis di titik lain — pertimbangkan kolom TEXT (AE-3). **Working tree UI Boss masih uncommitted** (Boss commit sendiri).
+
+NEXT: Boss pilih AE-2b (form) atau AE-3 (cutover+notif). Jarvis condong AE-3 (tutup F-162 + harden) dulu.
+
+---
+
+## CATATAN — 2026-08-04 — v1.3 AE-3 (cutover+notif+harden) lulus, committed 5176563
+
+**LULUS — fase paling matang.** Parity dibuktikan SEBELUM cutover (daily/weekly/monthly persis). **F-162 DITUTUP** (1 scheduler, verified). Engine lama @deprecated utuh (rollback). Notif Opsi B (F-154): sekali, kolaborasi F-114, clear on resolve. Edge: miss-run catch-up-satu (F-152), holiday-shift lintas-bulan (F-153), deadlock notif-1x, CalendarAnchored day-31=skip. 406 pass, 1 known-fail (tak nambah). reason→TEXT via raw ALTER (hindari dbal dependency).
+
+**F-163 DRIFT** (weekly/monthly time_based geser anchor pasca miss-run → harusnya calendar_anchored; dev kosong, belum menggigit). **F-164** CalendarAnchored day>28 skip vs clamp. Keputusan Boss sebelum AE-2b.
+
+NEXT: putuskan drift (F-163/F-164) → lalu AE-2b (form) → AE-4 (opsional UI riwayat).
+
+---
+
+## CATATAN — 2026-08-04 — keputusan drift + AE-2b digabung
+
+Boss: (1) YA perbaiki drift — weekly/monthly → calendar_anchored (day_of_week/day_of_month), daily tetap time_based; tambah CLAMP akhir-bulan (F-101) ke CalendarAnchored (ganti perilaku skip E4, update test F-78). (2) Gabung perbaikan ke AE-2b (form konfigurasi). Form di halaman Tugas Berulang: pilih anchor A/B/C + field terkait (interval / hari-tetap / completion) + guard (date_window, quota) + is_active. Inilah panel Boss atur "tiap N hari" sendiri.
+
+---
+
+## CATATAN — 2026-08-05 — v1.3 AE-2b (form+fix drift) lulus, committed 0fefe75
+
+**LULUS — lingkaran tertutup.** End-to-end D4 (HTTP POST sungguhan): form "tiap 3 hari"→engine generate tiap 3 hari; form "Rabu"→hanya Rabu. Drift F-163 SELESAI (idempotent, hormati pilihan manual Boss). Clamp F-164 SELESAI (E4 update F-78). Form Tugas Berulang: anchor A/B/C + guard config. 
+
+**Tangkapan bagus:** TimeDeltaGuard NULL interval→Pass (cegah UnhandledMatchError calendar_anchored, celah baru terbuka form). 6 test payload lama +anchor_strategy (F-78).
+
+**Automation Engine v1.3 PRAKTIS LENGKAP** (AE-1/2/3/2b). Sisa AE-4 opsional (UI riwayat run_log). Minor: preview form = client-only deskriptif (bukan simulasi presisi; kalau mau presisi perlu endpoint — opsional). Latent: template prod lama ter-drift-fix saat migration deploy.
+
+NEXT: AE-4 opsional ATAU kembali v1.2 (H7/H8/H9).
+
+---
+
+## CATATAN — 2026-08-05 — v1.2 H7 (model waktu) lulus, committed fd2a6ef
+
+**LULUS — fase paling rawan v1.2, eksekusi matang.** Baseline 424+1-known-fail. F-138 diimplementasi PENUH: segmen buka HANYA via Mulai/Lanjut (F-41 lama diubah), drag/reject=0 segmen, jeda=turunan. 🔴 **Realisasi Σ segmen TAK berubah angkanya** (75/90/45 tetap; hanya mekanisme). F-57 cap terbukti (Jum16:00→Sen09:00=120m bukan 3900). F-94 konsisten (50=50=50). Checklist gate F-127 tetap di transisi (dropdown & Submit, F-111 one-gate).
+
+**F-41 kini DIGANTI F-138** (segmen eksplisit) — diimplementasi H7. TaskObserver auto-open + resolveSegmentWorker jadi dead code (dihapus).
+
+**Disiplin:** BoardDragTest (lolos grep, ketemu full-suite pre-commit → 3 test update jujur F-78, angka akhir tetap). UI manual Boss tak diclobber (ikut pola confirmAction/showError existing). Commit scoped 14 file.
+
+**F-97 kini 19 item.** 🔴 H7 SANGAT visual (4 tombol + jeda) + payroll-critical → verifikasi browser paling mendesak. Dev server JALAN, data uji SIAP (task 5, asep@deevatech.test).
+
+NEXT: verifikasi item 19 → lalu H8 (Meetings) → H9.
+
+---
+
+## CATATAN — 2026-08-05 — Boss lompat ke H9 (H8 Meetings ditunda)
+
+Boss: "langsung H9 saja". **H8 Meetings DITUNDA/skip** (migration+model ADA sejak 25 Jul, controller/UI belum — bisa disusun kapan saja kalau Boss mau). H9 = FINALISASI: stabilkan working-tree (commit tertunda + resolusi 1 known-fail query 42≠41), regresi penuh, konsistensi lintas-fitur (F-94/F-109), sinkron docs, kompilasi checklist verifikasi F-97 jadi satu pass. 🔴 H9 TAK menutup F-97 (butuh mata Boss) — hanya menyiapkannya rapi.
