@@ -92,6 +92,50 @@ test('D3a: simpan anchor A (time_based) -> interval_value/unit terisi, anchor_co
     expect($template->anchor_config)->toBeNull();
 });
 
+test('bug fix 2026-08-06 (Boss lapor form Template tidak bisa disimpan): anchor_day_type eksplisit null dengan time_based -> BERHASIL', function () {
+    $admin = User::factory()->admin()->create();
+    $project = createConfigFormProject($admin);
+
+    // Payload ini SETELAH fix frontend (task-templates/create.tsx transform()) --
+    // anchor_day_type di-null-kan kalau anchor_strategy BUKAN calendar_anchored,
+    // BUKAN dibiarkan default 'week' dari form state. SEBELUM fix, form SELALU
+    // mengirim anchor_day_type:'week' apa pun strateginya -- lihat test di bawah
+    // yang membuktikan payload LAMA (bug) memang ditolak server.
+    $this->actingAs($admin)->post(route('task-templates.store', $project->id), [
+        ...baseTemplatePayload(),
+        'title' => 'Bug fix anchor_day_type null',
+        'anchor_strategy' => 'time_based',
+        'interval_value' => 1,
+        'interval_unit' => 'day',
+        'anchor_day_type' => null,
+    ])->assertRedirect()->assertSessionDoesntHaveErrors();
+
+    expect(TaskTemplate::where('title', 'Bug fix anchor_day_type null')->exists())->toBeTrue();
+});
+
+test('bug fix 2026-08-06 (dokumentasi akar masalah): anchor_day_type=week BOCOR ke time_based -> DITOLAK (backend TIDAK diubah, fix di frontend)', function () {
+    $admin = User::factory()->admin()->create();
+    $project = createConfigFormProject($admin);
+
+    // Ini PERSIS payload form SEBELUM fix -- anchor_day_type default form
+    // ('week') ikut terkirim walau anchor_strategy time_based. Server WAJIB
+    // tetap menolak ini (rule anchor_config.day_of_week required_if:anchor_day_type,week
+    // TIDAK disentuh) -- test ini mendokumentasikan KENAPA fix ada di frontend
+    // (transform()), bukan melonggarkan validasi backend.
+    $response = $this->actingAs($admin)->post(route('task-templates.store', $project->id), [
+        ...baseTemplatePayload(),
+        'title' => 'Payload lama (bug)',
+        'anchor_strategy' => 'time_based',
+        'interval_value' => 1,
+        'interval_unit' => 'day',
+        'anchor_day_type' => 'week',
+        'anchor_config' => [],
+    ]);
+
+    $response->assertSessionHasErrors('anchor_config.day_of_week');
+    expect(TaskTemplate::where('title', 'Payload lama (bug)')->exists())->toBeFalse();
+});
+
 test('D3b: simpan anchor B (completion_based) -> interval terisi sama seperti A', function () {
     $admin = User::factory()->admin()->create();
     $project = createConfigFormProject($admin);

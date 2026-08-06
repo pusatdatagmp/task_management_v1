@@ -161,6 +161,10 @@ export default function TaskTemplateEdit({ project, template, members }: TaskTem
     // task_type yang TERPILIH SAAT SUBMIT, bukan bentuk lama yang tersimpan.
     // AE-2b: anchor_config/date_window_config -- lihat create.tsx transform()
     // untuk penjelasan lengkap, logika IDENTIK.
+    // BUG FIX (ditemukan Boss 2026-08-06) -- lihat create.tsx transform() untuk
+    // penjelasan lengkap: anchor_day_type WAJIB di-null-kan kalau strategi bukan
+    // calendar_anchored, atau required_if:anchor_day_type,week di server salah
+    // memaksa anchor_config.day_of_week terisi untuk SEMUA strategi.
     transform((formData) => ({
         ...formData,
         recurrence_config:
@@ -169,6 +173,7 @@ export default function TaskTemplateEdit({ project, template, members }: TaskTem
                 : formData.task_type === 'monthly'
                   ? { day_of_month: formData.day_of_month }
                   : {},
+        anchor_day_type: formData.anchor_strategy === 'calendar_anchored' ? formData.anchor_day_type : null,
         anchor_config:
             formData.anchor_strategy === 'calendar_anchored'
                 ? formData.anchor_day_type === 'week'

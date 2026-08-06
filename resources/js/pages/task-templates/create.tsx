@@ -145,6 +145,15 @@ export default function TaskTemplateCreate({ project, members }: TaskTemplateCre
     // SELALU tepat 1 key (day_of_week XOR day_of_month), tidak pernah dua-duanya.
     // date_window_config dikirim APA ADANYA (kosong = tak ada batasan, dibaca
     // DateWindowGuard di server).
+    //
+    // BUG FIX (ditemukan Boss 2026-08-06): anchor_day_type default form = 'week'
+    // dan SELALU ikut terkirim di ...formData walau anchor_strategy BUKAN
+    // calendar_anchored -- StoreTaskTemplateRequest::anchor_config.day_of_week
+    // pakai required_if:anchor_day_type,week (cuma cek nilai anchor_day_type,
+    // TIDAK tahu anchor_strategy) -- akibatnya SEMUA template strategi A/B
+    // (time_based/completion_based, termasuk DEFAULT form) ditolak validasi.
+    // Fix: null-kan anchor_day_type kalau bukan calendar_anchored (SAMA pola
+    // dengan anchor_config di bawah), memutus pemicu required_if yang salah.
     transform((formData) => ({
         ...formData,
         recurrence_config:
@@ -153,6 +162,7 @@ export default function TaskTemplateCreate({ project, members }: TaskTemplateCre
                 : formData.task_type === 'monthly'
                   ? { day_of_month: formData.day_of_month }
                   : {},
+        anchor_day_type: formData.anchor_strategy === 'calendar_anchored' ? formData.anchor_day_type : null,
         anchor_config:
             formData.anchor_strategy === 'calendar_anchored'
                 ? formData.anchor_day_type === 'week'
