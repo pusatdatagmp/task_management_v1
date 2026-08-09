@@ -72,6 +72,7 @@ class Task extends Model
         'due_date',
         'original_due_date',
         'started_at',
+        'submitted_at',
         'completed_at',
         'approved_at',
         'approved_by',
@@ -85,6 +86,7 @@ class Task extends Model
             'due_date' => 'datetime',
             'original_due_date' => 'datetime',
             'started_at' => 'datetime',
+            'submitted_at' => 'datetime',
             'completed_at' => 'datetime',
             'approved_at' => 'datetime',
         ];

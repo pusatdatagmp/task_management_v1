@@ -60,7 +60,7 @@ class LeaderboardService
             ->whereBetween('approved_at', [$from, $to])
             ->whereHas('assignees', fn ($q) => $q->whereIn('users.id', $userIds))
             ->with('assignees:id')
-            ->get(['id', 'points', 'quality_rating', 'rejection_count', 'due_date', 'original_due_date', 'approved_at']);
+            ->get(['id', 'points', 'quality_rating', 'rejection_count', 'due_date', 'original_due_date', 'submitted_at', 'approved_at']);
 
         // Akumulator mentah per user -- SATU pass PHP di memori, bukan query lagi
         // per task/user (F-85). ratingSum/ratingCount terpisah supaya rata-rata

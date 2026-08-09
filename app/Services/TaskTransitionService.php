@@ -178,6 +178,16 @@ class TaskTransitionService
      * pemiliknya, pola sama sejak F-41 lama — "keluar work_state = tutup segmen"
      * TIDAK diubah H7, lihat TaskObserver header) dan realisasi (F-38) otomatis
      * ikut ter-Σ dari sana, TIDAK dihitung/ditulis manual di sini.
+     *
+     * BUSINESS RULE (2026-08-07, keputusan Boss): submitted_at dicatat SEKALI
+     * SAJA — submit PERTAMA yang jadi patokan telat/tidak di LeaderboardService,
+     * BUKAN submit terakhir. Resubmit setelah ditolak (reject() sekarang mundur
+     * ke status ENTRY, assignee klik Mulai lagi -> submit() lagi) TIDAK menimpa
+     * nilai ini. Di-set SEBELUM transitionStatus() supaya ikut SATU query UPDATE
+     * yang sama dengan task_status_id — kalau gate F-127 gagal di bawah, exception
+     * dilempar sebelum update() dipanggil sama sekali, jadi attribute yang baru
+     * di-set di memori ini juga tidak pernah tersimpan (konsisten "TIDAK disentuh
+     * sama sekali" di atas).
      */
     public function submit(Task $task, User $actor): void
     {
@@ -197,6 +207,10 @@ class TaskTransitionService
             throw ValidationException::withMessages([
                 'task_status_id' => 'Project ini tidak punya status "review" (F-19) — hubungi admin.',
             ]);
+        }
+
+        if (is_null($task->submitted_at)) {
+            $task->submitted_at = now();
         }
 
         // transitionStatus() sendiri yang menegakkan gate F-127 (target is_review)
