@@ -76,7 +76,7 @@ export default function TaskStatusesIndex({ project, statuses }: { project: { id
             <Head title={`Status — ${project.name}`} />
 
             <div className="flex flex-col gap-4 p-4">
-                <div className="flex items-center justify-between">
+                <div className="flex flex-wrap items-center justify-between gap-2">
                     <h1 className="text-xl font-semibold">Status: {project.name}</h1>
                     <Button asChild>
                         <Link href={route('task-statuses.create', project.id)}>Status Baru</Link>

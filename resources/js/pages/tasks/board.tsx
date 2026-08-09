@@ -344,7 +344,7 @@ export default function TaskBoard({ project, columns: initialColumns, members, f
             <Head title={`Board — ${project.name}`} />
 
             <div className="flex flex-col gap-4 p-4">
-                <div className="flex items-center justify-between">
+                <div className="flex flex-wrap items-center justify-between gap-2">
                     <h1 className="text-xl font-semibold">Board — {project.name}</h1>
                     {/* B3: toggle List <-> Board untuk project yang sama. */}
                     <Button variant="outline" size="sm" asChild>

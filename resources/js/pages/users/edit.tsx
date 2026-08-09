@@ -90,7 +90,7 @@ export default function UserEdit({ user, roles }: { user: UserData; roles: RoleO
                                 <InputError message={errors.email} />
                             </div>
 
-                            <div className="grid grid-cols-2 gap-4">
+                            <div className="grid grid-cols-1 gap-4 sm:grid-cols-2">
                                 <div className="grid gap-2">
                                     <Label htmlFor="password">Password baru (opsional)</Label>
                                     <Input
@@ -114,7 +114,7 @@ export default function UserEdit({ user, roles }: { user: UserData; roles: RoleO
                                 </div>
                             </div>
 
-                            <div className="grid grid-cols-2 gap-4">
+                            <div className="grid grid-cols-1 gap-4 sm:grid-cols-2">
                                 <div className="grid gap-2">
                                     <Label htmlFor="role_id">Role</Label>
                                     <Select value={String(data.role_id)} onValueChange={(value) => setData('role_id', Number(value))}>

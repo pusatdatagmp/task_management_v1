@@ -144,7 +144,7 @@ export default function UserCreate({ roles, permissions }: UserCreateProps) {
                                 <InputError message={errors.email} />
                             </div>
 
-                            <div className="grid grid-cols-2 gap-4">
+                            <div className="grid grid-cols-1 gap-4 sm:grid-cols-2">
                                 <div className="grid gap-2">
                                     <Label htmlFor="employment_type">Tipe</Label>
                                     <Select value={data.employment_type} onValueChange={(value) => setData('employment_type', value)}>

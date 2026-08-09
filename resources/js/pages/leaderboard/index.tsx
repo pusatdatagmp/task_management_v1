@@ -130,7 +130,7 @@ export default function LeaderboardIndex({ from, to, rows }: LeaderboardProps) {
             <Head title="Leaderboard" />
 
             <div className="flex flex-col gap-4 p-4">
-                <div className="flex items-center justify-between">
+                <div className="flex flex-wrap items-center justify-between gap-2">
                     <h1 className="text-xl font-semibold">Leaderboard</h1>
                 </div>
 

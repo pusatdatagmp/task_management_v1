@@ -281,7 +281,18 @@ const SidebarInset = React.forwardRef<HTMLDivElement, React.ComponentProps<'main
         <main
             ref={ref}
             className={cn(
-                'relative flex min-h-svh flex-1 flex-col bg-background',
+                // BUG FIX AKAR (audit responsif 2026-08-07, ditemukan setelah Boss
+                // laporkan 12 halaman masih tidak responsive walau semua tabel SUDAH
+                // overflow-x-auto): elemen ini flex-1 di dalam flex ROW (Sidebar +
+                // SidebarInset, lihat SidebarProvider). Tanpa min-w-0, default CSS
+                // flex item (min-width:auto) MENOLAK menyempit di bawah lebar
+                // konten-nya -- begitu ada tabel lebar di halaman mana pun, SidebarInset
+                // (bukan tabelnya) yang melebar, memaksa SELURUH HALAMAN scroll ke
+                // samping di HP, bukan cuma tabelnya. Ini akar tunggal yang menjelaskan
+                // KENAPA overflow-x-auto di tabel (sudah benar di semua halaman) tetap
+                // tidak berfungsi -- browser tidak pernah sampai butuh scroll internal
+                // karena parent-nya sudah lebih dulu ikut melebar.
+                'relative flex min-h-svh min-w-0 flex-1 flex-col bg-background',
                 'peer-data-[variant=inset]:min-h-[calc(100svh-(--spacing(4)))] md:peer-data-[variant=inset]:m-2 md:peer-data-[variant=inset]:peer-data-[state=collapsed]:ml-2 md:peer-data-[variant=inset]:ml-0 md:peer-data-[variant=inset]:rounded-xl md:peer-data-[variant=inset]:shadow-sm',
                 className,
             )}

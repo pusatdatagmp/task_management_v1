@@ -46,7 +46,7 @@ export default function RolesIndex({ roles }: { roles: RoleRow[] }) {
             <Head title="Role" />
 
             <div className="flex flex-col gap-4 p-4">
-                <div className="flex items-center justify-between">
+                <div className="flex flex-wrap items-center justify-between gap-2">
                     <h1 className="text-xl font-semibold">Role</h1>
                     <Button asChild>
                         <Link href={route('roles.create')}>Role Baru</Link>
