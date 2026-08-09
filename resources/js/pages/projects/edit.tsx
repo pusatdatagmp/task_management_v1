@@ -3,21 +3,31 @@
 // KLASIFIKASI : UI
 // TUJUAN      : Form edit project — name/description/owner/member. Archive punya
 //               tombol terpisah di halaman index (bukan di sini).
+//               Revisi 2026-08-07 (permintaan Boss): checklist Owner HANYA user
+//               ber-permission project.manage -- `owners` prop TERPISAH dari
+//               `users` (checklist Member TETAP semua user). `owners` dari
+//               server SELALU menyertakan owner SAAT INI walau permission-nya
+//               sudah dicabut (ProjectController::eligibleOwners()) supaya
+//               checklist tidak kehilangan opsi untuk value yang valid.
+//               2026-08-08 (keputusan Boss): Owner boleh >1, urutan CENTANG
+//               menentukan Owner "Utama" (posisi-0) -- pola sama create.tsx.
 // DIPANGGIL   : ProjectController::edit()
 // MEMANGGIL   : route('projects.update')
-// DATA MASUK  : project (data existing), users[], memberIds[] (member saat ini)
+// DATA MASUK  : project (data existing), users[] (checklist member),
+//               owners[] (checklist owner), memberIds[] (member saat ini),
+//               ownerIds[] (owner saat ini, terurut posisi -- index 0 = utama)
 // DATA KELUAR : PUT form -> ProjectController::update()
 // RISIKO      : -
 // ==========================================================
 
 import HeadingSmall from '@/components/heading-small';
 import InputError from '@/components/input-error';
+import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import { Checkbox } from '@/components/ui/checkbox';
 import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
-import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
 import { Textarea } from '@/components/ui/textarea';
 import AppLayout from '@/layouts/app-layout';
 import { type BreadcrumbItem } from '@/types';
@@ -33,7 +43,6 @@ interface ProjectData {
     id: number;
     name: string;
     description: string | null;
-    owner_id: number;
 }
 
 const breadcrumbs: BreadcrumbItem[] = [
@@ -41,22 +50,38 @@ const breadcrumbs: BreadcrumbItem[] = [
     { title: 'Edit Project', href: '#' },
 ];
 
-export default function ProjectEdit({ project, users, memberIds }: { project: ProjectData; users: UserOption[]; memberIds: number[] }) {
+export default function ProjectEdit({
+    project,
+    users,
+    owners,
+    memberIds,
+    ownerIds,
+}: {
+    project: ProjectData;
+    users: UserOption[];
+    owners: UserOption[];
+    memberIds: number[];
+    ownerIds: number[];
+}) {
     const { data, setData, put, processing, errors } = useForm<{
         name: string;
         description: string;
-        owner_id: number | '';
+        owner_ids: number[];
         members: number[];
     }>({
         name: project.name,
         description: project.description ?? '',
-        owner_id: project.owner_id,
+        owner_ids: ownerIds,
         members: memberIds,
     });
 
     const submit: FormEventHandler = (e) => {
         e.preventDefault();
         put(route('projects.update', project.id));
+    };
+
+    const toggleOwner = (id: number, checked: boolean) => {
+        setData('owner_ids', checked ? [...data.owner_ids, id] : data.owner_ids.filter((o) => o !== id));
     };
 
     const toggleMember = (id: number, checked: boolean) => {
@@ -91,28 +116,37 @@ export default function ProjectEdit({ project, users, memberIds }: { project: Pr
                             </div>
 
                             <div className="grid gap-2">
-                                <Label htmlFor="owner_id">Owner (reviewer, F-28)</Label>
-                                <Select
-                                    value={data.owner_id ? String(data.owner_id) : undefined}
-                                    onValueChange={(value) => setData('owner_id', Number(value))}
-                                >
-                                    <SelectTrigger id="owner_id">
-                                        <SelectValue placeholder="Pilih owner" />
-                                    </SelectTrigger>
-                                    <SelectContent>
-                                        {users.map((user) => (
-                                            <SelectItem key={user.id} value={String(user.id)}>
-                                                {user.name}
-                                            </SelectItem>
+                                <HeadingSmall
+                                    title="Owner (reviewer, F-28)"
+                                    description="Boleh lebih dari satu -- yang dicentang PERTAMA jadi Owner Utama"
+                                />
+                                <div className="grid max-h-48 grid-cols-1 gap-2 overflow-y-auto rounded-md border p-3 sm:grid-cols-2">
+                                    {owners.map((user) => (
+                                        <label key={user.id} className="flex items-center gap-2 text-sm">
+                                            <Checkbox
+                                                checked={data.owner_ids.includes(user.id)}
+                                                onCheckedChange={(checked) => toggleOwner(user.id, checked === true)}
+                                            />
+                                            {user.name}
+                                        </label>
+                                    ))}
+                                </div>
+                                {data.owner_ids.length > 0 && (
+                                    <div className="flex flex-wrap items-center gap-1.5">
+                                        {data.owner_ids.map((id, index) => (
+                                            <Badge key={id} variant={index === 0 ? 'default' : 'outline'}>
+                                                {owners.find((o) => o.id === id)?.name}
+                                                {index === 0 && ' (Utama)'}
+                                            </Badge>
                                         ))}
-                                    </SelectContent>
-                                </Select>
-                                <InputError message={errors.owner_id} />
+                                    </div>
+                                )}
+                                <InputError message={errors.owner_ids} />
                             </div>
 
                             <div className="grid gap-2">
                                 <HeadingSmall title="Member" description="Owner otomatis ikut jadi member" />
-                                <div className="grid max-h-48 grid-cols-2 gap-2 overflow-y-auto rounded-md border p-3">
+                                <div className="grid max-h-48 grid-cols-1 gap-2 overflow-y-auto rounded-md border p-3 sm:grid-cols-2">
                                     {users.map((user) => (
                                         <label key={user.id} className="flex items-center gap-2 text-sm">
                                             <Checkbox

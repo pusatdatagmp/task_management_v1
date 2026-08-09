@@ -54,9 +54,30 @@ class Project extends Model
         ];
     }
 
+    /**
+     * KONTRAK (2026-08-08, keputusan Boss): owner_id/owner() TETAP ada, sekarang
+     * cerminan otomatis owner posisi-0 (pivot project_owners) -- lihat owners()
+     * di bawah untuk daftar LENGKAP. Dipertahankan apa adanya supaya automation
+     * (GenerateRecurringTasksCommand/GenerateTaskAction, created_by) dan kode lama
+     * yang baca owner_id/owner() tunggal TIDAK perlu berubah.
+     */
     public function owner(): BelongsTo
     {
         return $this->belongsTo(User::class, 'owner_id');
+    }
+
+    /**
+     * KONTRAK: daftar LENGKAP owner (F-28 "reviewer"), terurut posisi pilih di
+     * form (position=0 = utama, cerminan owner_id/owner() di atas). Pivot pakai
+     * model ProjectOwner (bukan default) supaya sync() memicu ProjectOwnerObserver
+     * -> log assigned/unassigned (F-51/F-71), pola IDENTIK members().
+     */
+    public function owners(): BelongsToMany
+    {
+        return $this->belongsToMany(User::class, 'project_owners')
+            ->using(ProjectOwner::class)
+            ->withPivot('position')
+            ->orderBy('project_owners.position');
     }
 
     public function members(): BelongsToMany

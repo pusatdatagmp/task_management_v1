@@ -122,9 +122,14 @@ Route::middleware(['auth', 'can:user.manage'])->group(function () {
 Route::middleware(['auth', 'can:project.manage'])->scopeBindings()->group(function () {
     Route::get('projects/create', [ProjectController::class, 'create'])->name('projects.create');
     Route::post('projects', [ProjectController::class, 'store'])->name('projects.store');
+    // Revisi 2026-08-07: 'projects/archive' (listing, GET) diletakkan SEBELUM
+    // 'projects/{project}/edit' -- static path harus menang lebih dulu dari
+    // wildcard supaya kata "archive" tidak pernah ditangkap sbg {project}.
+    Route::get('projects/archive', [ProjectController::class, 'archived'])->name('projects.archived');
     Route::get('projects/{project}/edit', [ProjectController::class, 'edit'])->name('projects.edit');
     Route::put('projects/{project}', [ProjectController::class, 'update'])->name('projects.update');
     Route::patch('projects/{project}/archive', [ProjectController::class, 'archive'])->name('projects.archive');
+    Route::patch('projects/{project}/restore', [ProjectController::class, 'restore'])->name('projects.restore');
 });
 
 // D — TaskStatus CRUD per project. Seluruhnya permission status.manage (beda dari
