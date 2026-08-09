@@ -16,7 +16,8 @@
 //               assignee=diri sendiri supaya board yang terbuka cuma kartu milikku.
 // DIPANGGIL   : TaskController::myTasks()
 // MEMANGGIL   : TaskStatusCell (ubah status lewat jalur F-45/F-28 yang sama),
-//               route('tasks.board') (F-109, nol kode board baru)
+//               route('tasks.board') (F-109, nol kode board baru), route('tasks.show')
+//               (2026-08-08: klik judul -> detail task, pola sama tasks/index.tsx/all.tsx)
 // DATA MASUK  : groups {overdue, today, this_week, later} — masing-masing array task
 // DATA KELUAR : Aksi ubah status (lihat TaskStatusCell)
 // RISIKO      : -
@@ -183,7 +184,12 @@ export default function MyTasks({ groups }: MyTasksProps) {
                                                 <tr key={task.id} className="border-b last:border-0">
                                                     <td className="p-3 font-medium">
                                                         <div className="flex flex-col gap-1">
-                                                            <span>{task.title}</span>
+                                                            {/* 2026-08-08: klik judul -> detail task (tasks.show), pola SAMA
+                                                                dengan tasks/index.tsx & tasks/all.tsx (F-109-style reuse) --
+                                                                sebelumnya cuma <span>, nol jalan ke detail dari halaman ini. */}
+                                                            <Link href={route('tasks.show', [task.project.id, task.id])} className="hover:underline">
+                                                                {task.title}
+                                                            </Link>
                                                             {/* B2: counter kecil di baris — badge default (bukan varian dot). */}
                                                             <TaskLiveCounter isWorkState={task.task_status.is_work_state} liveCounter={task.live_counter} />
                                                         </div>

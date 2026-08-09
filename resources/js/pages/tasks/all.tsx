@@ -9,6 +9,12 @@
 // DIPANGGIL   : TaskController::all()
 // MEMANGGIL   : route('tasks.board', project_id) untuk toggle Kanban — REUSE Board
 //               v1.0 apa adanya (F-109), TaskStatusCell (F-45/F-28, sama my-tasks.tsx)
+//               2026-08-08 (permintaan Boss): header kolom Prioritas/Due date/Poin
+//               SEKARANG bisa diklik untuk sort (pola sama projects/index.tsx) --
+//               pelengkap dropdown "Urutkan" yang sudah ada (dropdown tetap
+//               dipertahankan karena satu-satunya jalan ke sort "Dibuat", yang
+//               tidak punya kolom tampil di tabel ini). Whitelist sort field
+//               TETAP dari FilterAllTasksRequest (F-140), nol kolom baru.
 // DATA MASUK  : tasks (paginator), projects[], members[], filters
 // DATA KELUAR : router.get (filter/sort, URL C6), navigasi ke Board bila project_id dipilih
 // RISIKO      : SUMBER — toggle "Board View" HANYA aktif kalau filters.project_id
@@ -46,7 +52,10 @@ interface ProjectOption {
 interface TaskRow {
     id: number;
     title: string;
-    task_type: 'daily' | 'weekly' | 'monthly' | 'tentative' | 'project';
+    // Revisi 2026-08-07: dulu union tetap 5 nilai, sekarang teks bebas untuk task
+    // hasil generate template (ringkasan jadwal, mis. "Tiap 3 hari") -- 'tentative'/
+    // 'project' TETAP nilai tetap untuk task manual, tapi kolom ini kini string umum.
+    task_type: string;
     priority_quadrant: PriorityQuadrant | null;
     due_date: string;
     points: number;
@@ -74,10 +83,10 @@ interface Filters {
     project_id: number | null;
     status_flag: StatusFlag[];
     assignee: number[];
-    task_type: TaskRow['task_type'][];
+    task_type: ('tentative' | 'project')[];
     priority_quadrant: PriorityQuadrant[];
     due: 'today' | 'this_week' | 'overdue' | 'all';
-    sort: 'due_date' | 'priority_quadrant' | 'points' | 'created_at';
+    sort: 'due_date' | 'priority_quadrant' | 'points' | 'created_at' | 'title' | 'project' | 'assignee';
     direction: 'asc' | 'desc';
 }
 
@@ -94,10 +103,11 @@ const STATUS_FLAGS: { value: StatusFlag; label: string }[] = [
     { value: 'review', label: 'Review' },
     { value: 'completed', label: 'Selesai' },
 ];
-const TASK_TYPES: { value: TaskRow['task_type']; label: string }[] = [
-    { value: 'daily', label: 'Harian' },
-    { value: 'weekly', label: 'Mingguan' },
-    { value: 'monthly', label: 'Bulanan' },
+// Revisi 2026-08-07 (permintaan Boss): daily/weekly/monthly dicabut -- task
+// hasil generate template sekarang task_type-nya teks bebas ringkasan jadwal
+// (mis. "Tiap 3 hari", TaskTemplate::scheduleLabel()), tidak ada UI filter utk
+// itu. tentative/project TETAP kategori tetap untuk task manual.
+const TASK_TYPES: { value: 'tentative' | 'project'; label: string }[] = [
     { value: 'tentative', label: 'Tentatif' },
     { value: 'project', label: 'Proyek' },
 ];
@@ -113,6 +123,12 @@ const SORT_OPTIONS: { value: Filters['sort']; label: string }[] = [
     { value: 'priority_quadrant', label: 'Prioritas (Quadrant)' },
     { value: 'points', label: 'Poin' },
     { value: 'created_at', label: 'Dibuat' },
+    // 2026-08-08 (permintaan Boss): judul/project/assignee sekarang juga bisa
+    // di-sort -- assignee = assignee PERTAMA alfabetis per task (keputusan Boss,
+    // lihat TaskController::all()).
+    { value: 'title', label: 'Judul' },
+    { value: 'project', label: 'Project' },
+    { value: 'assignee', label: 'Assignee' },
 ];
 
 const breadcrumbs: BreadcrumbItem[] = [{ title: 'Semua Tugas', href: '/tasks' }];
@@ -139,7 +155,7 @@ export default function AllTasks({ tasks, projects, members, filters }: AllTasks
         applyFilters({ assignee: filters.assignee.includes(id) ? filters.assignee.filter((v) => v !== id) : [...filters.assignee, id] });
     };
 
-    const toggleTaskType = (value: TaskRow['task_type']) => {
+    const toggleTaskType = (value: 'tentative' | 'project') => {
         applyFilters({ task_type: filters.task_type.includes(value) ? filters.task_type.filter((v) => v !== value) : [...filters.task_type, value] });
     };
 
@@ -150,6 +166,16 @@ export default function AllTasks({ tasks, projects, members, filters }: AllTasks
                 : [...filters.priority_quadrant, value],
         });
     };
+
+    // 2026-08-08 (permintaan Boss): klik header kolom untuk sort -- klik kolom
+    // yang SAMA membalik arah, klik kolom LAIN mulai dari 'asc' (pola sama
+    // projects/index.tsx). Hanya 3 kolom yang punya field sort di backend
+    // (FilterAllTasksRequest whitelist): priority_quadrant, due_date, points.
+    const toggleColumnSort = (key: Filters['sort']) => {
+        applyFilters({ sort: key, direction: filters.sort === key && filters.direction === 'asc' ? 'desc' : 'asc' });
+    };
+
+    const sortArrow = (key: Filters['sort']) => (filters.sort === key ? <span>{filters.direction === 'asc' ? '↑' : '↓'}</span> : null);
 
     const resetFilters = () => {
         router.get(
@@ -172,7 +198,7 @@ export default function AllTasks({ tasks, projects, members, filters }: AllTasks
             <Head title="Semua Tugas" />
 
             <div className="flex flex-col gap-4 p-4">
-                <div className="flex items-center justify-between">
+                <div className="flex flex-wrap items-center justify-between gap-2">
                     <h1 className="text-xl font-semibold">Semua Tugas</h1>
                     <div className="flex items-center gap-2">
                         {/* F-109/keputusan Boss: Kanban cuma valid kalau 1 project dipilih —
@@ -311,14 +337,68 @@ export default function AllTasks({ tasks, projects, members, filters }: AllTasks
                     <table className="w-full text-left text-sm">
                         <thead>
                             <tr className="border-b bg-muted/50 text-muted-foreground">
-                                <th className="p-3">Judul</th>
-                                <th className="p-3">Project</th>
-                                <th className="p-3">Prioritas</th>
+                                <th className="p-3">
+                                    <button
+                                        type="button"
+                                        className="flex items-center gap-1 font-medium hover:text-foreground"
+                                        onClick={() => toggleColumnSort('title')}
+                                    >
+                                        Judul
+                                        {sortArrow('title')}
+                                    </button>
+                                </th>
+                                <th className="p-3">
+                                    <button
+                                        type="button"
+                                        className="flex items-center gap-1 font-medium hover:text-foreground"
+                                        onClick={() => toggleColumnSort('project')}
+                                    >
+                                        Project
+                                        {sortArrow('project')}
+                                    </button>
+                                </th>
+                                <th className="p-3">
+                                    <button
+                                        type="button"
+                                        className="flex items-center gap-1 font-medium hover:text-foreground"
+                                        onClick={() => toggleColumnSort('priority_quadrant')}
+                                    >
+                                        Prioritas
+                                        {sortArrow('priority_quadrant')}
+                                    </button>
+                                </th>
                                 <th className="p-3">Status</th>
                                 <th className="p-3">Progress</th>
-                                <th className="p-3">Assignee</th>
-                                <th className="p-3">Due date</th>
-                                <th className="p-3">Poin</th>
+                                <th className="p-3">
+                                    <button
+                                        type="button"
+                                        className="flex items-center gap-1 font-medium hover:text-foreground"
+                                        onClick={() => toggleColumnSort('assignee')}
+                                    >
+                                        Assignee
+                                        {sortArrow('assignee')}
+                                    </button>
+                                </th>
+                                <th className="p-3">
+                                    <button
+                                        type="button"
+                                        className="flex items-center gap-1 font-medium hover:text-foreground"
+                                        onClick={() => toggleColumnSort('due_date')}
+                                    >
+                                        Due date
+                                        {sortArrow('due_date')}
+                                    </button>
+                                </th>
+                                <th className="p-3">
+                                    <button
+                                        type="button"
+                                        className="flex items-center gap-1 font-medium hover:text-foreground"
+                                        onClick={() => toggleColumnSort('points')}
+                                    >
+                                        Poin
+                                        {sortArrow('points')}
+                                    </button>
+                                </th>
                                 <th className="p-3">Aksi</th>
                             </tr>
                         </thead>

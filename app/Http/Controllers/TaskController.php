@@ -129,7 +129,10 @@ class TaskController extends Controller
         });
 
         return Inertia::render('tasks/index', [
-            'project' => $project->only(['id', 'name']),
+            // 2026-08-08 (permintaan Boss): description ikut dikirim -- halaman ini
+            // SEKARANG juga berfungsi sebagai detail project (tombol "Detail" di
+            // projects/index.tsx), bukan cuma daftar task.
+            'project' => $project->only(['id', 'name', 'description']),
             'tasks' => $tasks,
             'statuses' => $project->taskStatuses,
             'members' => $project->members()->select('users.id', 'users.name')->orderBy('users.name')->get(),
@@ -398,7 +401,27 @@ class TaskController extends Controller
             // F-139: p1 (bobot 4, paling mendesak) -> p4, sama pola FIELD() dengan
             // sort priority enum lama, cuma daftarnya diganti quadrant.
             $query->orderByRaw("FIELD(priority_quadrant, 'p1','p2','p3','p4') ".($direction === 'desc' ? 'desc' : 'asc'));
+        } elseif ($sort === 'project') {
+            // 2026-08-08 (permintaan Boss): sort by nama project -- subquery
+            // korelasi (bukan join), tasks.project_id -> 1 project, nol ambiguitas,
+            // nol risiko baris dobel dari paginate() (beda dari join tabel N-ke-M).
+            $query->orderBy(Project::select('name')->whereColumn('id', 'tasks.project_id'), $direction);
+        } elseif ($sort === 'assignee') {
+            // 2026-08-08 (keputusan Boss): task bisa >1 assignee (F-63b) -- sort
+            // berdasar assignee PERTAMA alfabetis per task (subquery korelasi via
+            // task_user, LIMIT 1). Task tanpa assignee -> NULL, MySQL taruh di
+            // akhir utk ASC (default), di awal utk DESC -- perilaku native, tidak
+            // dipaksa lain supaya konsisten sort NULL kolom lain (mis. priority_quadrant).
+            $query->orderBy(
+                User::select('name')
+                    ->join('task_user', 'task_user.user_id', '=', 'users.id')
+                    ->whereColumn('task_user.task_id', 'tasks.id')
+                    ->orderBy('name')
+                    ->limit(1),
+                $direction
+            );
         } else {
+            // 'title'/'due_date'/'points'/'created_at' -- kolom langsung, orderBy() biasa.
             $query->orderBy($sort, $direction);
         }
 
@@ -413,7 +436,13 @@ class TaskController extends Controller
         return Inertia::render('tasks/all', [
             'tasks' => $tasks,
             'projects' => Project::orderBy('name')->get(['id', 'name']),
-            'members' => User::orderBy('name')->get(['id', 'name']),
+            // BUG FIX (2026-08-08, permintaan Boss): dropdown filter assignee di
+            // "Semua Tugas" SEBELUM ini menampilkan SEMUA user tanpa filter
+            // is_active -- member yang sudah dinonaktifkan (toggleActive(), F-16)
+            // masih muncul sebagai opsi. Baris task lama milik mereka TETAP ada
+            // (F-16, dilarang hard delete), tapi dropdown filter ini sekarang
+            // cuma tawarkan member AKTIF.
+            'members' => User::where('is_active', true)->orderBy('name')->get(['id', 'name']),
             'filters' => [
                 'project_id' => $filters['project_id'] ?? null,
                 'status_flag' => $filters['status_flag'] ?? [],

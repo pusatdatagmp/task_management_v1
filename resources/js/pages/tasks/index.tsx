@@ -4,10 +4,16 @@
 // TUJUAN      : Daftar task per project — filter/sort SERVER-SIDE (Hari-5 §C, C5).
 //               List FLAT (subtask ditandai kolom "Parent", bukan indentasi) —
 //               indentasi tidak survive di bawah sort/filter/pagination sembarangan.
+//               2026-08-08 (permintaan Boss): halaman ini SEKARANG juga berfungsi
+//               sebagai "Detail Project" (tombol di projects/index.tsx diganti
+//               label "Detail") -- deskripsi + daftar anggota project ditampilkan
+//               di atas, sebelum panel filter. Nol halaman baru dibuat (F-109-style).
 // DIPANGGIL   : TaskController::index()
 // MEMANGGIL   : route('tasks.create'/'tasks.edit'/'tasks.destroy'/'tasks.board'
 //               untuk toggle Board View, v1.0 H1), TaskStatusCell
-// DATA MASUK  : project, tasks (paginator Laravel), statuses[], members[], filters
+// DATA MASUK  : project (id/name/description), tasks (paginator Laravel),
+//               statuses[], members[] (anggota project -- dipakai DUA kali: filter
+//               assignee DAN daftar anggota read-only), filters
 // DATA KELUAR : router.get (filter/sort, query string ikut URL — C6), navigasi CRUD
 // RISIKO      : SUMBER : filter dikirim FRESH (bukan spread dari URL saat ini) tiap
 //               kali applyFilters() dipanggil, supaya 'page' otomatis reset ke 1
@@ -66,7 +72,7 @@ interface Filters {
 }
 
 interface TasksIndexProps {
-    project: { id: number; name: string };
+    project: { id: number; name: string; description: string | null };
     tasks: PaginatedTasks;
     statuses: TaskStatusOption[];
     members: UserOption[];
@@ -133,7 +139,7 @@ export default function TasksIndex({ project, tasks, statuses, members, filters 
             <Head title={`Task — ${project.name}`} />
 
             <div className="flex flex-col gap-4 p-4">
-                <div className="flex items-center justify-between">
+                <div className="flex flex-wrap items-center justify-between gap-2">
                     <h1 className="text-xl font-semibold">Task — {project.name}</h1>
                     <div className="flex gap-2">
                         {/* B3 (v1.0 H1): toggle List <-> Board untuk project yang sama. */}
@@ -147,6 +153,33 @@ export default function TasksIndex({ project, tasks, statuses, members, filters 
                         )}
                     </div>
                 </div>
+
+                {/* 2026-08-08 (permintaan Boss): deskripsi + anggota project -- halaman
+                    ini sekarang berfungsi ganda sebagai "Detail Project". `members`
+                    sudah termuat (dipakai juga untuk filter Assignee di bawah), nol
+                    query tambahan. */}
+                {(project.description || members.length > 0) && (
+                    <div className="flex flex-col gap-3 rounded-lg border p-4 text-sm">
+                        {project.description && (
+                            <div>
+                                <span className="font-medium">Deskripsi</span>
+                                <p className="mt-1 whitespace-pre-wrap text-muted-foreground">{project.description}</p>
+                            </div>
+                        )}
+                        {members.length > 0 && (
+                            <div>
+                                <span className="font-medium">Anggota Project ({members.length})</span>
+                                <div className="mt-1 flex flex-wrap gap-1.5">
+                                    {members.map((m) => (
+                                        <Badge key={m.id} variant="outline" className='bg-blue-700 text-white'>
+                                            {m.name}
+                                        </Badge>
+                                    ))}
+                                </div>
+                            </div>
+                        )}
+                    </div>
+                )}
 
                 <div className="flex flex-wrap items-start gap-6 rounded-lg border p-4 text-sm">
                     <div className="flex flex-col gap-1">

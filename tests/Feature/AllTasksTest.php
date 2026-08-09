@@ -132,16 +132,72 @@ test('priority_quadrant filter/sort uses the new quadrant field, not the legacy 
     $sorted->assertInertia(fn ($page) => $page->where('tasks.data.0.id', $p1->id));
 });
 
+test('sort by title (2026-08-08, permintaan Boss)', function () {
+    $admin = User::factory()->admin()->create();
+    $project = createAllTasksProject($admin);
+
+    $b = createAllTasksTask($project, $admin, ['title' => 'Bravo task']);
+    $a = createAllTasksTask($project, $admin, ['title' => 'Alpha task']);
+
+    $response = $this->actingAs($admin)->get(route('tasks.all').'?'.http_build_query(['sort' => 'title', 'direction' => 'asc']));
+
+    $response->assertInertia(fn ($page) => $page
+        ->where('tasks.data.0.id', $a->id)
+        ->where('tasks.data.1.id', $b->id));
+});
+
+test('sort by project name (2026-08-08, permintaan Boss)', function () {
+    $admin = User::factory()->admin()->create();
+    $projectZ = createAllTasksProject($admin, 'Z-later-alphabetically-');
+    $projectA = createAllTasksProject($admin, 'A-first-alphabetically-');
+
+    $taskInZ = createAllTasksTask($projectZ, $admin);
+    $taskInA = createAllTasksTask($projectA, $admin);
+
+    $response = $this->actingAs($admin)->get(route('tasks.all').'?'.http_build_query(['sort' => 'project', 'direction' => 'asc']));
+
+    $response->assertInertia(fn ($page) => $page
+        ->where('tasks.data.0.id', $taskInA->id)
+        ->where('tasks.data.1.id', $taskInZ->id));
+});
+
+test('sort by assignee -- assignee PERTAMA alfabetis per task (keputusan Boss 2026-08-08)', function () {
+    $admin = User::factory()->admin()->create();
+    $project = createAllTasksProject($admin);
+    $alice = User::factory()->create(['organization_id' => $admin->organization_id, 'name' => 'Alice']);
+    $zach = User::factory()->create(['organization_id' => $admin->organization_id, 'name' => 'Zach']);
+    $project->members()->sync([$admin->id, $alice->id, $zach->id]);
+
+    $taskWithZach = createAllTasksTask($project, $admin, ['title' => 'Task Zach saja']);
+    $taskWithZach->assignees()->attach($zach->id);
+
+    // Task ini punya DUA assignee (Zach, Alice) -- assignee PERTAMA alfabetis (Alice)
+    // yang harus jadi basis sort, BUKAN Zach walau dia yang di-attach lebih dulu.
+    $taskWithAliceAndZach = createAllTasksTask($project, $admin, ['title' => 'Task Alice dan Zach']);
+    $taskWithAliceAndZach->assignees()->attach([$zach->id, $alice->id]);
+
+    $response = $this->actingAs($admin)->get(route('tasks.all').'?'.http_build_query(['sort' => 'assignee', 'direction' => 'asc']));
+
+    $response->assertInertia(fn ($page) => $page
+        ->where('tasks.data.0.id', $taskWithAliceAndZach->id) // "Alice" < "Zach"
+        ->where('tasks.data.1.id', $taskWithZach->id));
+});
+
 test('task_type filter narrows to the selected category', function () {
     $admin = User::factory()->admin()->create();
     $project = createAllTasksProject($admin);
 
-    $dailyTask = createAllTasksTask($project, $admin, ['task_type' => 'daily']);
-    createAllTasksTask($project, $admin, ['task_type' => 'tentative']);
+    // Revisi 2026-08-07 (permintaan Boss): daily/weekly/monthly dicabut dari
+    // whitelist filter (FilterAllTasksRequest) -- task hasil generate template
+    // sekarang task_type-nya teks bebas ringkasan jadwal, bukan kategori tetap.
+    // tentative/project TETAP kategori tetap untuk task manual, jadi itu yang
+    // dites di sini.
+    $tentativeTask = createAllTasksTask($project, $admin, ['task_type' => 'tentative']);
+    createAllTasksTask($project, $admin, ['task_type' => 'project']);
 
-    $response = $this->actingAs($admin)->get(route('tasks.all').'?'.http_build_query(['task_type' => ['daily']]));
+    $response = $this->actingAs($admin)->get(route('tasks.all').'?'.http_build_query(['task_type' => ['tentative']]));
 
-    $response->assertInertia(fn ($page) => $page->has('tasks.data', 1)->where('tasks.data.0.id', $dailyTask->id));
+    $response->assertInertia(fn ($page) => $page->has('tasks.data', 1)->where('tasks.data.0.id', $tentativeTask->id));
 });
 
 test('a task from another organization never appears on Semua Tugas even with a guessed project_id (F-15)', function () {
@@ -156,6 +212,17 @@ test('a task from another organization never appears on Semua Tugas even with a 
     $response = $this->actingAs($admin)->get(route('tasks.all').'?'.http_build_query(['project_id' => $foreignProject->id]));
 
     $response->assertInertia(fn ($page) => $page->has('tasks.data', 0));
+});
+
+test('dropdown filter assignee di Semua Tugas TIDAK menawarkan member nonaktif (bug fix 2026-08-08)', function () {
+    $admin = User::factory()->admin()->create();
+    $activeMember = User::factory()->create(['organization_id' => $admin->organization_id, 'is_active' => true]);
+    $inactiveMember = User::factory()->create(['organization_id' => $admin->organization_id, 'is_active' => false]);
+
+    $response = $this->actingAs($admin)->get(route('tasks.all'));
+
+    $response->assertInertia(fn ($page) => $page->where('members', fn ($members) => collect($members)->pluck('id')->contains($activeMember->id)
+        && ! collect($members)->pluck('id')->contains($inactiveMember->id)));
 });
 
 test('jumlah query Semua Tugas TETAP KONSTAN walau task bertambah banyak (F-85)', function () {

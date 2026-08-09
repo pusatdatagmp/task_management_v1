@@ -17,6 +17,10 @@
  * DATA KELUAR : Data tervalidasi -> TaskController::all()
  * RISIKO      : `sort`/`status_flag`/`task_type`/`priority_quadrant` WAJIB whitelist —
  *               sama alasan FilterTaskRequest, mencegah ORDER BY/WHERE kolom sembarang.
+ *               2026-08-08 (permintaan Boss): 'title'/'project'/'assignee' ditambah
+ *               ke whitelist sort -- 'project'/'assignee' diimplementasikan via
+ *               subquery korelasi di TaskController::all() (bukan kolom langsung
+ *               tasks.*), lihat komentar di sana untuk alasan pemilihan pendekatannya.
  * ==========================================================
  */
 
@@ -55,7 +59,7 @@ class FilterAllTasksRequest extends FormRequest
             'priority_quadrant' => ['nullable', 'array'],
             'priority_quadrant.*' => [Rule::in(['p1', 'p2', 'p3', 'p4'])],
             'due' => ['nullable', Rule::in(['today', 'this_week', 'overdue', 'all'])],
-            'sort' => ['nullable', Rule::in(['due_date', 'priority_quadrant', 'points', 'created_at'])],
+            'sort' => ['nullable', Rule::in(['due_date', 'priority_quadrant', 'points', 'created_at', 'title', 'project', 'assignee'])],
             'direction' => ['nullable', Rule::in(['asc', 'desc'])],
         ];
     }
