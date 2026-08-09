@@ -21,6 +21,7 @@ use App\Models\ActivityLog;
 use App\Models\Project;
 use App\Models\Task;
 use App\Models\TaskStatus;
+use App\Models\TaskTemplate;
 use App\Models\User;
 
 function createTaskProject(User $admin): Project
@@ -36,6 +37,71 @@ function createTaskProject(User $admin): Project
 
     return $project;
 }
+
+test('BUG FIX 2026-08-08: editing a task born from a recurring template (task_type=daily) saves successfully -- task_type dikunci, field lain (judul) tetap tersimpan', function () {
+    // AKAR MASALAH (dilaporkan Boss): UpdateTaskRequest dulu HANYA mengizinkan
+    // task_type in [tentative, project] -- padahal task hasil recurring template
+    // punya task_type daily/weekly/monthly (disalin dari jadwal template). Validasi
+    // gagal untuk SELURUH form (bukan cuma task_type), jadi judul pun ikut tidak
+    // tersimpan. Fix: task_type task recurring (task_template_id terisi) DIKUNCI
+    // -- tidak pernah ditulis ulang oleh TaskController::update(), rule validasi
+    // dilonggarkan jadi nullable supaya request tidak gagal gara-gara field ini.
+    $admin = User::factory()->admin()->create();
+    $member = User::factory()->create(['organization_id' => $admin->organization_id]);
+    $project = createTaskProject($admin);
+    $project->members()->attach($member->id);
+    $todo = TaskStatus::where('project_id', $project->id)->orderBy('position')->firstOrFail();
+
+    $template = TaskTemplate::create([
+        'organization_id' => $admin->organization_id,
+        'project_id' => $project->id,
+        'title' => 'coba perulangan 11',
+        'task_type' => 'daily',
+        'estimated_minutes' => 60,
+        'points' => 5,
+        'recurrence_config' => [],
+        'default_assignees' => [],
+        'is_active' => true,
+        'anchor_strategy' => 'time_based',
+        'interval_value' => 1,
+        'interval_unit' => 'day',
+    ]);
+
+    $task = Task::create([
+        'organization_id' => $admin->organization_id,
+        'project_id' => $project->id,
+        'task_template_id' => $template->id,
+        'period_key' => '2026-08-08',
+        'task_status_id' => $todo->id,
+        'title' => 'coba perulangan 11',
+        'task_type' => 'daily',
+        'estimated_minutes' => 60,
+        'points' => 5,
+        'due_date' => now()->addDay(),
+        'created_by' => $admin->id,
+    ]);
+    $task->assignees()->attach($member->id);
+
+    // Payload PERSIS seperti yang dikirim tasks/edit.tsx SEKARANG -- task_type
+    // tetap dikirim (nilai lama, tidak diubah user), field lain judul BERUBAH.
+    $response = $this->actingAs($admin)->put(route('tasks.update', [$project, $task]), [
+        'title' => 'coba perulangan 10',
+        'description' => '',
+        'task_type' => 'daily',
+        'priority_quadrant' => '',
+        'estimated_minutes' => 60,
+        'points' => 5,
+        'due_date' => now()->addDay()->format('Y-m-d\TH:i'),
+        'assignees' => [$member->id],
+    ]);
+
+    $response->assertSessionDoesntHaveErrors();
+    $response->assertRedirect(route('tasks.index', $project));
+
+    $task->refresh();
+    expect($task->title)->toBe('coba perulangan 10')
+        ->and($task->task_type)->toBe('daily'); // tidak berubah, tetap dikunci ke nilai Template
+});
 
 test('creating a task assigns the status with the smallest position (D7)', function () {
     $admin = User::factory()->admin()->create();

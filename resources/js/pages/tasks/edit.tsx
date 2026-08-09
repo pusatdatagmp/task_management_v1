@@ -4,9 +4,17 @@
 // TUJUAN      : Form edit task (admin only, F-29). Field sama dengan create,
 //               pre-filled dari data existing. Ubah status BUKAN di sini — itu di
 //               tasks/index (E1/E2), supaya form ini murni CRUD field, bukan alur kerja.
+//               BUG FIX (2026-08-08, permintaan Boss): task hasil recurring
+//               (task_template_id terisi) task_type-nya daily/weekly/monthly --
+//               dropdown ini cuma punya opsi tentative/project, jadi field ini
+//               DIKUNCI jadi teks read-only untuk task recurring (bukan Select),
+//               TIDAK ikut dikirim ke server. SEBELUM fix ini, submit edit task
+//               recurring APA PUN (termasuk cuma ganti judul) SELALU gagal
+//               validasi task_type -- Laravel menolak seluruh form sekaligus.
 // DIPANGGIL   : TaskController::edit()
 // MEMANGGIL   : route('tasks.update')
-// DATA MASUK  : project, task (existing), assigneeIds, members[], parentOptions[]
+// DATA MASUK  : project, task (existing, termasuk task_template_id), assigneeIds,
+//               members[], parentOptions[]
 // DATA KELUAR : PUT form -> TaskController::update()
 // RISIKO      : due_date dari server sudah WIB (trait F-72) — toLocalInput() cuma
 //               memotong string ISO ke format datetime-local, TIDAK melakukan
@@ -43,11 +51,20 @@ interface TaskData {
     title: string;
     description: string | null;
     task_type: string;
+    task_template_id: number | null;
     priority_quadrant: PriorityQuadrant | null;
     estimated_minutes: number;
     points: number;
     due_date: string;
 }
+
+const TASK_TYPE_LABEL: Record<string, string> = {
+    tentative: 'Tentative',
+    project: 'Project',
+    daily: 'Harian (berulang)',
+    weekly: 'Mingguan (berulang)',
+    monthly: 'Bulanan (berulang)',
+};
 
 interface TaskEditProps {
     project: { id: number; name: string };
@@ -120,15 +137,23 @@ export default function TaskEdit({ project, task, assigneeIds, members, parentOp
                             <div className="grid grid-cols-2 gap-4">
                                 <div className="grid gap-2">
                                     <Label htmlFor="task_type">Tipe task</Label>
-                                    <Select value={data.task_type} onValueChange={(value) => setData('task_type', value)}>
-                                        <SelectTrigger id="task_type">
-                                            <SelectValue />
-                                        </SelectTrigger>
-                                        <SelectContent>
-                                            <SelectItem value="tentative">Tentative</SelectItem>
-                                            <SelectItem value="project">Project</SelectItem>
-                                        </SelectContent>
-                                    </Select>
+                                    {task.task_template_id ? (
+                                        // BUG FIX (2026-08-08): task hasil recurring -- tipe dikunci dari
+                                        // Template asalnya, tidak bisa diubah lewat form ini (lihat header).
+                                        <div className="flex h-9 items-center rounded-md border bg-muted px-3 text-sm text-muted-foreground">
+                                            {TASK_TYPE_LABEL[data.task_type] ?? data.task_type} (mengikuti Template)
+                                        </div>
+                                    ) : (
+                                        <Select value={data.task_type} onValueChange={(value) => setData('task_type', value)}>
+                                            <SelectTrigger id="task_type">
+                                                <SelectValue />
+                                            </SelectTrigger>
+                                            <SelectContent>
+                                                <SelectItem value="tentative">Tentative</SelectItem>
+                                                <SelectItem value="project">Project</SelectItem>
+                                            </SelectContent>
+                                        </Select>
+                                    )}
                                     <InputError message={errors.task_type} />
                                 </div>
 

@@ -16,6 +16,18 @@
  *               task lain, children-nya diam-diam jadi 2 level (celah yang tidak
  *               ditangkap guard model) — makanya ada rule 'tidak boleh sudah punya
  *               children' di bawah.
+ *               BUG FIX (2026-08-08, permintaan Boss): task_type task HASIL
+ *               RECURRING (task_template_id terisi) BERNILAI daily/weekly/monthly
+ *               (disalin dari jadwal Template) -- tapi rule ['tentative','project']
+ *               di bawah cuma mengizinkan 2 nilai itu. SEBELUM fix ini, edit task
+ *               recurring APA PUN (termasuk cuma ganti judul) SELALU gagal validasi
+ *               `task_type` -- Laravel menolak SELURUH request sekali salah 1 field,
+ *               jadi judul pun ikut tidak tersimpan. Field ini SEKARANG dikunci
+ *               read-only di frontend utk task recurring (tasks/edit.tsx) dan
+ *               DIABAIKAN TOTAL di TaskController::update() (bukan sekadar
+ *               dilonggarkan validasinya) -- rule 'nullable' di sini murni supaya
+ *               request TIDAK GAGAL kalau field ini tidak dikirim/dikirim apa saja,
+ *               nilai aslinya di DB tidak pernah tersentuh oleh form ini lagi.
  * ==========================================================
  */
 
@@ -42,7 +54,9 @@ class UpdateTaskRequest extends FormRequest
         return [
             'title' => ['required', 'string', 'max:255'],
             'description' => ['nullable', 'string'],
-            'task_type' => ['required', Rule::in(['tentative', 'project'])],
+            'task_type' => $task->task_template_id
+                ? ['nullable']
+                : ['required', Rule::in(['tentative', 'project'])],
             'priority' => ['nullable', Rule::in(['low', 'normal', 'high', 'urgent'])],
             // F-122/F-126: lihat StoreTaskRequest — nullable, jangan paksa p4.
             'priority_quadrant' => ['nullable', Rule::in(['p1', 'p2', 'p3', 'p4'])],

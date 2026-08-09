@@ -43,8 +43,14 @@ class FilterAllTasksRequest extends FormRequest
             'status_flag.*' => [Rule::in(['todo', 'in_progress', 'review', 'completed'])],
             'assignee' => ['nullable', 'array'],
             'assignee.*' => ['integer'],
+            // Revisi 2026-08-07 (permintaan Boss): daily/weekly/monthly dicabut
+            // dari whitelist -- checkbox filter untuk 3 itu sudah dihapus di FE
+            // (tasks/all.tsx), nilai task_type task hasil generate sekarang teks
+            // bebas ringkasan jadwal (mis. "Tiap 3 hari", TaskTemplate::scheduleLabel())
+            // yang tidak ada UI filter-nya. tentative/project TETAP kategori tetap
+            // untuk task manual (bukan hasil generate).
             'task_type' => ['nullable', 'array'],
-            'task_type.*' => [Rule::in(['daily', 'weekly', 'monthly', 'tentative', 'project'])],
+            'task_type.*' => [Rule::in(['tentative', 'project'])],
             // F-139: quadrant BARU, gantikan enum priority lama di filter/sort halaman ini.
             'priority_quadrant' => ['nullable', 'array'],
             'priority_quadrant.*' => [Rule::in(['p1', 'p2', 'p3', 'p4'])],
