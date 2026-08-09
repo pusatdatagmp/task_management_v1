@@ -5,7 +5,7 @@
 //               DI SINI (F-68) — bukan default di model/migration.
 // DIPANGGIL   : TaskController::create()
 // MEMANGGIL   : route('tasks.store')
-// DATA MASUK  : project {id,name}, members[] (dropdown assignee), parentOptions[]
+// DATA MASUK  : project {id,name}, members[] (dropdown assignee)
 // DATA KELUAR : POST form -> TaskController::store()
 // RISIKO      : task_type SENGAJA cuma tentative|project (Hari-4 §D3) —
 //               daily/weekly/monthly lahir dari task_templates + recurring engine v0.8.
@@ -33,15 +33,9 @@ interface UserOption {
     name: string;
 }
 
-interface ParentOption {
-    id: number;
-    title: string;
-}
-
 interface TaskCreateProps {
     project: { id: number; name: string };
     members: UserOption[];
-    parentOptions: ParentOption[];
 }
 
 // SUMBER: Hari-4 §D2 — due_date WAJIB, default +7 hari di FORM (F-68). JANGAN
@@ -53,7 +47,7 @@ function defaultDueDate(): string {
     return date.toISOString().slice(0, 16);
 }
 
-export default function TaskCreate({ project, members, parentOptions }: TaskCreateProps) {
+export default function TaskCreate({ project, members }: TaskCreateProps) {
     const breadcrumbs: BreadcrumbItem[] = [
         { title: 'Project', href: '/projects' },
         { title: project.name, href: route('projects.edit', project.id) },
@@ -73,7 +67,6 @@ export default function TaskCreate({ project, members, parentOptions }: TaskCrea
         points: 0,
         due_date: defaultDueDate(),
         assignees: [] as number[],
-        parent_task_id: '' as number | '',
         // Revisi 2026-08-06 item 5: checklist ("subtask" ringan, F-123) diisi
         // LANGSUNG saat buat task — pola IDENTIK task-templates/create.tsx.
         checklist_items: [] as string[],
@@ -126,7 +119,7 @@ export default function TaskCreate({ project, members, parentOptions }: TaskCrea
                                 <InputError message={errors.description} />
                             </div>
 
-                            <div className="grid grid-cols-2 gap-4">
+                            <div className="grid grid-cols-1 gap-4 sm:grid-cols-2">
                                 <div className="grid gap-2">
                                     <Label htmlFor="task_type">Tipe task</Label>
                                     <Select value={data.task_type} onValueChange={(value) => setData('task_type', value)}>
@@ -165,7 +158,7 @@ export default function TaskCreate({ project, members, parentOptions }: TaskCrea
                                 </div>
                             </div>
 
-                            <div className="grid grid-cols-2 gap-4">
+                            <div className="grid grid-cols-1 gap-4 sm:grid-cols-2">
                                 <div className="grid gap-2">
                                     <Label htmlFor="estimated_minutes">Estimasi (menit)</Label>
                                     <Input
@@ -206,29 +199,8 @@ export default function TaskCreate({ project, members, parentOptions }: TaskCrea
                             </div>
 
                             <div className="grid gap-2">
-                                <Label htmlFor="parent_task_id">Parent task (opsional — subtask maks 1 level, F-20)</Label>
-                                <Select
-                                    value={data.parent_task_id ? String(data.parent_task_id) : '__none'}
-                                    onValueChange={(value) => setData('parent_task_id', value === '__none' ? '' : Number(value))}
-                                >
-                                    <SelectTrigger id="parent_task_id">
-                                        <SelectValue placeholder="Tidak ada (task utama)" />
-                                    </SelectTrigger>
-                                    <SelectContent>
-                                        <SelectItem value="__none">Tidak ada (task utama)</SelectItem>
-                                        {parentOptions.map((p) => (
-                                            <SelectItem key={p.id} value={String(p.id)}>
-                                                {p.title}
-                                            </SelectItem>
-                                        ))}
-                                    </SelectContent>
-                                </Select>
-                                <InputError message={errors.parent_task_id} />
-                            </div>
-
-                            <div className="grid gap-2">
                                 <HeadingSmall title="Assignee" description="Opsional, multi-select dari member project" />
-                                <div className="grid max-h-48 grid-cols-2 gap-2 overflow-y-auto rounded-md border p-3">
+                                <div className="grid max-h-48 grid-cols-1 gap-2 overflow-y-auto rounded-md border p-3 sm:grid-cols-2">
                                     {members.map((user) => (
                                         <label key={user.id} className="flex items-center gap-2 text-sm">
                                             <Checkbox

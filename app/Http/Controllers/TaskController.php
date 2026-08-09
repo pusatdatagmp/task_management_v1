@@ -521,7 +521,6 @@ class TaskController extends Controller
         return Inertia::render('tasks/create', [
             'project' => $project->only(['id', 'name']),
             'members' => $project->members()->select('users.id', 'users.name')->orderBy('users.name')->get(),
-            'parentOptions' => $project->tasks()->whereNull('parent_task_id')->orderBy('title')->get(['id', 'title']),
         ]);
     }
 
@@ -571,11 +570,6 @@ class TaskController extends Controller
             'task' => $task,
             'assigneeIds' => $task->assignees->pluck('id'),
             'members' => $project->members()->select('users.id', 'users.name')->orderBy('users.name')->get(),
-            'parentOptions' => $project->tasks()
-                ->whereNull('parent_task_id')
-                ->whereKeyNot($task->id)
-                ->orderBy('title')
-                ->get(['id', 'title']),
         ]);
     }
 

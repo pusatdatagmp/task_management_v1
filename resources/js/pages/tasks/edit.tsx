@@ -13,8 +13,7 @@
 //               validasi task_type -- Laravel menolak seluruh form sekaligus.
 // DIPANGGIL   : TaskController::edit()
 // MEMANGGIL   : route('tasks.update')
-// DATA MASUK  : project, task (existing, termasuk task_template_id), assigneeIds,
-//               members[], parentOptions[]
+// DATA MASUK  : project, task (existing, termasuk task_template_id), assigneeIds, members[]
 // DATA KELUAR : PUT form -> TaskController::update()
 // RISIKO      : due_date dari server sudah WIB (trait F-72) — toLocalInput() cuma
 //               memotong string ISO ke format datetime-local, TIDAK melakukan
@@ -39,11 +38,6 @@ import { FormEventHandler } from 'react';
 interface UserOption {
     id: number;
     name: string;
-}
-
-interface ParentOption {
-    id: number;
-    title: string;
 }
 
 interface TaskData {
@@ -71,7 +65,6 @@ interface TaskEditProps {
     task: TaskData;
     assigneeIds: number[];
     members: UserOption[];
-    parentOptions: ParentOption[];
 }
 
 function toLocalInput(iso: string): string {
@@ -81,7 +74,7 @@ function toLocalInput(iso: string): string {
     return iso.slice(0, 16);
 }
 
-export default function TaskEdit({ project, task, assigneeIds, members, parentOptions }: TaskEditProps) {
+export default function TaskEdit({ project, task, assigneeIds, members }: TaskEditProps) {
     const breadcrumbs: BreadcrumbItem[] = [
         { title: 'Project', href: '/projects' },
         { title: project.name, href: route('projects.edit', project.id) },
@@ -99,7 +92,6 @@ export default function TaskEdit({ project, task, assigneeIds, members, parentOp
         points: task.points,
         due_date: toLocalInput(task.due_date),
         assignees: assigneeIds,
-        parent_task_id: '' as number | '',
     });
 
     const submit: FormEventHandler = (e) => {
@@ -134,7 +126,7 @@ export default function TaskEdit({ project, task, assigneeIds, members, parentOp
                                 <InputError message={errors.description} />
                             </div>
 
-                            <div className="grid grid-cols-2 gap-4">
+                            <div className="grid grid-cols-1 gap-4 sm:grid-cols-2">
                                 <div className="grid gap-2">
                                     <Label htmlFor="task_type">Tipe task</Label>
                                     {task.task_template_id ? (
@@ -179,7 +171,7 @@ export default function TaskEdit({ project, task, assigneeIds, members, parentOp
                                 </div>
                             </div>
 
-                            <div className="grid grid-cols-2 gap-4">
+                            <div className="grid grid-cols-1 gap-4 sm:grid-cols-2">
                                 <div className="grid gap-2">
                                     <Label htmlFor="estimated_minutes">Estimasi (menit)</Label>
                                     <Input
@@ -220,29 +212,8 @@ export default function TaskEdit({ project, task, assigneeIds, members, parentOp
                             </div>
 
                             <div className="grid gap-2">
-                                <Label htmlFor="parent_task_id">Parent task (opsional — subtask maks 1 level, F-20)</Label>
-                                <Select
-                                    value={data.parent_task_id ? String(data.parent_task_id) : '__none'}
-                                    onValueChange={(value) => setData('parent_task_id', value === '__none' ? '' : Number(value))}
-                                >
-                                    <SelectTrigger id="parent_task_id">
-                                        <SelectValue placeholder="Tidak ada (task utama)" />
-                                    </SelectTrigger>
-                                    <SelectContent>
-                                        <SelectItem value="__none">Tidak ada (task utama)</SelectItem>
-                                        {parentOptions.map((p) => (
-                                            <SelectItem key={p.id} value={String(p.id)}>
-                                                {p.title}
-                                            </SelectItem>
-                                        ))}
-                                    </SelectContent>
-                                </Select>
-                                <InputError message={errors.parent_task_id} />
-                            </div>
-
-                            <div className="grid gap-2">
                                 <HeadingSmall title="Assignee" description="Opsional, multi-select dari member project" />
-                                <div className="grid max-h-48 grid-cols-2 gap-2 overflow-y-auto rounded-md border p-3">
+                                <div className="grid max-h-48 grid-cols-1 gap-2 overflow-y-auto rounded-md border p-3 sm:grid-cols-2">
                                     {members.map((user) => (
                                         <label key={user.id} className="flex items-center gap-2 text-sm">
                                             <Checkbox
