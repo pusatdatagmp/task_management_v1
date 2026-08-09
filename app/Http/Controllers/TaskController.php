@@ -550,10 +550,22 @@ class TaskController extends Controller
         ]);
     }
 
+    /**
+     * BUG FIX (2026-08-08, permintaan Boss): task_type task hasil recurring
+     * (task_template_id terisi) DIKUNCI -- tidak pernah ikut ditulis di sini,
+     * berapa pun nilainya di request (lihat UpdateTaskRequest RISIKO). Sebelum
+     * fix ini, task_type='daily'/'weekly'/'monthly' bikin SELURUH form edit
+     * gagal validasi, jadi field lain (judul dkk) ikut tidak tersimpan.
+     */
     public function update(UpdateTaskRequest $request, Project $project, Task $task): RedirectResponse
     {
         DB::transaction(function () use ($request, $task) {
-            $task->update($request->safe()->except(['assignees']));
+            $excluded = ['assignees'];
+            if ($task->task_template_id) {
+                $excluded[] = 'task_type';
+            }
+
+            $task->update($request->safe()->except($excluded));
             $task->assignees()->sync($request->validated('assignees') ?? []);
         });
 
