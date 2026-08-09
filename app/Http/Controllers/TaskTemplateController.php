@@ -86,16 +86,16 @@ class TaskTemplateController extends Controller
     public function store(StoreTaskTemplateRequest $request, Project $project): RedirectResponse
     {
         $template = TaskTemplate::create([
-            ...$request->safe()->except([...self::AUTOMATION_FIELDS, 'recurrence_config', 'checklist_items']),
+            ...$request->safe()->except([...self::AUTOMATION_FIELDS, 'checklist_items']),
             'organization_id' => $project->organization_id,
             'project_id' => $project->id,
-            // BUSINESS RULE A4: daily -> config diabaikan, dipaksa [] di sini
-            // terlepas dari apa yang dikirim form (bentuknya cuma relevan untuk
-            // weekly/monthly, lihat StoreTaskTemplateRequest).
-            'recurrence_config' => $this->normalizeRecurrenceConfig(
-                $request->validated('task_type'),
-                $request->validated('recurrence_config') ?? []
-            ),
+            // Revisi 2026-08-07 (permintaan Boss): task_type/recurrence_config
+            // TIDAK LAGI dari form (dropdown daily/weekly/monthly dicabut) --
+            // konstan di sini MURNI supaya kolom NOT NULL lama tetap valid untuk
+            // jalur rollback F-162 (GenerateRecurringTasksCommand). Jadwal
+            // sungguhan sepenuhnya dari AE-2b (normalizeAutomationConfig di bawah).
+            'task_type' => 'daily',
+            'recurrence_config' => [],
             ...$this->normalizeAutomationConfig($request->validated()),
         ]);
 
@@ -121,11 +121,7 @@ class TaskTemplateController extends Controller
     public function update(UpdateTaskTemplateRequest $request, Project $project, TaskTemplate $taskTemplate): RedirectResponse
     {
         $taskTemplate->update([
-            ...$request->safe()->except([...self::AUTOMATION_FIELDS, 'recurrence_config', 'checklist_items']),
-            'recurrence_config' => $this->normalizeRecurrenceConfig(
-                $request->validated('task_type'),
-                $request->validated('recurrence_config') ?? []
-            ),
+            ...$request->safe()->except([...self::AUTOMATION_FIELDS, 'checklist_items']),
             ...$this->normalizeAutomationConfig($request->validated()),
         ]);
 
@@ -174,15 +170,6 @@ class TaskTemplateController extends Controller
         $taskTemplate->update(['is_active' => ! $taskTemplate->is_active]);
 
         return back();
-    }
-
-    private function normalizeRecurrenceConfig(string $taskType, array $config): array
-    {
-        return match ($taskType) {
-            'weekly' => ['day_of_week' => (int) $config['day_of_week']],
-            'monthly' => ['day_of_month' => (int) $config['day_of_month']],
-            default => [], // daily
-        };
     }
 
     /**

@@ -5,9 +5,12 @@
  * MODUL       : StoreTaskTemplateRequest
  * KLASIFIKASI : DOMAIN
  * TUJUAN      : Validasi buat template recurring baru (admin only, task.manage).
- *               task_type dibatasi ke daily|weekly|monthly (F-46/A2) — tentative|project
- *               TIDAK berulang, ditolak otomatis lewat Rule::in di sini, bukan lewat
- *               cek terpisah. AE-2b (F-158): field automation (anchor_strategy dkk)
+ *               Revisi 2026-08-07 (permintaan Boss): `task_type` (daily/weekly/
+ *               monthly) & `recurrence_config` DICABUT dari form/validasi —
+ *               kolomnya TETAP ADA di DB (dead-tapi-aman, jaga jalur rollback
+ *               F-162), tapi TaskTemplateController yang isi konstan, BUKAN
+ *               lagi dari input Boss. Jadwal SEPENUHNYA dari AE-2b di bawah.
+ *               AE-2b (F-158): field automation (anchor_strategy dkk)
  *               ditambahkan DI SINI — form CRUD murni ke kolom yang sudah ada sejak
  *               AE-1, TIDAK ada jalur logika evaluasi baru (Pipeline AE-2/3 tetap
  *               satu-satunya pembaca).
@@ -48,9 +51,6 @@ class StoreTaskTemplateRequest extends FormRequest
         return [
             'title' => ['required', 'string', 'max:255'],
             'description' => ['nullable', 'string'],
-            // BUSINESS RULE F-46/A2: hanya 3 tipe ini yang berulang. Kirim
-            // tentative/project -> ditolak di sini (bukan "diabaikan diam-diam").
-            'task_type' => ['required', Rule::in(['daily', 'weekly', 'monthly'])],
             'priority' => ['nullable', Rule::in(['low', 'normal', 'high', 'urgent'])],
             'estimated_minutes' => ['required', 'integer', 'min:1'],
             'points' => ['required', 'integer', 'min:0'],
@@ -59,13 +59,6 @@ class StoreTaskTemplateRequest extends FormRequest
             // lahir, sama hari) — nol sampai admin sengaja isi. GenerateTaskAction
             // yang menerjemahkan jadi hari KERJA maju (BusinessHoursCalculator).
             'due_offset_days' => ['nullable', 'integer', 'min:1', 'max:365'],
-
-            // BUSINESS RULE A4: bentuk recurrence_config beda per task_type. daily
-            // TIDAK divalidasi di sini (A4: "config kosong/diabaikan") — controller
-            // yang menormalkan jadi [] terlepas dari apa yang dikirim.
-            'recurrence_config' => ['array'],
-            'recurrence_config.day_of_week' => ['required_if:task_type,weekly', 'integer', 'between:1,7'],
-            'recurrence_config.day_of_month' => ['required_if:task_type,monthly', 'integer', 'between:1,31'],
 
             // F-86: default_assignees WAJIB project member SAAT SIMPAN. 'present'
             // (bukan 'nullable') -- kolom DB tidak nullable (array kosong tetap

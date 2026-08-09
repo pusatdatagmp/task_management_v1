@@ -101,7 +101,13 @@ class GenerateTaskAction
                     'task_status_id' => $statusId,
                     'title' => $template->title,
                     'description' => $template->description,
-                    'task_type' => $template->task_type,
+                    // Revisi 2026-08-07 (permintaan Boss): dulu salinan literal
+                    // TaskTemplate.task_type (daily/weekly/monthly statis) --
+                    // sekarang ringkasan jadwal Automation Engine ("Tiap 3 hari"
+                    // dst, lihat TaskTemplate::scheduleLabel()). tasks.task_type
+                    // sudah dilebarkan ke VARCHAR (migration 2026_08_07) supaya
+                    // muat teks bebas ini.
+                    'task_type' => $template->schedule_label,
                     'priority' => $template->priority,
                     'points' => $template->points,
                     'estimated_minutes' => $template->estimated_minutes,

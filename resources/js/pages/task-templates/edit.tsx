@@ -11,9 +11,7 @@
 // MEMANGGIL   : route('task-templates.update')
 // DATA MASUK  : project, template (existing), members[]
 // DATA KELUAR : PUT form -> TaskTemplateController::update()
-// RISIKO      : sama seperti create.tsx — recurrence_config dikirim sesuai
-//               task_type terpilih SAAT SUBMIT (A4), bukan bentuk lama template.
-//               checklist_items (F-123) SELALU kirim SELURUH daftar — server
+// RISIKO      : checklist_items (F-123) SELALU kirim SELURUH daftar — server
 //               hapus-lalu-buat-ulang (TaskTemplateController::syncChecklistItems()).
 //               anchor_day_type (F-74) DITURUNKAN dari anchor_config existing --
 //               ada day_of_month -> 'month', selain itu default 'week' (termasuk
@@ -43,13 +41,11 @@ interface TemplateData {
     id: number;
     title: string;
     description: string | null;
-    task_type: 'daily' | 'weekly' | 'monthly';
     priority: string;
     estimated_minutes: number;
     points: number;
     // Revisi 2026-08-06 item 7.
     due_offset_days: number | null;
-    recurrence_config: { day_of_week?: number; day_of_month?: number };
     default_assignees: number[];
     is_active: boolean;
     checklist_items: string[];
@@ -115,14 +111,11 @@ export default function TaskTemplateEdit({ project, template, members }: TaskTem
     const { data, setData, put, transform, processing, errors } = useForm({
         title: template.title,
         description: template.description ?? '',
-        task_type: template.task_type,
         priority: template.priority,
         estimated_minutes: template.estimated_minutes,
         points: template.points,
         // Revisi 2026-08-06 item 7: null -> '' di form (input number kosong).
         due_offset_days: (template.due_offset_days ?? '') as number | '',
-        day_of_week: template.recurrence_config.day_of_week ?? 1,
-        day_of_month: template.recurrence_config.day_of_month ?? 1,
         is_active: template.is_active,
         default_assignees: template.default_assignees,
         checklist_items: template.checklist_items,
@@ -157,8 +150,8 @@ export default function TaskTemplateEdit({ project, template, members }: TaskTem
         );
     };
 
-    // SUMBER A4: sama seperti create.tsx — bentuk recurrence_config mengikuti
-    // task_type yang TERPILIH SAAT SUBMIT, bukan bentuk lama yang tersimpan.
+    // Revisi 2026-08-07 (permintaan Boss): dropdown task_type & recurrence_config
+    // lama DICABUT, lihat create.tsx untuk penjelasan lengkap.
     // AE-2b: anchor_config/date_window_config -- lihat create.tsx transform()
     // untuk penjelasan lengkap, logika IDENTIK.
     // BUG FIX (ditemukan Boss 2026-08-06) -- lihat create.tsx transform() untuk
@@ -167,12 +160,6 @@ export default function TaskTemplateEdit({ project, template, members }: TaskTem
     // memaksa anchor_config.day_of_week terisi untuk SEMUA strategi.
     transform((formData) => ({
         ...formData,
-        recurrence_config:
-            formData.task_type === 'weekly'
-                ? { day_of_week: formData.day_of_week }
-                : formData.task_type === 'monthly'
-                  ? { day_of_month: formData.day_of_month }
-                  : {},
         anchor_day_type: formData.anchor_strategy === 'calendar_anchored' ? formData.anchor_day_type : null,
         anchor_config:
             formData.anchor_strategy === 'calendar_anchored'
@@ -223,84 +210,26 @@ export default function TaskTemplateEdit({ project, template, members }: TaskTem
                                 <InputError message={errors.description} />
                             </div>
 
-                            <div className="grid grid-cols-2 gap-4">
-                                <div className="grid gap-2">
-                                    <Label htmlFor="task_type">Tipe pengulangan</Label>
-                                    <Select
-                                        value={data.task_type}
-                                        onValueChange={(value) => setData('task_type', value as 'daily' | 'weekly' | 'monthly')}
-                                    >
-                                        <SelectTrigger id="task_type">
-                                            <SelectValue />
-                                        </SelectTrigger>
-                                        <SelectContent>
-                                            <SelectItem value="daily">Harian</SelectItem>
-                                            <SelectItem value="weekly">Mingguan</SelectItem>
-                                            <SelectItem value="monthly">Bulanan</SelectItem>
-                                        </SelectContent>
-                                    </Select>
-                                    <InputError message={errors.task_type} />
-                                </div>
-
-                                <div className="grid gap-2">
-                                    <Label htmlFor="priority">Prioritas</Label>
-                                    <Select value={data.priority} onValueChange={(value) => setData('priority', value)}>
-                                        <SelectTrigger id="priority">
-                                            <SelectValue />
-                                        </SelectTrigger>
-                                        <SelectContent>
-                                            <SelectItem value="low">Low</SelectItem>
-                                            <SelectItem value="normal">Normal</SelectItem>
-                                            <SelectItem value="high">High</SelectItem>
-                                            <SelectItem value="urgent">Urgent</SelectItem>
-                                        </SelectContent>
-                                    </Select>
-                                    <InputError message={errors.priority} />
-                                </div>
+                            <div className="grid gap-2">
+                                <Label htmlFor="priority">Prioritas</Label>
+                                <Select value={data.priority} onValueChange={(value) => setData('priority', value)}>
+                                    <SelectTrigger id="priority">
+                                        <SelectValue />
+                                    </SelectTrigger>
+                                    <SelectContent>
+                                        <SelectItem value="low">Low</SelectItem>
+                                        <SelectItem value="normal">Normal</SelectItem>
+                                        <SelectItem value="high">High</SelectItem>
+                                        <SelectItem value="urgent">Urgent</SelectItem>
+                                    </SelectContent>
+                                </Select>
+                                <InputError message={errors.priority} />
                             </div>
-
-                            {data.task_type === 'weekly' && (
-                                <div className="grid gap-2">
-                                    <Label htmlFor="day_of_week">Hari (tiap minggu)</Label>
-                                    <Select value={String(data.day_of_week)} onValueChange={(value) => setData('day_of_week', Number(value))}>
-                                        <SelectTrigger id="day_of_week">
-                                            <SelectValue />
-                                        </SelectTrigger>
-                                        <SelectContent>
-                                            {DAY_OPTIONS.map((day) => (
-                                                <SelectItem key={day.value} value={day.value}>
-                                                    {day.label}
-                                                </SelectItem>
-                                            ))}
-                                        </SelectContent>
-                                    </Select>
-                                    <InputError message={errorBag['recurrence_config.day_of_week']} />
-                                </div>
-                            )}
-
-                            {data.task_type === 'monthly' && (
-                                <div className="grid gap-2">
-                                    <Label htmlFor="day_of_month">Tanggal (tiap bulan)</Label>
-                                    <Input
-                                        id="day_of_month"
-                                        type="number"
-                                        min={1}
-                                        max={31}
-                                        value={data.day_of_month}
-                                        onChange={(e) => setData('day_of_month', Number(e.target.value))}
-                                        required
-                                    />
-                                    <p className="text-xs text-muted-foreground">
-                                        Tanggal lebih besar dari jumlah hari bulan otomatis dipakaikan ke hari terakhir bulan itu (F-101).
-                                    </p>
-                                    <InputError message={errorBag['recurrence_config.day_of_month']} />
-                                </div>
-                            )}
 
                             <div className="grid gap-4 rounded-md border p-4">
                                 <HeadingSmall
                                     title="Konfigurasi Automation Engine"
-                                    description="Atur KAPAN & SEBERAPA SERING template ini melahirkan task. 'Tipe pengulangan' di atas tetap kategori task -- jadwal SEBENARNYA ditentukan di sini (AE-2b)."
+                                    description="Atur KAPAN & SEBERAPA SERING template ini melahirkan task -- interval bebas (mis. tiap 3 hari, tiap 2 minggu) atau hari tetap."
                                 />
 
                                 <div className="grid gap-2">
@@ -322,7 +251,7 @@ export default function TaskTemplateEdit({ project, template, members }: TaskTem
                                 </div>
 
                                 {(data.anchor_strategy === 'time_based' || data.anchor_strategy === 'completion_based') && (
-                                    <div className="grid grid-cols-2 gap-4">
+                                    <div className="grid grid-cols-1 gap-4 sm:grid-cols-2">
                                         <div className="grid gap-2">
                                             <Label htmlFor="interval_value">Tiap</Label>
                                             <Input
@@ -459,7 +388,7 @@ export default function TaskTemplateEdit({ project, template, members }: TaskTem
                                     <p className="text-xs text-muted-foreground">Kosong = tak ada batasan hari.</p>
                                 </div>
 
-                                <div className="grid grid-cols-2 gap-4">
+                                <div className="grid grid-cols-1 gap-4 sm:grid-cols-2">
                                     <div className="grid gap-2">
                                         <Label htmlFor="date_window_dom_min">Tanggal minimum (opsional)</Label>
                                         <Input
@@ -503,7 +432,7 @@ export default function TaskTemplateEdit({ project, template, members }: TaskTem
                                 </div>
                             </div>
 
-                            <div className="grid grid-cols-2 gap-4">
+                            <div className="grid grid-cols-1 gap-4 sm:grid-cols-2">
                                 <div className="grid gap-2">
                                     <Label htmlFor="estimated_minutes">Estimasi (menit)</Label>
                                     <Input
@@ -559,7 +488,7 @@ export default function TaskTemplateEdit({ project, template, members }: TaskTem
                                     title="Default assignee"
                                     description="Opsional, multi-select dari member project. Divalidasi ulang saat generate (F-86)."
                                 />
-                                <div className="grid max-h-48 grid-cols-2 gap-2 overflow-y-auto rounded-md border p-3">
+                                <div className="grid max-h-48 grid-cols-1 gap-2 overflow-y-auto rounded-md border p-3 sm:grid-cols-2">
                                     {members.map((user) => (
                                         <label key={user.id} className="flex items-center gap-2 text-sm">
                                             <Checkbox

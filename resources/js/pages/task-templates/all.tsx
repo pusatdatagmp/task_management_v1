@@ -34,22 +34,12 @@ interface ProjectOption {
 interface TemplateRow {
     id: number;
     title: string;
-    task_type: 'daily' | 'weekly' | 'monthly';
+    schedule_label: string;
     estimated_minutes: number;
     points: number;
     priority: 'low' | 'normal' | 'high' | 'urgent';
-    recurrence_config: { day_of_week?: number; day_of_month?: number };
     is_active: boolean;
     project: ProjectOption;
-}
-
-const DAY_NAMES = ['', 'Senin', 'Selasa', 'Rabu', 'Kamis', "Jum'at", 'Sabtu', 'Minggu'];
-
-function jadwalLabel(template: TemplateRow): string {
-    if (template.task_type === 'daily') return 'Tiap hari kerja';
-    if (template.task_type === 'weekly') return `Tiap ${DAY_NAMES[template.recurrence_config.day_of_week ?? 0]}`;
-
-    return `Tanggal ${template.recurrence_config.day_of_month ?? '-'} tiap bulan`;
 }
 
 const breadcrumbs: BreadcrumbItem[] = [{ title: 'Tugas Berulang', href: '/task-templates' }];
@@ -84,7 +74,7 @@ export default function AllTaskTemplates({ templates, projects }: { templates: T
             <Head title="Tugas Berulang" />
 
             <div className="flex flex-col gap-4 p-4">
-                <div className="flex items-center justify-between">
+                <div className="flex flex-wrap items-center justify-between gap-2">
                     <h1 className="text-xl font-semibold">Tugas Berulang</h1>
                     <div className="flex items-center gap-2">
                         <select
@@ -160,7 +150,7 @@ export default function AllTaskTemplates({ templates, projects }: { templates: T
                                 <tr key={template.id} className="border-b last:border-0">
                                     <td className="p-3">{template.project.name}</td>
                                     <td className="p-3 font-medium">{template.title}</td>
-                                    <td className="p-3">{jadwalLabel(template)}</td>
+                                    <td className="p-3">{template.schedule_label}</td>
                                     <td className="p-3">{template.estimated_minutes}m</td>
                                     <td className="p-3">{template.points}</td>
                                     <td className="p-3 capitalize">{template.priority}</td>

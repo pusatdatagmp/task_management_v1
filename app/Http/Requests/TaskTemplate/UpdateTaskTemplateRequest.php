@@ -8,6 +8,8 @@
  *               identik Store — edit template TIDAK PERNAH menyentuh instance tasks
  *               yang sudah lahir (A6, F-46: template != task). AE-2b: field
  *               automation identik StoreTaskTemplateRequest (lihat komentar di sana).
+ *               Revisi 2026-08-07: `task_type`/`recurrence_config` dicabut dari
+ *               validasi, lihat StoreTaskTemplateRequest untuk alasannya.
  * DIPANGGIL   : TaskTemplateController::update()
  * MEMANGGIL   : -
  * DATA MASUK  : Form edit template — project & template dari route model binding
@@ -41,17 +43,12 @@ class UpdateTaskTemplateRequest extends FormRequest
         return [
             'title' => ['required', 'string', 'max:255'],
             'description' => ['nullable', 'string'],
-            'task_type' => ['required', Rule::in(['daily', 'weekly', 'monthly'])], // F-46/A2
             'priority' => ['nullable', Rule::in(['low', 'normal', 'high', 'urgent'])],
             'estimated_minutes' => ['required', 'integer', 'min:1'],
             'points' => ['required', 'integer', 'min:0'],
             'is_active' => ['nullable', 'boolean'],
             // Revisi 2026-08-06 item 7 — lihat StoreTaskTemplateRequest.
             'due_offset_days' => ['nullable', 'integer', 'min:1', 'max:365'],
-
-            'recurrence_config' => ['array'],
-            'recurrence_config.day_of_week' => ['required_if:task_type,weekly', 'integer', 'between:1,7'],
-            'recurrence_config.day_of_month' => ['required_if:task_type,monthly', 'integer', 'between:1,31'],
 
             'default_assignees' => ['present', 'array'], // F-86
             'default_assignees.*' => [Rule::exists('project_user', 'user_id')->where('project_id', $project->id)],
