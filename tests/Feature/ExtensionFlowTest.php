@@ -123,6 +123,42 @@ test('revisi 2026-08-06 item 4: evidence berupa link tersimpan, type=evidence', 
         ->and($evidence->url)->toBe('https://drive.google.com/file/d/bukti');
 });
 
+test('BUG FIX 2026-08-08: field evidence mode LAIN yang basi (dilaporkan Boss) tidak lagi menolak submit -- exclude_unless mengabaikan field di luar evidence_type aktif', function () {
+    // AKAR MASALAH: my-extensions.tsx dulu tidak mengosongkan evidence_file saat
+    // user ganti mode ke Link/Teks -- field basi itu tetap terkirim, dan validasi
+    // lama (required_if) tetap MEMVALIDASI evidence_file kapan pun field itu
+    // TERISI, independen dari evidence_type. File basi yang gagal mimes menolak
+    // SELURUH form padahal user cuma mau kirim link. Simulasi di sini: kirim
+    // evidence_type=link (valid) BERSAMA evidence_file basi berekstensi .txt
+    // (di luar whitelist mimes) -- exclude_unless WAJIB membuat request ini lolos.
+    $admin = User::factory()->admin()->create();
+    $member = User::factory()->create(['organization_id' => $admin->organization_id]);
+    $project = createExtProject($admin, [$member->id]);
+    $task = createExtTask($project, $admin, $member);
+
+    $path = tempnam(sys_get_temp_dir(), 'stale');
+    file_put_contents($path, 'catatan lama, bukan bukti yang dimaksud');
+    $staleFile = new UploadedFile($path, 'catatan-lama.txt', null, null, true);
+
+    $response = $this->actingAs($member)->post(route('extensions.store'), [
+        'task_id' => $task->id,
+        'requested_due_date' => now()->addDays(3)->format('Y-m-d H:i:s'),
+        'reason' => 'Bukti ada di link ini, evidence_file di bawah ini BASI (simulasi bug).',
+        'evidence_type' => 'link',
+        'evidence_url' => 'https://drive.google.com/file/d/bukti',
+        'evidence_file' => $staleFile,
+    ]);
+
+    $response->assertSessionDoesntHaveErrors();
+    $response->assertRedirect(route('extensions.my'));
+
+    $extension = DeadlineExtension::where('task_id', $task->id)->firstOrFail();
+    $evidence = Attachment::where('deadline_extension_id', $extension->id)->firstOrFail();
+    // Bukti yang TERSIMPAN adalah link (mode yang dipilih), BUKAN file basi.
+    expect($evidence->content_type)->toBe('link')
+        ->and($evidence->url)->toBe('https://drive.google.com/file/d/bukti');
+});
+
 test('revisi 2026-08-06 item 4: evidence_type null -- pengajuan tetap sah tanpa lampiran apa pun (F-49 opsional)', function () {
     $admin = User::factory()->admin()->create();
     $member = User::factory()->create(['organization_id' => $admin->organization_id]);

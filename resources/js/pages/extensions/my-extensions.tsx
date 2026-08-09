@@ -11,6 +11,11 @@
 // RISIKO      : Validasi "tenggat baru harus setelah due_date saat ini" & "task
 //               belum selesai" HANYA HINT UI (dropdown sudah difilter belum
 //               selesai) — penegakan asli di StoreDeadlineExtensionRequest.
+//               BUG FIX (2026-08-08): ganti mode bukti (File/Link/Teks/Tanpa
+//               bukti) WAJIB lewat selectEvidenceMode() — SATU-SATUNYA jalur
+//               yang mengosongkan field mode LAIN. Sebelum fix, field basi dari
+//               mode sebelumnya ikut terkirim dan bisa menolak SELURUH submit
+//               (lihat StoreDeadlineExtensionRequest RISIKO untuk sisi backend).
 // ==========================================================
 
 import InputError from '@/components/input-error';
@@ -89,6 +94,23 @@ export default function MyExtensions({ tasks, extensions }: { tasks: TaskOption[
         evidence_text: '',
     });
 
+    // BUG FIX (2026-08-08, dilaporkan Boss): SEBELUM ini, ganti mode bukti (mis.
+    // File -> Link) HANYA mengubah evidence_type -- field mode LAIN (evidence_file/
+    // evidence_url/evidence_text) TIDAK PERNAH dikosongkan, jadi data basi ikut
+    // terkirim bersama submit. Backend memvalidasi evidence_file KAPAN PUN field
+    // itu terisi (independen dari evidence_type), jadi file basi yang gagal mimes
+    // menolak SELURUH pengajuan walau user sebenarnya mau kirim link/teks.
+    // selectEvidenceMode() SEKARANG jadi satu-satunya jalan ganti mode, selalu
+    // mengosongkan 3 field sekaligus supaya nol data basi tersisa.
+    const selectEvidenceMode = (mode: ContentType | null) => {
+        setEvidenceMode(mode);
+        setData('evidence_type', mode ?? '');
+        setData('evidence_file', null);
+        setData('evidence_url', '');
+        setData('evidence_text', '');
+        if (evidenceRef.current) evidenceRef.current.value = '';
+    };
+
     const submit: FormEventHandler = (e) => {
         e.preventDefault();
 
@@ -164,10 +186,7 @@ export default function MyExtensions({ tasks, extensions }: { tasks: TaskOption[
                                                 type="button"
                                                 size="sm"
                                                 variant={evidenceMode === null ? 'default' : 'outline'}
-                                                onClick={() => {
-                                                    setEvidenceMode(null);
-                                                    setData('evidence_type', '');
-                                                }}
+                                                onClick={() => selectEvidenceMode(null)}
                                             >
                                                 Tanpa bukti
                                             </Button>
@@ -177,10 +196,7 @@ export default function MyExtensions({ tasks, extensions }: { tasks: TaskOption[
                                                     type="button"
                                                     size="sm"
                                                     variant={evidenceMode === m ? 'default' : 'outline'}
-                                                    onClick={() => {
-                                                        setEvidenceMode(m);
-                                                        setData('evidence_type', m);
-                                                    }}
+                                                    onClick={() => selectEvidenceMode(m)}
                                                 >
                                                     {m === 'file' ? 'Upload File' : m === 'link' ? 'Sematkan Link' : 'Tulis Teks'}
                                                 </Button>

@@ -23,6 +23,17 @@
  *               (F-108, keputusan Boss H6): tenggat baru WAJIB >= due_date
  *               sekarang — SAMA DIIZINKAN (kasus "cuma nambah additional_minutes
  *               tanpa geser tenggat"), cuma MUNDUR yang ditolak.
+ *               BUG FIX (2026-08-08, dilaporkan Boss): evidence_file/evidence_url/
+ *               evidence_text SEKARANG pakai `exclude_unless(evidence_type, ...)`
+ *               -- SEBELUM ini, ketiganya divalidasi kapan pun field itu TERISI,
+ *               independen dari evidence_type. Kalau frontend (bug terpisah,
+ *               my-extensions.tsx) kirim field mode LAIN yang basi (mis. user
+ *               ganti dari File ke Link tanpa evidence_file ter-reset), SELURUH
+ *               pengajuan ditolak gara-gara field yang bahkan tidak relevan
+ *               dengan mode yang dipilih. exclude_unless membuat validator
+ *               SAMA SEKALI TIDAK MELIHAT field di luar mode aktif (bukan cuma
+ *               melonggarkan rule-nya) — defense-in-depth, bukan gantung ke
+ *               frontend selalu bersih.
  * ==========================================================
  */
 
@@ -51,9 +62,9 @@ class StoreDeadlineExtensionRequest extends FormRequest
             // StoreAttachmentRequest::content_type yang WAJIB) -- evidence
             // TETAP seluruhnya opsional (F-49), null = tidak melampirkan.
             'evidence_type' => ['nullable', Rule::in(['file', 'link', 'text'])],
-            'evidence_file' => ['required_if:evidence_type,file', 'file', 'mimes:pdf,jpg,jpeg,png,docx,xlsx,zip', 'max:10240'],
-            'evidence_url' => ['required_if:evidence_type,link', 'url', 'max:2048', 'regex:/^https?:\/\//i'],
-            'evidence_text' => ['required_if:evidence_type,text', 'string', 'max:10000'],
+            'evidence_file' => ['exclude_unless:evidence_type,file', 'required', 'file', 'mimes:pdf,jpg,jpeg,png,docx,xlsx,zip', 'max:10240'],
+            'evidence_url' => ['exclude_unless:evidence_type,link', 'required', 'url', 'max:2048', 'regex:/^https?:\/\//i'],
+            'evidence_text' => ['exclude_unless:evidence_type,text', 'required', 'string', 'max:10000'],
         ];
     }
 
