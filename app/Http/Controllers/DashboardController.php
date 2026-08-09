@@ -14,9 +14,10 @@
  *               agregasi (donut prioritas, distribusi progress, kategori tugas,
  *               heatmap kalender F-131, top-10, recent activity, workload top-5) —
  *               TIDAK mengubah/menghapus index()/summary()/loadRows() lama.
- *               Addendum Fase A (blueprint §7.1): `summary_cards` — 5 kartu ringkas
- *               (beban harian X/Y, To Do, In Progress, Review, Overdue), SELURUHNYA
- *               reuse DashboardService/progressDistribution() yang sudah ada.
+ *               Addendum Fase A (blueprint §7.1): `summary_cards` — 6 kartu ringkas
+ *               (beban harian X/Y, To Do, In Progress, Review, Selesai, Overdue),
+ *               SELURUHNYA reuse DashboardService/progressDistribution() yang sudah
+ *               ada. Kartu "Selesai" ditambah 2026-08-08 (permintaan Boss).
  *               v1.2 H4 (F-109/F-121): `commandCenterPage()` MERENDER halaman Inertia
  *               "Command Center" dari array yang SAMA dengan commandCenter() JSON
  *               (diekstrak ke commandCenterPayload(), F-85 nol query dobel) —
@@ -73,6 +74,7 @@ use App\Models\Holiday;
 use App\Models\Meeting;
 use App\Models\Project;
 use App\Models\Task;
+use App\Models\TaskTemplate;
 use App\Models\User;
 use App\Services\DashboardService;
 use App\Support\ActivityLogPresenter;
@@ -197,7 +199,10 @@ class DashboardController extends Controller
         $filterRules = [
             'donut_from' => ['nullable', 'date'], 'donut_to' => ['nullable', 'date'], 'donut_user_id' => ['nullable', 'integer'],
             'progress_from' => ['nullable', 'date'], 'progress_to' => ['nullable', 'date'], 'progress_user_id' => ['nullable', 'integer'],
-            'categories_from' => ['nullable', 'date'], 'categories_to' => ['nullable', 'date'], 'categories_user_id' => ['nullable', 'integer'],
+            // Revisi 2026-08-07 (permintaan Boss): widget "Kategori Tugas Berulang"
+            // jadi daftar per-template dgn "jumlah" ALL-TIME (bukan agregat periode)
+            // -- categories_from/categories_to dicabut, HANYA sisa filter user.
+            'categories_user_id' => ['nullable', 'integer'],
             'top_tasks_from' => ['nullable', 'date'], 'top_tasks_to' => ['nullable', 'date'], 'top_tasks_user_id' => ['nullable', 'integer'],
             'activity_from' => ['nullable', 'date'], 'activity_to' => ['nullable', 'date'], 'activity_user_id' => ['nullable', 'integer'],
             'heatmap_user_id' => ['nullable', 'integer'],
@@ -208,7 +213,7 @@ class DashboardController extends Controller
         // GUARD: Request::validate() cuma balikin key yang HADIR di input --
         // key opsional yang tak dikirim sama sekali hilang total dari array,
         // bukan null. array_fill_keys(...null) dulu supaya frontend SELALU
-        // dapat 19 key (buat controlled <input>/<select> React, F-109) baru
+        // dapat 16 key (buat controlled <input>/<select> React, F-109) baru
         // ditimpa hasil validate() yang benar-benar terisi.
         $filters = array_merge(array_fill_keys(array_keys($filterRules), null), $request->validate($filterRules));
 
@@ -284,7 +289,7 @@ class DashboardController extends Controller
             'restricted_to_self' => $restrictToSelf,
             'donut_priority' => $this->donutPriority($filters['donut_from'] ?? null, $filters['donut_to'] ?? null, $donutUserId),
             'progress_distribution' => $this->progressDistribution($filters['progress_from'] ?? null, $filters['progress_to'] ?? null, $progressUserId),
-            'task_categories' => $this->taskCategories($filters['categories_from'] ?? null, $filters['categories_to'] ?? null, $categoriesUserId),
+            'task_categories' => $this->taskCategories($restrictToSelf, $categoriesUserId),
             'heatmap' => $this->heatmap($service, $heatmapUsers, $request->query('month'), $today),
             'top_tasks' => $this->topTasks($filters['top_tasks_from'] ?? null, $filters['top_tasks_to'] ?? null, $topTasksUserId),
             'recent_activity' => $this->recentActivity($filters['activity_from'] ?? null, $filters['activity_to'] ?? null, $activityUserId),
@@ -383,7 +388,7 @@ class DashboardController extends Controller
      *
      * @param  array<string, int>  $progressDistribution  hasil progressDistribution(), REUSE dari commandCenter() (F-85, nol query dobel).
      * @param  int|null  $userId  revisi 2026-08-06 -- viewer terbatas (project.viewAll) diteruskan ke overdueCount(); null = agregat org penuh (perilaku lama).
-     * @return array{beban_harian: array{used_minutes:int, capacity_minutes:int}, todo:int, in_progress:int, review:int, overdue:int}
+     * @return array{beban_harian: array{used_minutes:int, capacity_minutes:int}, todo:int, in_progress:int, review:int, selesai:int, overdue:int}
      */
     private function summaryCards(DashboardService $service, Collection $users, Carbon $today, array $progressDistribution, ?int $userId = null): array
     {
@@ -405,6 +410,10 @@ class DashboardController extends Controller
             'todo' => $progressDistribution['todo'],
             'in_progress' => $progressDistribution['progress'],
             'review' => $progressDistribution['review'],
+            // 2026-08-08 (permintaan Boss): kartu "Tugas Selesai" -- angkanya
+            // SUDAH dihitung progressDistribution() ('selesai', baris 373), cuma
+            // belum pernah ikut disodorkan ke summary_cards. Nol query baru.
+            'selesai' => $progressDistribution['selesai'],
             // F-44: pola IDENTIK TaskController::search() filter 'overdue' -- due_date
             // < sekarang DAN belum completed. REUSE definisi, bukan definisi baru.
             'overdue' => $this->overdueCount($userId),
@@ -428,11 +437,11 @@ class DashboardController extends Controller
 
     /**
      * KONTRAK: v1.2 DS-4 §12.5 widget "Status Project" -- top-5 proyek TAK
-     * DIARSIP, kolom Task/Todo/Progress/Selesai/Overdue = COUNTS per FLAG F-44
-     * (pola IDENTIK progressDistribution()/overdueCount(), BUKAN rumus baru) +
-     * Deadline (projects.due_date, F-125). SENGAJA COUNTS, BUKAN status-label
-     * derived -- derivasi label proyek (F-125) itu tugas halaman Proyek nanti,
-     * di luar scope widget ini.
+     * DIARSIP, kolom Task/Todo/Progress/Review/Selesai/Overdue = COUNTS per
+     * FLAG F-44 (pola IDENTIK progressDistribution()/overdueCount(), BUKAN
+     * rumus baru) + Deadline (projects.due_date, F-125). SENGAJA COUNTS,
+     * BUKAN status-label derived -- derivasi label proyek (F-125) itu tugas
+     * halaman Proyek nanti, di luar scope widget ini.
      *
      * F-85: withCount() menyusun SETIAP kolom sbg subquery tunggal di SATU
      * SELECT (bukan query per-project) -- N+1 KONSTAN walau proyek bertambah.
@@ -440,6 +449,15 @@ class DashboardController extends Controller
      * "Top-5" diurut task_total DESC (proyek paling sibuk duluan) -- default
      * backend, lalu 5 baris ini yang sama di-SORT ULANG di frontend per kolom
      * (klik header), bukan fetch ulang top-5 lain per kriteria.
+     *
+     * BUG FIX (ditemukan audit Boss 2026-08-07): kolom `review_count` TIDAK
+     * ADA sebelumnya -- task berstatus Review (is_review=true) tidak masuk
+     * todo/progress/selesai manapun (semua 3 query eksplisit `is_review=false`
+     * atau tidak relevan), padahal tetap ke-count di `task_total`. Akibatnya
+     * todo+progress+selesai < task_total setiap kali ada task sedang di-review
+     * (dibuktikan data nyata: project "mbaleni" total=5, sum lama=4). Widget
+     * sebelah ("Distribusi Progress", progressDistribution() di atas) SUDAH
+     * benar py 4 kategori sejak awal -- widget ini yang kelupaan satu.
      *
      * @return array<int, array<string, mixed>>
      */
@@ -450,6 +468,7 @@ class DashboardController extends Controller
                 'tasks as task_total',
                 'tasks as todo_count' => fn ($q) => $q->whereHas('taskStatus', fn ($s) => $s->where('is_completed', false)->where('is_review', false)->where('is_work_state', false)),
                 'tasks as progress_count' => fn ($q) => $q->whereHas('taskStatus', fn ($s) => $s->where('is_completed', false)->where('is_review', false)->where('is_work_state', true)),
+                'tasks as review_count' => fn ($q) => $q->whereHas('taskStatus', fn ($s) => $s->where('is_completed', false)->where('is_review', true)),
                 'tasks as selesai_count' => fn ($q) => $q->whereHas('taskStatus', fn ($s) => $s->where('is_completed', true)),
                 'tasks as overdue_count' => fn ($q) => $q->where('due_date', '<', Carbon::now())->whereHas('taskStatus', fn ($s) => $s->where('is_completed', false)),
             ])
@@ -462,6 +481,7 @@ class DashboardController extends Controller
                 'task_total' => $p->task_total,
                 'todo' => $p->todo_count,
                 'progress' => $p->progress_count,
+                'review' => $p->review_count,
                 'selesai' => $p->selesai_count,
                 'overdue' => $p->overdue_count,
                 'due_date' => $p->due_date,
@@ -470,24 +490,56 @@ class DashboardController extends Controller
     }
 
     /**
-     * KONTRAK: A4 — breakdown jumlah task per `task_type` (enum daily/weekly/monthly/
-     * tentative/project, DM §3.9). SATU query, group by kolom yang sudah ada.
+     * KONTRAK: A4 — widget "Kategori Tugas Berulang". Revisi 2026-08-07
+     * (permintaan Boss, 3 iterasi hari ini):
+     *   1) semula breakdown SEMUA task per task_type -> dipersempit ke task
+     *      hasil generate template saja (task_template_id terisi).
+     *   2) "kok masih daily/weekly/monthly?" -- ternyata Boss mau bentuk
+     *      berbeda TOTAL: bukan grouped-by-label, tapi DAFTAR PER TEMPLATE
+     *      (nama, ringkasan jadwal, jumlah task yang PERNAH lahir ALL-TIME
+     *      dari template itu -- dikonfirmasi Boss, TIDAK ikut filter periode).
+     *   3) "template saya ada 2, kok cuma 1 yang tampil?" -- semula HANYA
+     *      template yang punya >=1 task cocok yang muncul (kategori kosong =
+     *      tak tampil, warisan pola grouping lama). Boss klarifikasi: SEMUA
+     *      template AKTIF wajib tampil, walau jumlah 0 (belum pernah
+     *      di-generate `automation:run`).
+     * Makanya param $from/$to DICABUT (beda dari widget periode lain) --
+     * "jumlah" di sini sengaja bukan angka ter-filter tanggal.
      *
-     * v1.2 DS-4 (F-109): $from/$to/$userId sama seperti donutPriority().
+     * GUARD privasi (konsisten pola $restrictToSelf di seluruh file ini):
+     * "SEMUA template aktif tampil" BUKAN berarti viewer terbatas (tanpa
+     * project.viewAll) boleh intip nama SELURUH template organisasi walau
+     * tak py task di situ -- itu bocor struktur kerja tim ke orang yang
+     * seharusnya cuma lihat "data sendiri". Jadi filter tampil/sembunyi
+     * (bukan jumlah) TETAP dijaga guard $restrictToSelf: viewer penuh lihat
+     * SEMUA template aktif (termasuk jumlah 0), viewer terbatas HANYA
+     * template yang py minimal 1 task assigned ke dirinya.
      *
-     * @return array<int, array{task_type: string, total: int}>
+     * 2 query TETAP (F-85): (1) template aktif + count task via withCount
+     * (SATU query, subquery correlated -- bukan N+1), (2) tidak ada query
+     * kedua sungguhan, withCount cukup.
+     *
+     * @return array<int, array{id: int, title: string, schedule_label: string, total: int}>
      */
-    private function taskCategories(?string $from, ?string $to, ?int $userId): array
+    private function taskCategories(bool $restrictToSelf, ?int $userId): array
     {
-        return Task::query()
-            ->select('task_type')
-            ->selectRaw('count(*) as total')
-            ->when($from, fn ($q) => $q->whereDate('due_date', '>=', $from))
-            ->when($to, fn ($q) => $q->whereDate('due_date', '<=', $to))
-            ->when($userId, fn ($q) => $q->whereHas('assignees', fn ($a) => $a->whereKey($userId)))
-            ->groupBy('task_type')
-            ->get()
-            ->map(fn ($row) => ['task_type' => $row->task_type, 'total' => (int) $row->total])
+        return TaskTemplate::query()
+            ->where('is_active', true)
+            ->withCount(['tasks as total' => fn ($q) => $q->when($userId, fn ($q2) => $q2->whereHas('assignees', fn ($a) => $a->whereKey($userId)))])
+            // GUARD: schedule_label (accessor) BUTUH anchor_strategy/interval_value/
+            // interval_unit/anchor_config -- select parsial yang tidak menyertakan
+            // kolom itu bikin accessor baca NULL diam-diam (F-4, ditemukan dari test
+            // gagal: label jatuh ke cabang fallback yang salah tanpa error apa pun).
+            ->get(['id', 'title', 'anchor_strategy', 'interval_value', 'interval_unit', 'anchor_config'])
+            ->filter(fn (TaskTemplate $template) => ! $restrictToSelf || $template->total > 0)
+            ->map(fn (TaskTemplate $template) => [
+                'id' => $template->id,
+                'title' => $template->title,
+                'schedule_label' => $template->schedule_label,
+                'total' => (int) $template->total,
+            ])
+            ->sortByDesc('total')
+            ->values()
             ->all();
     }
 

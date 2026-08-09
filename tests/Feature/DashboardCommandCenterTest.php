@@ -28,6 +28,7 @@ use App\Models\Project;
 use App\Models\Role;
 use App\Models\Task;
 use App\Models\TaskStatus;
+use App\Models\TaskTemplate;
 use App\Models\User;
 use App\Models\WorkSchedule;
 use App\Services\DashboardService;
@@ -82,7 +83,7 @@ function seedCcSchedule(User $admin, Carbon $anchor): void
     ]);
 }
 
-function createCcTask(Project $project, TaskStatus $status, User $admin, array $assigneeIds, int $estimatedMinutes, Carbon $dueDate, ?string $priorityQuadrant = null, string $taskType = 'tentative'): Task
+function createCcTask(Project $project, TaskStatus $status, User $admin, array $assigneeIds, int $estimatedMinutes, Carbon $dueDate, ?string $priorityQuadrant = null, string $taskType = 'tentative', ?int $taskTemplateId = null): Task
 {
     $task = Task::create([
         'organization_id' => $admin->organization_id,
@@ -90,6 +91,7 @@ function createCcTask(Project $project, TaskStatus $status, User $admin, array $
         'task_status_id' => $status->id,
         'title' => 'CC task '.uniqid(),
         'task_type' => $taskType,
+        'task_template_id' => $taskTemplateId,
         'priority_quadrant' => $priorityQuadrant,
         'estimated_minutes' => $estimatedMinutes,
         'due_date' => $dueDate,
@@ -99,6 +101,30 @@ function createCcTask(Project $project, TaskStatus $status, User $admin, array $
     $task->assignees()->sync($assigneeIds);
 
     return $task;
+}
+
+// Revisi 2026-08-07 (permintaan Boss, iterasi ke-2): widget "Kategori Tugas
+// Berulang" (A4) sekarang daftar PER TEMPLATE (nama, schedule_label, jumlah
+// task ALL-TIME) -- helper ini isi anchor_strategy=time_based+interval supaya
+// TaskTemplate::scheduleLabel() (AE-2b) menghasilkan teks yang bisa dites,
+// mis. "Tiap 3 hari". task_type/recurrence_config diisi konstan (dead-tapi-
+// aman, lihat TaskTemplateController::store()) -- kolomnya NOT NULL di DB.
+function createCcTemplate(Project $project, User $admin, int $intervalValue = 1, string $intervalUnit = 'day'): TaskTemplate
+{
+    return TaskTemplate::create([
+        'organization_id' => $admin->organization_id,
+        'project_id' => $project->id,
+        'title' => 'CC template '.uniqid(),
+        'task_type' => 'daily',
+        'estimated_minutes' => 60,
+        'points' => 1,
+        'recurrence_config' => [],
+        'default_assignees' => [],
+        'is_active' => true,
+        'anchor_strategy' => 'time_based',
+        'interval_value' => $intervalValue,
+        'interval_unit' => $intervalUnit,
+    ]);
 }
 
 // Senin 2026-08-03 -- jangkar sama dengan DashboardBebanSpreadTest supaya angka
@@ -172,7 +198,7 @@ test('distribusi progress: dihitung dari FLAG status, bukan nama status (A3/F-44
         ->assertJsonPath('progress_distribution.selesai', 1);
 });
 
-test('kategori tugas: breakdown per task_type (A4)', function () {
+test('kategori tugas berulang: daftar PER TEMPLATE (nama+jadwal+jumlah ALL-TIME), HANYA task hasil generate (A4/revisi 2026-08-07)', function () {
     $admin = User::factory()->admin()->create();
     $member = User::factory()->create(['organization_id' => $admin->organization_id]);
     $project = createCcProject($admin, [$member->id]);
@@ -181,15 +207,52 @@ test('kategori tugas: breakdown per task_type (A4)', function () {
     seedCcSchedule($admin, $anchor);
     $this->travelTo($anchor);
 
-    createCcTask($project, $todo, $admin, [$member->id], 60, $anchor->copy()->addDays(5), null, 'daily');
-    createCcTask($project, $todo, $admin, [$member->id], 60, $anchor->copy()->addDays(5), null, 'daily');
+    $everyThreeDays = createCcTemplate($project, $admin, 3, 'day');
+    $everyTwoWeeks = createCcTemplate($project, $admin, 2, 'week');
+    // Iterasi ke-3 ("template saya ada 2 kok cuma 1 tampil"): template AKTIF
+    // tapi belum pernah di-generate (0 task) WAJIB tetap tampil untuk viewer
+    // PENUH (admin) -- BEDA dari perilaku lama yang menyembunyikannya.
+    $neverGenerated = createCcTemplate($project, $admin, 5, 'day');
+
+    createCcTask($project, $todo, $admin, [$member->id], 60, $anchor->copy()->addDays(5), null, 'daily', $everyThreeDays->id);
+    createCcTask($project, $todo, $admin, [$member->id], 60, $anchor->copy()->addDays(50), null, 'daily', $everyThreeDays->id); // jauh di luar "hari ini" -- BUKTI jumlah ALL-TIME, bukan ter-filter periode
+    createCcTask($project, $todo, $admin, [$member->id], 60, $anchor->copy()->addDays(5), null, 'daily', $everyTwoWeeks->id);
+    // GUARD: task manual (bukan hasil generate, task_template_id null) TIDAK
+    // boleh ikut dihitung -- ini yang membedakan widget baru dari versi lama.
     createCcTask($project, $todo, $admin, [$member->id], 60, $anchor->copy()->addDays(5), null, 'project');
 
     $response = $this->actingAs($admin)->getJson(route('dashboard.command-center'));
 
     $response->assertOk();
-    $categories = collect($response->json('task_categories'))->pluck('total', 'task_type');
-    expect($categories['daily'])->toBe(2)->and($categories['project'])->toBe(1);
+    $categories = collect($response->json('task_categories'))->keyBy('id');
+    expect($categories[$everyThreeDays->id]['title'])->toBe($everyThreeDays->title)
+        ->and($categories[$everyThreeDays->id]['schedule_label'])->toBe('Tiap 3 hari')
+        ->and($categories[$everyThreeDays->id]['total'])->toBe(2)
+        ->and($categories[$everyTwoWeeks->id]['schedule_label'])->toBe('Tiap 2 minggu')
+        ->and($categories[$everyTwoWeeks->id]['total'])->toBe(1)
+        ->and($categories[$neverGenerated->id]['total'])->toBe(0)
+        ->and($categories)->toHaveCount(3);
+});
+
+test('kategori tugas berulang: viewer TERBATAS TIDAK lihat template ber-jumlah-0 (privasi, beda dari admin) (revisi 2026-08-07)', function () {
+    $admin = User::factory()->admin()->create();
+    $viewer = ccRestrictedViewer($admin);
+    $project = createCcProject($admin, [$viewer->id]);
+    $todo = TaskStatus::where('project_id', $project->id)->where('position', 0)->firstOrFail();
+    $anchor = ccAnchor();
+    seedCcSchedule($admin, $anchor);
+    $this->travelTo($anchor);
+
+    $withTask = createCcTemplate($project, $admin, 1, 'day');
+    $withoutTask = createCcTemplate($project, $admin, 1, 'week');
+    createCcTask($project, $todo, $admin, [$viewer->id], 60, $anchor->copy()->addDays(5), null, 'daily', $withTask->id);
+
+    $response = $this->actingAs($viewer)->getJson(route('dashboard.command-center'));
+
+    $response->assertOk();
+    $categories = collect($response->json('task_categories'))->keyBy('id');
+    expect($categories->has($withTask->id))->toBeTrue()
+        ->and($categories->has($withoutTask->id))->toBeFalse();
 });
 
 test('heatmap = beban F-118, angka IDENTIK DashboardService::forUsers, hari lewat NETRAL (A5/B2/F-131)', function () {
@@ -340,8 +403,9 @@ test('summary cards: 4 status count dari FLAG F-44 + overdue dari due_date<sekar
     expect($cards['todo'])->toBe(3) // 2 murni + 1 overdue
         ->and($cards['in_progress'])->toBe(2) // 1 murni + 1 overdue
         ->and($cards['review'])->toBe(1)
+        ->and($cards['selesai'])->toBe(1) // kartu baru 2026-08-08 (permintaan Boss)
         ->and($cards['overdue'])->toBe(2)
-        ->and(array_keys($cards))->toBe(['beban_harian', 'todo', 'in_progress', 'review', 'overdue']);
+        ->and(array_keys($cards))->toBe(['beban_harian', 'todo', 'in_progress', 'review', 'selesai', 'overdue']);
 });
 
 test('summary cards: beban_harian IDENTIK dailyLoadTotals hari ini, kapasitas dari kapasitas() (F-118/F-40)', function () {
@@ -523,7 +587,7 @@ test('filter progress_from/to + progress_user_id menyempit due_date & assignee (
     $filtered->assertOk()->assertJsonPath('progress_distribution.todo', 1)->assertJsonPath('progress_distribution.progress', 1);
 });
 
-test('filter categories_from/to + categories_user_id menyempit due_date & assignee (DS-4/F-109)', function () {
+test('filter categories_user_id menyempit ke assignee itu SAJA, jumlah TETAP ALL-TIME (DS-4/F-109/revisi 2026-08-07)', function () {
     $admin = User::factory()->admin()->create();
     $m1 = User::factory()->create(['organization_id' => $admin->organization_id]);
     $m2 = User::factory()->create(['organization_id' => $admin->organization_id]);
@@ -533,18 +597,24 @@ test('filter categories_from/to + categories_user_id menyempit due_date & assign
     seedCcSchedule($admin, $anchor);
     $this->travelTo($anchor);
 
-    createCcTask($project, $todo, $admin, [$m1->id], 60, $anchor->copy()->addDays(5), null, 'daily'); // dalam rentang
-    createCcTask($project, $todo, $admin, [$m1->id], 60, $anchor->copy()->addDays(15), null, 'daily'); // luar rentang
-    createCcTask($project, $todo, $admin, [$m2->id], 60, $anchor->copy()->addDays(5), null, 'weekly'); // dalam rentang, user lain
+    $dailyTemplate = createCcTemplate($project, $admin, 1, 'day');
+    $weeklyTemplate = createCcTemplate($project, $admin, 1, 'week');
+
+    createCcTask($project, $todo, $admin, [$m1->id], 60, $anchor->copy()->addDays(5), null, 'daily', $dailyTemplate->id);
+    createCcTask($project, $todo, $admin, [$m1->id], 60, $anchor->copy()->addDays(50), null, 'daily', $dailyTemplate->id); // jauh, TETAP kehitung (all-time)
+    createCcTask($project, $todo, $admin, [$m2->id], 60, $anchor->copy()->addDays(5), null, 'weekly', $weeklyTemplate->id); // assignee lain
 
     $filtered = $this->actingAs($admin)->getJson(route('dashboard.command-center', [
-        'categories_from' => $anchor->copy()->addDays(3)->toDateString(),
-        'categories_to' => $anchor->copy()->addDays(10)->toDateString(),
         'categories_user_id' => $m1->id,
     ]));
     $filtered->assertOk();
-    $categories = collect($filtered->json('task_categories'))->pluck('total', 'task_type');
-    expect($categories->get('daily'))->toBe(1)->and($categories->has('weekly'))->toBeFalse();
+    $categories = collect($filtered->json('task_categories'))->keyBy('id');
+    // Revisi 2026-08-07 (iterasi ke-3, "template saya ada 2 kok cuma 1 tampil"):
+    // admin (viewer PENUH, bukan restrictToSelf) TETAP lihat weeklyTemplate
+    // walau jumlah-nya 0 untuk filter m1 -- BEDA dari viewer terbatas yang
+    // template ber-jumlah-0 disembunyikan (lihat test restrictToSelf di bawah).
+    expect($categories[$dailyTemplate->id]['total'])->toBe(2)
+        ->and($categories[$weeklyTemplate->id]['total'])->toBe(0);
 });
 
 test('filter top_tasks_from/to + top_tasks_user_id menyempit due_date & assignee (DS-4/F-109)', function () {
@@ -676,14 +746,16 @@ test('filter workload_user_id + workload_date menyempit roster & anchor tanpa ge
     expect($shifted->json('workload_top5.0.beban'))->toBe($expectedBeban);
 });
 
-test('filters key balikin 18 param, null default & terisi kalau dikirim (DS-4/F-109)', function () {
+test('filters key balikin 16 param, null default & terisi kalau dikirim (DS-4/F-109/revisi 2026-08-07)', function () {
     $admin = User::factory()->admin()->create();
     $member = User::factory()->create(['organization_id' => $admin->organization_id]);
 
     $default = $this->actingAs($admin)->getJson(route('dashboard.command-center'));
     $default->assertOk();
     $filters = $default->json('filters');
-    expect(array_keys($filters))->toHaveCount(18);
+    // Revisi 2026-08-07: categories_from/categories_to dicabut (widget
+    // "Kategori Tugas Berulang" jadi all-time, nol filter periode) -- 18 -> 16.
+    expect(array_keys($filters))->toHaveCount(16);
     expect(collect($filters)->every(fn ($v) => $v === null))->toBeTrue();
 
     // F-148: donut_user_id WAJIB balik sbg INT (di-cast eksplisit di controller),
@@ -758,8 +830,15 @@ test('widget Status Project: counts per FLAG F-44 + overdue + deadline, proyek d
     expect($row['task_total'])->toBe(5)
         ->and($row['todo'])->toBe(2) // 1 murni + 1 overdue
         ->and($row['progress'])->toBe(1)
+        // BUG FIX (audit Boss 2026-08-07): sebelum ini kolom 'review' TIDAK ADA
+        // sama sekali -- task $review di atas dibuat tapi TIDAK PERNAH dicek di
+        // sini, jadi lolos test walau todo+progress+selesai (4) < task_total (5).
+        // GUARD eksplisit: jumlah semua kategori WAJIB persis task_total, supaya
+        // regresi "1 kategori kelupaan" seperti ini ketahuan lagi ke depannya.
+        ->and($row['review'])->toBe(1)
         ->and($row['selesai'])->toBe(1)
-        ->and($row['overdue'])->toBe(1);
+        ->and($row['overdue'])->toBe(1)
+        ->and($row['todo'] + $row['progress'] + $row['review'] + $row['selesai'])->toBe($row['task_total']);
     // F-72: due_date (cast 'date') diserialisasi WIB (SerializesDatesInAppTimezone),
     // BUKAN UTC -- cek prefiks tanggal, bukan string ISO persis (offset boleh beda
     // representasi selama tanggal kalendernya benar).

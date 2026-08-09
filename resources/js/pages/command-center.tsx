@@ -48,9 +48,9 @@ import { classifyWorkload } from '@/lib/dashboard-status';
 import { formatJamPair, shiftMonth } from '@/lib/command-center-format';
 import { PRIORITY_QUADRANT_COLOR } from '@/lib/priority-quadrant';
 import AppLayout from '@/layouts/app-layout';
-import { type BreadcrumbItem } from '@/types';
-import { Head, Link, router } from '@inertiajs/react';
-import { AlertTriangle, Briefcase, ChevronLeft, ChevronRight, Clock, Eye, ListTodo, PlayCircle, Star, X } from 'lucide-react';
+import { type BreadcrumbItem, type SharedData } from '@/types';
+import { Head, Link, router, usePage } from '@inertiajs/react';
+import { AlertTriangle, Briefcase, CheckCircle2, ChevronLeft, ChevronRight, Clock, Eye, ListTodo, PlayCircle, Star, X } from 'lucide-react';
 import { useEffect, useState } from 'react';
 
 interface SummaryCards {
@@ -58,6 +58,8 @@ interface SummaryCards {
     todo: number;
     in_progress: number;
     review: number;
+    // 2026-08-08 (permintaan Boss): kartu Tugas Selesai.
+    selesai: number;
     overdue: number;
 }
 
@@ -119,6 +121,10 @@ interface StatusProjectRow {
     task_total: number;
     todo: number;
     progress: number;
+    // BUG FIX (audit Boss 2026-08-07): kolom baru -- sebelum ini task status
+    // Review tidak masuk todo/progress/selesai manapun, hilang dari breakdown
+    // walau tetap kehitung di task_total. Lihat KONTRAK statusProjects().
+    review: number;
     selesai: number;
     overdue: number;
     due_date: string | null;
@@ -146,8 +152,6 @@ interface Filters {
     progress_from: string | null;
     progress_to: string | null;
     progress_user_id: number | null;
-    categories_from: string | null;
-    categories_to: string | null;
     categories_user_id: number | null;
     top_tasks_from: string | null;
     top_tasks_to: string | null;
@@ -175,7 +179,10 @@ interface CommandCenterProps {
     summary_cards: SummaryCards;
     donut_priority: Record<'p1' | 'p2' | 'p3' | 'p4' | 'none', number>;
     progress_distribution: { selesai: number; review: number; progress: number; todo: number };
-    task_categories: { task_type: string; total: number }[];
+    // Revisi 2026-08-07 (permintaan Boss): dulu grouped-by-task_type, sekarang
+    // daftar PER TEMPLATE -- nama, ringkasan jadwal (AE-2b), jumlah task
+    // ALL-TIME (lihat KONTRAK DashboardController::taskCategories()).
+    task_categories: { id: number; title: string; schedule_label: string; total: number }[];
     heatmap: { month: string; days: HeatmapDay[]; active_user_count: number };
     top_tasks: TopTask[];
     recent_activity: ActivityRow[];
@@ -425,6 +432,17 @@ export default function CommandCenter({
     filters,
     filter_users: filterUsers,
 }: CommandCenterProps) {
+    // BUG FIX (permintaan Boss 2026-08-07): widget "Kategori Tugas Berulang"
+    // TETAP tampil untuk SEMUA viewer (nol guard restrictedToSelf), tapi
+    // tombol Show More-nya ke route('task-templates.all') digerbangi
+    // can:task.manage (routes/admin.php:79) -- permission BEDA dari
+    // project.viewAll (dasar restrictedToSelf). Viewer dgn dashboard.view
+    // TAPI tanpa task.manage akan 403 ("mati") kalau link selalu aktif --
+    // auth.permissions dicek di sini supaya tombol itu sendiri disembunyikan
+    // utk viewer yang memang tidak akan lolos gate-nya.
+    const { auth } = usePage<SharedData>().props;
+    const canManageTaskTemplates = auth.permissions.includes('task.manage');
+
     // A10: indikator loading ringan saat navigasi bulan heatmap (Inertia visit
     // penuh me-reload seluruh props) -- MURNI UI, tidak menyentuh data.
     const [navigating, setNavigating] = useState(false);
@@ -464,7 +482,10 @@ export default function CommandCenter({
     // rentang ke KELIMA widget berbasis periode sekaligus (donut/progress/
     // kategori/top-10/recent). Heatmap & Workload sengaja TIDAK ikut (lihat
     // KONTRAK heatmap()/workload_top5 di DashboardController -- alasan F-131/F-118).
-    const RANGE_PREFIXES = ['donut', 'progress', 'categories', 'top_tasks', 'activity'] as const;
+    // Revisi 2026-08-07: 'categories' dicabut dari broadcast rentang global --
+    // widget itu sekarang all-time (nol filter tanggal), lihat komentar widget
+    // "Kategori Tugas Berulang" di bawah.
+    const RANGE_PREFIXES = ['donut', 'progress', 'top_tasks', 'activity'] as const;
     const applyGlobalRange = (range: { from: string; to: string }) => {
         const patch: Record<string, string | number | null> = {};
         RANGE_PREFIXES.forEach((p) => {
@@ -480,7 +501,7 @@ export default function CommandCenter({
     // §12.5: sort widget Status Project MURNI client-side -- backend sudah
     // kirim top-5 (task_total DESC), klik header cuma re-urut 5 baris yang
     // SAMA (bukan fetch beda top-5 per kolom, nol query tambahan).
-    type StatusProjectSortKey = 'name' | 'task_total' | 'todo' | 'progress' | 'selesai' | 'overdue' | 'due_date';
+    type StatusProjectSortKey = 'name' | 'task_total' | 'todo' | 'progress' | 'review' | 'selesai' | 'overdue' | 'due_date';
     const [statusProjectSort, setStatusProjectSort] = useState<{ key: StatusProjectSortKey; dir: 'asc' | 'desc' }>({
         key: 'task_total',
         dir: 'desc',
@@ -645,10 +666,11 @@ export default function CommandCenter({
                     </div>
                 </div>
 
-                {/* A2: 5 kartu ringkas -- statis (nol klik-filter, keputusan Boss
+                {/* A2: 6 kartu ringkas -- statis (nol klik-filter, keputusan Boss
                     2026-07-29: halaman "Semua Tugas" lintas-project belum ada, DAN
-                    §12.5 tak menyebut kartu ini di daftar 7 widget berfilter). */}
-                <div className="grid grid-cols-2 gap-3 md:grid-cols-5">
+                    §12.5 tak menyebut kartu ini di daftar 7 widget berfilter).
+                    Kartu "Selesai" ditambah 2026-08-08 (permintaan Boss). */}
+                <div className="grid grid-cols-2 gap-3 md:grid-cols-3 lg:grid-cols-6">
                     <Card>
                         <CardHeader className="flex flex-row items-center justify-between space-y-0 p-4 pb-2">
                             <CardTitle className="text-sm font-medium text-muted-foreground">{scopeLabel('Beban Harian')}</CardTitle>
@@ -678,6 +700,13 @@ export default function CommandCenter({
                             <Eye className="h-4 w-4 text-muted-foreground" />
                         </CardHeader>
                         <CardContent className="p-4 pt-0 text-2xl font-semibold">{cards.review}</CardContent>
+                    </Card>
+                    <Card>
+                        <CardHeader className="flex flex-row items-center justify-between space-y-0 p-4 pb-2">
+                            <CardTitle className="text-sm font-medium text-muted-foreground">{scopeLabel('Selesai')}</CardTitle>
+                            <CheckCircle2 className="h-4 w-4 text-muted-foreground" />
+                        </CardHeader>
+                        <CardContent className="p-4 pt-0 text-2xl font-semibold">{cards.selesai}</CardContent>
                     </Card>
                     <Card>
                         <CardHeader className="flex flex-row items-center justify-between space-y-0 p-4 pb-2">
@@ -778,32 +807,42 @@ export default function CommandCenter({
                         </CardContent>
                     </Card>
 
-                    {/* A5: kategori tugas */}
+                    {/* A5: kategori tugas berulang -- Revisi 2026-08-07 (permintaan Boss,
+                    iterasi ke-2): bukan lagi breakdown per task_type, tapi DAFTAR PER
+                    TEMPLATE (nama, ringkasan jadwal, jumlah task ALL-TIME dari template
+                    itu -- lihat KONTRAK DashboardController::taskCategories()). "Jumlah"
+                    SENGAJA tidak ikut filter periode (dikonfirmasi Boss) -- makanya
+                    UserOnlyFilter (pola SAMA heatmap F-131), bukan RangeUserFilter. */}
                     <Card>
                         <CardHeader className="flex flex-col gap-2">
-                            <CardTitle className="text-base">{scopeLabel('Kategori Tugas')}</CardTitle>
-                            <RangeUserFilter
-                                from={filters.categories_from}
-                                to={filters.categories_to}
+                            {/* Permintaan Boss: tombol Show More SEJAJAR judul widget -- pola
+                            SAMA widget Status Project (flex-row justify-between), Link ke
+                            halaman listing penuh (BUKAN expand/collapse client-side). */}
+                            <div className="flex flex-row items-center justify-between">
+                                <CardTitle className="text-base">{scopeLabel('Kategori Tugas Berulang')}</CardTitle>
+                                {canManageTaskTemplates && (
+                                    <Button variant="outline" size="sm" asChild>
+                                        <Link href={route('task-templates.all')}>Show More →</Link>
+                                    </Button>
+                                )}
+                            </div>
+                            <UserOnlyFilter
                                 userId={filters.categories_user_id}
                                 users={filterUsers}
-                                onChange={(patch) =>
-                                    applyFilters({
-                                        ...(patch.from !== undefined && { categories_from: patch.from }),
-                                        ...(patch.to !== undefined && { categories_to: patch.to }),
-                                        ...(patch.user_id !== undefined && { categories_user_id: patch.user_id }),
-                                    })
-                                }
+                                onChange={(userId) => applyFilters({ categories_user_id: userId })}
                             />
                         </CardHeader>
                         <CardContent>
                             {categories.length === 0 ? (
-                                <p className="text-sm text-muted-foreground">Belum ada task.</p>
+                                <p className="text-sm text-muted-foreground">Belum ada tugas berulang.</p>
                             ) : (
                                 <ul className="flex flex-col gap-2 text-sm">
                                     {categories.map((c) => (
-                                        <li key={c.task_type} className="flex items-center justify-between">
-                                            <span className="capitalize">{c.task_type}</span>
+                                        <li key={c.id} className="flex items-center justify-between gap-3">
+                                            <div className="flex flex-col">
+                                                <span className="font-medium">{c.title}</span>
+                                                <span className="text-xs text-muted-foreground">{c.schedule_label}</span>
+                                            </div>
                                             <Badge variant="secondary">{c.total}</Badge>
                                         </li>
                                     ))}
@@ -816,8 +855,14 @@ export default function CommandCenter({
                 <div className="grid grid-cols-1 gap-4 lg:grid-cols-2">
                     {/* F-52/F-121: dashboard 3-angka lama DIPERTAHANKAN sebagai section "Beban
         Tim" -- Permintaan Boss: top-5 idle terbanyak + sort per kolom + modal
-        "Detail & filter" (menggantikan Link ke halaman dashboard lama). */}
-                    <Card>
+        "Detail & filter" (menggantikan Link ke halaman dashboard lama).
+        Perbaikan layout (permintaan Boss): grid ini 2 kolom (lg:grid-cols-2)
+        berisi kartu ini + "Status Project" -- Status Project disembunyikan
+        TOTAL untuk viewer terbatas (restrictedToSelf, lihat komentar di
+        bawah), jadi kartu ini SENDIRIAN di grid dan perlu melebar penuh
+        (lg:col-span-2) supaya tidak nongkrong di setengah lebar dengan ruang
+        kosong di sebelahnya. */}
+                    <Card className={restrictedToSelf ? 'lg:col-span-2' : undefined}>
                         <CardHeader className="flex flex-row items-center justify-between space-y-0">
                             <CardTitle className="text-base">{scopeLabel('Team Work Load')} — {team.date}</CardTitle>
                             <Button type="button" variant="outline" size="sm" onClick={() => setWorkloadModalOpen(true)}>
@@ -993,6 +1038,7 @@ export default function CommandCenter({
                                                 ['task_total', 'Task'],
                                                 ['todo', 'Todo'],
                                                 ['progress', 'Progress'],
+                                                ['review', 'Review'],
                                                 ['selesai', 'Selesai'],
                                                 ['overdue', 'Overdue'],
                                                 ['due_date', 'Deadline'],
@@ -1018,6 +1064,7 @@ export default function CommandCenter({
                                             <td className="p-3">{row.task_total}</td>
                                             <td className="p-3">{row.todo}</td>
                                             <td className="p-3">{row.progress}</td>
+                                            <td className="p-3">{row.review}</td>
                                             <td className="p-3">{row.selesai}</td>
                                             <td className="p-3">
                                                 {row.overdue > 0 ? (
@@ -1032,7 +1079,7 @@ export default function CommandCenter({
 
                                     {sortedStatusProjects.length === 0 && (
                                         <tr>
-                                            <td colSpan={7} className="p-6 text-center text-muted-foreground">
+                                            <td colSpan={8} className="p-6 text-center text-muted-foreground">
                                                 Belum ada proyek aktif.
                                             </td>
                                         </tr>
@@ -1400,9 +1447,18 @@ export default function CommandCenter({
                                 </div>
                             )}
 
+                            {/* BUG FIX (permintaan Boss 2026-08-07): tombol ini SELALU ke
+                            route('tasks.all') ("Semua Tugas") -- route itu digerbangi
+                            can:project.viewAll (routes/admin.php:72). Widget Top-10 ini
+                            TETAP tampil untuk viewer TERBATAS (restrictedToSelf, isinya
+                            "data milik saya"), tapi viewer itu TIDAK PUNYA project.viewAll
+                            -- klik tombol jadi 403 ("mati"). Sekarang diarahkan ke
+                            route('tasks.my') ("Tugas Saya", nol permission khusus, auth
+                            saja) utk viewer terbatas, konsisten dgn scope data yang
+                            memang sudah ditampilkan widget ini ke mereka. */}
                             <div className="mt-4 flex justify-center">
                                 <Button type="button" variant="outline" size="sm" asChild>
-                                    <Link href={route('tasks.all')}>Show more tugas →</Link>
+                                    <Link href={restrictedToSelf ? route('tasks.my') : route('tasks.all')}>Show more tugas →</Link>
                                 </Button>
                             </div>
                         </CardContent>
