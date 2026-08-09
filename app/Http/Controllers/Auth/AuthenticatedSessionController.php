@@ -31,6 +31,12 @@ class AuthenticatedSessionController extends Controller
      * Hari-5 §D5 baru mengimplementasikannya. intended() tetap diprioritaskan —
      * kalau user coba akses URL spesifik sebelum diarahkan ke login, redirect_to
      * situ dulu, bukan ke landing default.
+     *
+     * BUG FIX (permintaan Boss 2026-08-07): landing 'dashboard' arahnya ke
+     * DashboardController::index() -- dashboard 3-angka LAMA (v1.2 H4 sudah
+     * memindahkan nav sidebar ke Command Center, tapi redirect login ini
+     * kelewat). Sekarang ke 'dashboard.overview' (Command Center) supaya
+     * konsisten dengan nav sidebar (app-sidebar.tsx:58).
      */
     public function store(LoginRequest $request): RedirectResponse
     {
@@ -41,7 +47,7 @@ class AuthenticatedSessionController extends Controller
         // F-90/v0.8 H3: dashboard.view (bukan project.viewAll lagi, F-99 rekonsiliasi
         // H2->H3) — sekarang permission itu ADA dan persis menjawab "boleh landing di
         // Dashboard", jadi dipakai langsung, bukan proxy permission lain.
-        $landing = $request->user()->can('dashboard.view') ? 'dashboard' : 'tasks.my';
+        $landing = $request->user()->can('dashboard.view') ? 'dashboard.overview' : 'tasks.my';
 
         return redirect()->intended(route($landing, absolute: false));
     }

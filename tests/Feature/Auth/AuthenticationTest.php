@@ -24,7 +24,13 @@ test('a member authenticating from the login screen lands on My Tasks', function
     $response->assertRedirect(route('tasks.my', absolute: false));
 });
 
-test('an admin authenticating from the login screen lands on the Dashboard', function () {
+// BUG FIX (permintaan Boss 2026-08-07): landing admin dulu ke 'dashboard'
+// (dashboard 3-angka LAMA) -- sekarang ke 'dashboard.overview' (Command
+// Center), konsisten dengan nav sidebar yang sudah pindah sejak v1.2 H4
+// (app-sidebar.tsx:58). Perilaku SENGAJA diubah, assertion diperbarui, bukan
+// ditambal (F-78) -- route 'dashboard' (lama) sendiri TETAP ada & jalan,
+// cuma bukan lagi TUJUAN landing setelah login.
+test('an admin authenticating from the login screen lands on Command Center', function () {
     $admin = User::factory()->admin()->create();
 
     $response = $this->post('/login', [
@@ -33,7 +39,7 @@ test('an admin authenticating from the login screen lands on the Dashboard', fun
     ]);
 
     $this->assertAuthenticated();
-    $response->assertRedirect(route('dashboard', absolute: false));
+    $response->assertRedirect(route('dashboard.overview', absolute: false));
 });
 
 test('users can not authenticate with invalid password', function () {

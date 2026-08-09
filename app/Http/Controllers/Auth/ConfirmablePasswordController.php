@@ -36,6 +36,10 @@ class ConfirmablePasswordController extends Controller
 
         $request->session()->put('auth.password_confirmed_at', time());
 
-        return redirect()->intended(route('dashboard', absolute: false));
+        // BUG FIX (permintaan Boss 2026-08-07): konsisten dgn AuthenticatedSessionController
+        // -- 'dashboard' (lama) -> 'dashboard.overview' (Command Center). Fallback ini
+        // JARANG kepakai (intended() biasanya sudah punya tujuan asli), tapi tetap
+        // dibetulkan supaya tidak ada jalur tersisa yang balik ke dashboard lama.
+        return redirect()->intended(route('dashboard.overview', absolute: false));
     }
 }
