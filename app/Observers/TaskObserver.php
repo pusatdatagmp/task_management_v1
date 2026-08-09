@@ -102,8 +102,12 @@ class TaskObserver
             $task->completed_at = null;
         }
 
-        // F-41: REVIEW -> work_state (mundur) = admin menolak.
-        if ($oldStatus?->is_review && $newStatus?->is_work_state) {
+        // F-41: keluar dari REVIEW tanpa disetujui = admin menolak. BUSINESS RULE
+        // (2026-08-07): sejak reject() mundur ke status ENTRY (bukan is_work_state
+        // terdekat lagi, lihat TaskTransitionService::reject()), satu-satunya jalan
+        // keluar dari is_review SELAIN approve (-> is_completed) adalah reject —
+        // makanya kondisinya "bukan is_completed", bukan "menuju is_work_state".
+        if ($oldStatus?->is_review && ! $newStatus?->is_completed) {
             $task->rejection_count++;
         }
 
@@ -136,13 +140,15 @@ class TaskObserver
         // bikin orang berhenti membaca, termasuk sinyal "lewat deadline" yang KPI
         // paling dasar). Flag saja (F-44), BUKAN nama status:
         //  - #6 : masuk is_review
-        //  - #8 : is_review -> is_work_state (ditolak)
+        //  - #8 : keluar is_review TANPA approve (ditolak) — 2026-08-07: target reject()
+        //         sekarang status ENTRY, bukan is_work_state, jadi kondisinya "bukan
+        //         is_completed" (satu-satunya jalan keluar review lain adalah approve)
         //  - #7 : masuk is_completed DENGAN approved_at terisi (approve) — approved_at
         //         sudah di-set TaskTransitionService::approve() SEBELUM update() ini,
         //         jadi sudah terbaca di titik ini, tidak perlu tunggu blok di bawah.
         $capturedByMoreSpecificTrigger =
             ($newStatus?->is_review && ! $oldStatus?->is_review)
-            || ($oldStatus?->is_review && $newStatus?->is_work_state)
+            || ($oldStatus?->is_review && ! $newStatus?->is_completed)
             || ($newStatus?->is_completed && ! $oldStatus?->is_completed && $task->approved_at);
 
         if (! $capturedByMoreSpecificTrigger) {
@@ -153,9 +159,12 @@ class TaskObserver
         // BLOK LAMA DIHAPUS (dulu buka otomatis lewat resolveSegmentWorker()).
         // Segmen SEKARANG HANYA terbuka lewat aksi eksplisit Mulai/Lanjut
         // (TaskTransitionService::start()/resume()), jadi drag ke kolom dikerjakan
-        // (F-138c) DAN reject admin (F-138d, mundur review->work_state) sekarang
-        // status SAJA, nol efek segmen — task mendarat di JEDA (F-138b, turunan
-        // dari nol segmen terbuka), assignee klik Lanjut sendiri.
+        // (F-138c) status SAJA, nol efek segmen — task mendarat di JEDA (F-138b,
+        // turunan dari nol segmen terbuka), assignee klik Lanjut sendiri.
+        // BUSINESS RULE (2026-08-07): reject admin SEKARANG mundur ke status ENTRY
+        // (bukan work_state lagi, lihat TaskTransitionService::reject()) — task
+        // mendarat di 'todo' (computeWorkState()), assignee klik MULAI lagi (bukan
+        // Lanjut) untuk buka segmen baru. Nol efek segmen di sini juga, tidak berubah.
 
         // F-41: keluar work_state (mis. submit ke REVIEW) -> tutup segmen berjalan.
         // TIDAK BERUBAH oleh H7 -- berlaku SEMUA jalur keluar work_state (dropdown,
@@ -169,7 +178,7 @@ class TaskObserver
             $this->notifyAdmins($task, TaskNotification::ENTERED_REVIEW);
         }
 
-        if ($oldStatus?->is_review && $newStatus?->is_work_state) {
+        if ($oldStatus?->is_review && ! $newStatus?->is_completed) {
             $this->logActivity($task, 'rejected', null, ['rejection_count' => $task->rejection_count]);
 
             // F-35 trigger #8: ditolak + alasan -> assignee. Alasan datang dari

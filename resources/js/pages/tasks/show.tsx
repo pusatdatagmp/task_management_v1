@@ -7,7 +7,7 @@
 // DIPANGGIL   : TaskController::show()
 // MEMANGGIL   : TaskStatusCell (ubah status lewat jalur F-45/F-28 yang sama dipakai
 //               tasks/index & my-tasks), TaskWorkActions (H7/F-132/F-138 — tombol
-//               Mulai/Hold/Lanjut/Submit, assignee-only), TaskAttachments (upload/
+//               Mulai/Jeda/Lanjut/Submit, assignee-only), TaskAttachments (upload/
 //               download/hapus lampiran output, v0.8 H5/F-49), TaskComments
 //               (diskusi+mention, v1.0 H3/F-113), Card "Riwayat" (activity_logs
 //               read-only, v1.0 H4/F-95/F-106 — label SUDAH manusiawi dari server,
@@ -17,7 +17,7 @@
 //               statuses[]. F-90: TIDAK ADA lagi prop 'isAdmin' — permission dibaca
 //               dari auth.permissions (shared global, HandleInertiaRequests).
 // DATA KELUAR : navigasi edit/hapus (task.manage), aksi ubah status (TaskStatusCell),
-//               aksi Mulai/Hold/Lanjut/Submit (TaskWorkActions, H7)
+//               aksi Mulai/Jeda/Lanjut/Submit (TaskWorkActions, H7)
 // RISIKO      : description_html dirender via dangerouslySetInnerHTML — AMAN karena
 //               backend (TaskController::show()) sudah sanitasi pakai Symfony
 //               HtmlSanitizer sebelum sampai ke props ini. JANGAN render field HTML
@@ -134,7 +134,7 @@ function timeAgo(isoDate: string): string {
 export default function TaskShow({ project, task, statuses, projectMembers }: TaskShowProps) {
     const { auth } = usePage<SharedData>().props;
     const can = (permission: string) => auth.permissions.includes(permission);
-    // H7/F-95: tombol Mulai/Hold/Lanjut/Submit HANYA assignee -- dihitung dari
+    // H7/F-95: tombol Mulai/Jeda/Lanjut/Submit HANYA assignee -- dihitung dari
     // daftar assignee yang SUDAH dikirim server, nol permission baru (F-95).
     const isAssignee = task.assignees.some((a) => a.id === auth.user.id);
 
@@ -293,7 +293,7 @@ export default function TaskShow({ project, task, statuses, projectMembers }: Ta
                                     canManageTask={can('task.manage')}
                                     canApprove={can('task.approve')}
                                 />
-                                {/* H7/F-132/F-138: Mulai/Hold/Lanjut/Submit -- assignee-only,
+                                {/* H7/F-132/F-138: Mulai/Jeda/Lanjut/Submit -- assignee-only,
                                     tombol berbeda per work_state, nol render kalau bukan assignee
                                     atau status sudah review/selesai (komponen sendiri yang jaga). */}
                                 <TaskWorkActions

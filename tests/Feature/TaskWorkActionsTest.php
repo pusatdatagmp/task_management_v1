@@ -138,10 +138,15 @@ test('D2: drag/dropdown ke dikerjakan = status SAJA, NOL segmen (F-138c)', funct
     expect($task->computeWorkState())->toBe('dikerjakan-jeda'); // F-138b: turunan, nol segmen = jeda
 });
 
-test('D3: reject -> JEDA (nol segmen), Lanjut yang baru membuka segmen (F-138d)', function () {
+test('D3: reject -> ENTRY (nol segmen), MULAI yang baru membuka segmen (revisi 2026-08-07)', function () {
+    // F-78: perilaku SENGAJA diubah (keputusan Boss 2026-08-07) -- reject dulu
+    // mundur ke is_work_state terdekat (assertion lama: is_work_state===true,
+    // 'dikerjakan-jeda', assignee klik Lanjut). Sekarang mundur ke status ENTRY
+    // (flag semua false) -- assignee klik MULAI lagi, bukan Lanjut.
     $admin = User::factory()->admin()->create();
     $member = User::factory()->create(['organization_id' => $admin->organization_id]);
     $project = createWorkActionsProject($admin, [$member->id]);
+    $todo = TaskStatus::where('project_id', $project->id)->where('position', 0)->firstOrFail();
     $review = TaskStatus::where('project_id', $project->id)->where('is_review', true)->firstOrFail();
     // Task di review TANPA segmen terbuka -- state alami hasil Submit (sudah ditutup).
     $task = createWorkActionsTask($project, $review, $admin, [$member->id]);
@@ -151,12 +156,12 @@ test('D3: reject -> JEDA (nol segmen), Lanjut yang baru membuka segmen (F-138d)'
     ])->assertRedirect();
 
     $task->refresh();
-    expect($task->taskStatus->is_work_state)->toBeTrue();
-    expect($task->timeSegments()->whereNull('ended_at')->count())->toBe(0); // JEDA, bukan auto-buka
-    expect($task->computeWorkState())->toBe('dikerjakan-jeda');
+    expect($task->task_status_id)->toBe($todo->id);
+    expect($task->timeSegments()->whereNull('ended_at')->count())->toBe(0); // ENTRY, bukan auto-buka
+    expect($task->computeWorkState())->toBe('todo');
 
-    // Assignee klik Lanjut sendiri -> BARU segmen baru terbuka.
-    $this->actingAs($member)->patch(route('tasks.resume', [$project, $task]))->assertRedirect();
+    // Assignee klik MULAI sendiri (bukan Lanjut) -> BARU segmen baru terbuka.
+    $this->actingAs($member)->patch(route('tasks.start', [$project, $task]))->assertRedirect();
     $segment = $task->timeSegments()->whereNull('ended_at')->firstOrFail();
     expect($segment->user_id)->toBe($member->id);
 });

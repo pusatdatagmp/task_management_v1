@@ -109,13 +109,15 @@ test('IN_PROGRESS to REVIEW is allowed and closes the open time segment', functi
     expect($task->timeSegments()->whereNull('ended_at')->count())->toBe(0);
 });
 
-test('rejecting a task in review increments rejection_count and leaves it PAUSED, zero open segments (H7/F-138d, F-78 -- dulu auto-buka)', function () {
-    // F-78: perilaku SENGAJA diubah H7 (F-138d) -- reject dulu OTOMATIS membuka
-    // segmen baru (assertion lama: count===1). Sekarang reject = JEDA murni (nol
-    // segmen terbuka, turunan F-138b) -- assignee WAJIB klik Lanjut sendiri
-    // (diuji penuh di TaskWorkActionsTest::D3).
+test('rejecting a task in review increments rejection_count and sends it back to ENTRY status, zero open segments (2026-08-07 revisi, F-78 -- dulu ke is_work_state)', function () {
+    // F-78: perilaku SENGAJA diubah (keputusan Boss 2026-08-07) -- reject dulu
+    // mundur ke status is_work_state TERDEKAT (assertion lama: is_work_state===true,
+    // computeWorkState()==='dikerjakan-jeda', assignee klik Lanjut). Sekarang mundur
+    // ke status ENTRY (flag semua false, posisi terendah) -- assignee WAJIB klik
+    // MULAI lagi, bukan Lanjut (diuji penuh di TaskWorkActionsTest::D3).
     $admin = User::factory()->admin()->create();
     $project = createTransitionProject($admin);
+    $todo = TaskStatus::where('project_id', $project->id)->where('position', 0)->firstOrFail();
     $review = TaskStatus::where('project_id', $project->id)->where('is_review', true)->firstOrFail();
     $task = createTransitionTask($project, $review, $admin);
     $task->assignees()->sync([$admin->id]);
@@ -127,9 +129,9 @@ test('rejecting a task in review increments rejection_count and leaves it PAUSED
     $response->assertRedirect(route('tasks.index', $project));
     $task->refresh();
     expect($task->rejection_count)->toBe(1)
-        ->and($task->taskStatus->is_work_state)->toBeTrue()
+        ->and($task->task_status_id)->toBe($todo->id)
         ->and($task->timeSegments()->whereNull('ended_at')->count())->toBe(0)
-        ->and($task->computeWorkState())->toBe('dikerjakan-jeda');
+        ->and($task->computeWorkState())->toBe('todo');
 });
 
 test('approving a task in review freezes actual_minutes and fills completed_at (F-39)', function () {
@@ -224,11 +226,15 @@ test('member cannot change the status of a task assigned to someone else', funct
  * actual_minutes HARUS = jumlah SEMUA segmen (30 + 45 = 75), dihitung dengan cap
  * jendela kerja (F-57) — jendela di test ini dibuat 24 jam penuh supaya assert
  * murni menguji AKUMULASI, bukan cap jendela (itu sudah diuji WorkScheduleTest/
- * BusinessHoursCalculator terpisah).
+ * BusinessHoursCalculator terpisah). Skenario yang sama (2 kali submit: T0+30m
+ * lalu T0+75m setelah reject+rework) SEKALIAN membuktikan submitted_at (2026-08-07)
+ * ikut kontrak "submit PERTAMA" — assertion akhir cek nilainya TETAP T0+30m,
+ * BUKAN T0+75m walau submit kedua yang akhirnya di-approve.
  *
  * F-78 (H7/F-138): "mulai kerja" & "reject->kerja lagi" DULU lewat dropdown
- * (buka segmen otomatis). SEKARANG lewat aksi eksplisit tasks.start/tasks.resume
- * (TaskTransitionService::start()/resume()) — assertion akhir (75 menit, 2
+ * (buka segmen otomatis). SEKARANG lewat aksi eksplisit tasks.start (revisi
+ * 2026-08-07: reject mundur ke status ENTRY, jadi resubmit juga lewat tasks.start
+ * lagi, BUKAN tasks.resume seperti sebelumnya) — assertion akhir (75 menit, 2
  * segmen, status done) TETAP IDENTIK, cuma mekanisme buka segmennya berubah.
  */
 test('actual_minutes accumulates across multiple work/reject/rework segments end-to-end (F3)', function () {
@@ -265,14 +271,14 @@ test('actual_minutes accumulates across multiple work/reject/rework segments end
     $this->travelTo($anchor->copy()->addMinutes(30));
     $this->actingAs($member)->patch(route('tasks.submit', [$project, $task]))->assertSessionDoesntHaveErrors();
 
-    // Admin tolak -> rejection_count++, JEDA (H7/F-138d, nol segmen -- GANTI
-    // asumsi lama "segmen 2 otomatis terbuka").
+    // Admin tolak -> rejection_count++, mundur ke ENTRY (revisi 2026-08-07, nol
+    // segmen -- GANTI asumsi lama "segmen 2 otomatis terbuka").
     $this->actingAs($admin)->patch(route('tasks.reject', [$project, $task]), [
         'reason' => 'Revisi diperlukan.',
     ])->assertRedirect();
 
-    // Member klik Lanjut -> BARU segmen 2 dibuka (H7).
-    $this->actingAs($member)->patch(route('tasks.resume', [$project, $task]))->assertSessionDoesntHaveErrors();
+    // Task balik ke ENTRY -> member klik MULAI lagi (bukan Lanjut) -> BARU segmen 2 dibuka.
+    $this->actingAs($member)->patch(route('tasks.start', [$project, $task]))->assertSessionDoesntHaveErrors();
 
     // T0+30m+45m: member klik Submit lagi -> segmen 2 ditutup (45 menit).
     $this->travelTo($anchor->copy()->addMinutes(30)->addMinutes(45));
@@ -289,5 +295,6 @@ test('actual_minutes accumulates across multiple work/reject/rework segments end
         ->and($task->timeSegments()->count())->toBe(2)
         ->and($task->timeSegments()->whereNull('ended_at')->count())->toBe(0)
         ->and($task->task_status_id)->toBe($done->id)
+        ->and($task->submitted_at)->toEqual($anchor->copy()->addMinutes(30))
         ->and($task->actual_minutes)->toBe(75);
 });

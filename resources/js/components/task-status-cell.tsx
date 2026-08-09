@@ -21,7 +21,7 @@
 // ==========================================================
 
 import { Button } from '@/components/ui/button';
-import { confirmAction, promptInput, showError } from '@/lib/swal';
+import { promptInput, showError } from '@/lib/swal';
 import { router } from '@inertiajs/react';
 
 export interface TaskStatusOption {
@@ -86,8 +86,24 @@ export default function TaskStatusCell({ projectId, task, statuses, currentUserI
     };
 
     const reject = async () => {
-        if (!(await confirmAction(`Tolak task "${task.title}"? Task kembali ke status kerja, rejection_count bertambah.`, { danger: true }))) return;
-        router.patch(route('tasks.reject', [projectId, task.id]), {}, { preserveScroll: true });
+        // BUG FIX (2026-08-08): SEBELUM ini dialog cuma confirmAction (ya/tidak) lalu
+        // kirim body KOSONG -- backend (TaskController::reject()) WAJIB field `reason`
+        // (F-35 trigger #8), jadi request SELALU gagal validasi 422 SENYAP (nol onError
+        // di sini sebelumnya) -- reject tidak pernah benar-benar jalan lewat UI mana pun.
+        // Pola promptInput() sama persis dengan extensions/index.tsx::reject().
+        const reason = await promptInput(`Tolak task "${task.title}"? Task kembali ke status entri, rejection_count bertambah.`, {
+            title: 'Tolak task',
+            inputType: 'textarea',
+            placeholder: 'Alasan penolakan (wajib diisi)...',
+            validator: (value) => (!value.trim() ? 'Alasan wajib diisi.' : null),
+        });
+        if (!reason) return;
+
+        router.patch(
+            route('tasks.reject', [projectId, task.id]),
+            { reason },
+            { preserveScroll: true, onError: (errors) => showError(errors.reason ?? 'Reject gagal.') },
+        );
     };
 
     if (task.task_status.is_review) {
