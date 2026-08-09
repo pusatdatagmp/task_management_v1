@@ -20,10 +20,11 @@
  *               F-41 SEKARANG HANYA menutup segmen saat KELUAR work_state, TIDAK
  *               PERNAH membuka — lihat TaskObserver), TaskTimeSegment (start/hold/
  *               resume BUKA/TUTUP segmen eksplisit DI SINI, bukan observer),
- *               Task::checklistItems() (F-127 gate)
+ *               Task::checklistItems() (F-127 gate), KpiStrategyRegistry (v1.4
+ *               KPI-1, F-166/F-167 — freeze kpi_score DI approve(), lihat KONTRAK method)
  * DATA MASUK  : Task, TaskStatus tujuan, User pelaku (dari controller, sudah lolos FormRequest)
- * DATA KELUAR : tasks.task_status_id (+ approved_at/approved_by/quality_rating saat
- *               approve), task_time_segments.started_at/ended_at (F-138, start/hold/resume)
+ * DATA KELUAR : tasks.task_status_id (+ approved_at/approved_by/quality_rating/kpi_score
+ *               saat approve), task_time_segments.started_at/ended_at (F-138, start/hold/resume)
  * RISIKO      : SUMBER : F-45 — maju cuma boleh position+1, mundur bebas KECUALI dari
  *               is_completed (revisi 2026-08-06 item 3 — task Selesai terkunci permanen,
  *               nol jalan keluar, cegah retroaktif F-39). F-28 — status
@@ -48,11 +49,16 @@ use App\Models\Task;
 use App\Models\TaskStatus;
 use App\Models\TaskTimeSegment;
 use App\Models\User;
+use App\Services\Kpi\KpiStrategyRegistry;
 use Illuminate\Support\Facades\DB;
 use Illuminate\Validation\ValidationException;
 
 class TaskTransitionService
 {
+    // F-166: default instance (pola sama AnchorStrategyGuard) — TIDAK butuh
+    // container binding khusus, registry ini stateless.
+    public function __construct(private readonly KpiStrategyRegistry $kpiRegistry = new KpiStrategyRegistry) {}
+
     /**
      * KONTRAK: transisi status "biasa" — dipakai member submit kerja (TODO->IN_PROGRESS->REVIEW)
      * maupun admin menggeser task di luar konteks review. TIDAK BISA dipakai untuk
@@ -313,9 +319,20 @@ class TaskTransitionService
     /**
      * KONTRAK: approve — admin only (F-28). Task WAJIB sedang di status is_review.
      * Pindah ke status is_completed project ini (tepat 1, dijamin F-74), isi
-     * approved_at/approved_by/quality_rating DALAM SATU update() supaya TaskObserver
-     * (yang cek $task->approved_at setelah save untuk log event 'approved') melihat
-     * nilai yang benar, dan actual_minutes ikut FREEZE (F-39) di query yang sama.
+     * approved_at/approved_by/quality_rating/kpi_score DALAM SATU update() supaya
+     * TaskObserver (yang cek $task->approved_at setelah save untuk log event
+     * 'approved') melihat nilai yang benar, dan actual_minutes ikut FREEZE (F-39)
+     * di query yang sama.
+     *
+     * BUSINESS RULE (v1.4 KPI-1, F-166/F-167): kpi_score dihitung DI SINI (bukan
+     * observer) via strategy aktif organisasi ($organization->kpi_strategy), pakai
+     * config poin SAAT INI (kpi_points_ontime/late) — ganti config SETELAH approve
+     * TIDAK menulis ulang skor task lama (tak retroaktif, pola F-39). Master toggle
+     * kpi_enabled=false -> kpi_score tetap null (fitur "tinggal disable").
+     * $task->approved_at di-assign KE ATTRIBUTE dulu (bukan cuma array update())
+     * SEBELUM strategy dipanggil, supaya Task::isOnTime() (F-47/F-109 — dipanggil
+     * strategy) punya fallback approved_at yang benar untuk task yang masuk review
+     * lewat dropdown/drag (submitted_at masih null, belum pernah klik Submit H7).
      */
     public function approve(Task $task, User $admin, int $qualityRating): void
     {
@@ -337,20 +354,39 @@ class TaskTransitionService
             ]);
         }
 
+        $approvedAt = now();
+        $task->approved_at = $approvedAt;
+
+        // F-85: preload eksplisit -- Model::preventLazyLoading() aktif di non-produksi,
+        // SimpleTimelinessStrategy baca $task->organization->kpi_* langsung.
+        $task->loadMissing('organization');
+
+        $kpiScore = $task->organization->kpi_enabled
+            ? $this->kpiRegistry->resolve($task->organization->kpi_strategy)->score($task)
+            : null;
+
         $task->update([
             'task_status_id' => $completedStatus->id,
-            'approved_at' => now(),
+            'approved_at' => $approvedAt,
             'approved_by' => $admin->id,
             'quality_rating' => $qualityRating,
+            'kpi_score' => $kpiScore,
         ]);
     }
 
     /**
      * KONTRAK: reject — admin only (F-28). Task WAJIB sedang di status is_review.
-     * Mundur ke status is_work_state TERDEKAT (position tertinggi yang masih di
-     * bawah posisi review) — bukan hardcode nama status (F-44). rejection_count++
-     * dan segmen kerja baru dibuka otomatis oleh TaskObserver begitu task_status_id
-     * berubah dari is_review ke is_work_state.
+     * BUSINESS RULE (2026-08-07, keputusan Boss — GANTI perilaku lama): mundur ke
+     * status ENTRY project ini (is_work_state=false, is_review=false,
+     * is_completed=false, posisi terendah) — BUKAN status is_work_state terdekat
+     * seperti sebelumnya. Assignee WAJIB klik "Mulai" lagi (bukan "Lanjut") untuk
+     * lanjut kerja — computeWorkState() otomatis balik 'todo' begitu flag semua
+     * false, tombol yang tampil ikut berubah sendiri (task-work-actions.tsx),
+     * NOL logic baru di frontend. Flag-based (F-44), bukan hardcode nama "TODO".
+     * rejection_count++ ditangani TaskObserver (kondisinya ikut disesuaikan —
+     * lihat TaskObserver header). Segmen TIDAK dibuka otomatis di sini maupun
+     * observer (H7/F-138 — tidak berubah oleh revisi ini) — assignee buka segmen
+     * baru sendiri lewat start().
      *
      * @param  string  $reason  F-35 trigger #8 — WAJIB diisi admin, dikirim ke
      *                          TaskObserver lewat properti transient (BUKAN kolom
@@ -367,19 +403,20 @@ class TaskTransitionService
             ]);
         }
 
-        $workStateStatus = TaskStatus::where('project_id', $task->project_id)
-            ->where('is_work_state', true)
-            ->where('position', '<', $currentStatus->position)
-            ->orderByDesc('position')
+        $entryStatus = TaskStatus::where('project_id', $task->project_id)
+            ->where('is_work_state', false)
+            ->where('is_review', false)
+            ->where('is_completed', false)
+            ->orderBy('position')
             ->first();
 
-        if (! $workStateStatus) {
+        if (! $entryStatus) {
             throw ValidationException::withMessages([
-                'task_status_id' => 'Tidak ada status "sedang dikerjakan" di bawah posisi review — tidak bisa menolak task ini.',
+                'task_status_id' => 'Project ini tidak punya status entri (F-19) — tidak bisa menolak task ini.',
             ]);
         }
 
         $task->rejectionReasonTransient = $reason;
-        $task->update(['task_status_id' => $workStateStatus->id]);
+        $task->update(['task_status_id' => $entryStatus->id]);
     }
 }

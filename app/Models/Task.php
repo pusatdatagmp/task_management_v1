@@ -69,6 +69,9 @@ class Task extends Model
         'actual_minutes',
         'quality_rating',
         'rejection_count',
+        // F-166/F-167 (v1.4 KPI-1): skor ketepatan-waktu per-task, dibekukan
+        // TaskTransitionService::approve() lewat KpiScoringStrategy aktif.
+        'kpi_score',
         'due_date',
         'original_due_date',
         'started_at',
@@ -187,6 +190,32 @@ class Task extends Model
                 $schedules,
                 $holidays,
             ));
+    }
+
+    /**
+     * KONTRAK (F-47/F-109): SATU-SATUNYA penentu on-time vs telat — dipakai
+     * LeaderboardService::forPeriod() (kolom konteks on_time_percent) DAN
+     * SimpleTimelinessStrategy (v1.4 KPI-1, freeze saat approve). Diekstrak
+     * dari LeaderboardService (sumber asli) supaya KPI-1 bisa reuse tanpa
+     * membuat penentu on-time kedua (F-109) — JANGAN duplikasi logika ini
+     * di tempat lain, tambah pemanggil baru ke method ini.
+     *
+     * Tenggat ASLI = original_due_date KALAU task pernah diperpanjang, else
+     * due_date itu sendiri (F-47 — coalesce WAJIB, tanpa ini task normal
+     * salah dibandingkan ke null). Basis telat = submitted_at (submit
+     * PERTAMA member, keputusan Boss 2026-08-07) — approved_at HANYA
+     * fallback untuk task lama pra-migrasi kolom submitted_at.
+     *
+     * RISIKO: pemanggil WAJIB pastikan submitted_at ATAU approved_at sudah
+     * terisi (di memori atau DB) sebelum panggil method ini — kalau
+     * keduanya null, lessThanOrEqualTo() meledak (call method di null).
+     */
+    public function isOnTime(): bool
+    {
+        $originalDeadline = $this->original_due_date ?? $this->due_date;
+        $lateBasis = $this->submitted_at ?? $this->approved_at;
+
+        return $lateBasis->lessThanOrEqualTo($originalDeadline);
     }
 
     /**

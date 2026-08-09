@@ -11,16 +11,18 @@
  *               (F-62 — konteks bukan hukuman tersembunyi). Skor di sini PROVISIONAL
  *               (F-2) — kalibrasi final v1.5 dari data nyata, bukan tugas service ini.
  * DIPANGGIL   : LeaderboardController::index()
- * MEMANGGIL   : Task, User (Collection, sudah difilter organisasi oleh caller — F-15)
+ * MEMANGGIL   : Task (isOnTime(), F-109), User (Collection, sudah difilter organisasi
+ *               oleh caller — F-15)
  * DATA MASUK  : Collection<User> (satu organisasi), rentang tanggal $from/$to (approved_at)
  * DATA KELUAR : array per user: point/rating/revisi/ditolak/on_time_percent (angka
  *               MENTAH — pemetaan rupiah/skor-kinerja lain TIDAK PERNAH terjadi di
  *               sini atau di mana pun, F-4/F-134)
- * RISIKO      : SUMBER F-47 — `original_due_date` HANYA terisi kalau task pernah
- *               diperpanjang (lihat DeadlineExtensionObserver::updated()). On-time
- *               WAJIB bandingkan ke `original_due_date ?? due_date`, BUKAN langsung
- *               `original_due_date` (yang null untuk task tanpa perpanjangan) —
- *               salah di sini bikin task tanpa perpanjangan selalu dianggap telat.
+ * RISIKO      : SUMBER on-time — logika (F-47 coalesce original_due_date??due_date,
+ *               2026-08-07 basis submitted_at??approved_at) SEKARANG hidup di
+ *               Task::isOnTime() (diekstrak v1.4 KPI-1, F-109) supaya SimpleTimelinessStrategy
+ *               bisa reuse PERSIS logika yang sama saat freeze kpi_score di approve() —
+ *               JANGAN tulis ulang logika on-time inline di sini lagi, itu bikin
+ *               penentu on-time kedua yang bisa drift dari yang dipakai KPI.
  * ==========================================================
  */
 
@@ -71,12 +73,12 @@ class LeaderboardService
         }
 
         foreach ($tasks as $task) {
-            // F-47: "tenggat asli" = original_due_date KALAU task pernah
-            // diperpanjang, else due_date (tak pernah digeser -> due_date ITU
-            // sendiri sudah "asli"). Coalesce WAJIB -- tanpa ini task normal
-            // (original_due_date null) akan salah dibandingkan ke null.
-            $originalDeadline = $task->original_due_date ?? $task->due_date;
-            $onTime = $task->approved_at->lessThanOrEqualTo($originalDeadline);
+            // F-47/F-109: on-time diekstrak ke Task::isOnTime() (v1.4 KPI-1) supaya
+            // SimpleTimelinessStrategy bisa reuse persis logika yang sama saat freeze
+            // di approve() -- SATU sumber, nol penentu on-time kedua. Perilaku method
+            // ini IDENTIK dengan inline lama (original_due_date??due_date,
+            // submitted_at??approved_at), lihat header Task::isOnTime().
+            $onTime = $task->isOnTime();
 
             foreach ($task->assignees as $assignee) {
                 if (! in_array($assignee->id, $userIds, true)) {

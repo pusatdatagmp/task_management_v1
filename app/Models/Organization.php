@@ -42,12 +42,22 @@ class Organization extends Model
         // F-143 (v1.2 DS-3): override token warna + gradasi, SATU blob JSON
         // (bukan kolom per-token seperti branding) -- selalu dibaca/ditulis utuh.
         'theme_config',
+        // F-166 (v1.4 KPI-1): master toggle + pemilih strategy + config poin
+        // SimpleTimelinessStrategy. Dibaca TaskTransitionService::approve() saat
+        // freeze kpi_score (F-167) -- ganti nilai di sini TIDAK retroaktif ke
+        // task yang sudah di-approve sebelumnya.
+        'kpi_enabled',
+        'kpi_strategy',
+        'kpi_points_ontime',
+        'kpi_points_late',
+        'kpi_points_notdone',
     ];
 
     protected function casts(): array
     {
         return [
             'theme_config' => 'array',
+            'kpi_enabled' => 'boolean',
         ];
     }
 
