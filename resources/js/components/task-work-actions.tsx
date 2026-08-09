@@ -1,10 +1,12 @@
 // ==========================================================
 // MODUL       : task-work-actions
 // KLASIFIKASI : UI
-// TUJUAN      : 4 tombol Mulai/Hold/Lanjut/Submit (H7/F-132/F-138) — detail task,
+// TUJUAN      : 4 tombol Mulai/Jeda/Lanjut/Submit (H7/F-132/F-138) — detail task,
 //               ASSIGNEE-ONLY (F-95). Tombol beda per work_state: todo -> Mulai ·
-//               dikerjakan-aktif -> Hold+Submit · dikerjakan-jeda -> Lanjut+Submit ·
+//               dikerjakan-aktif -> Jeda+Submit · dikerjakan-jeda -> Lanjut+Submit ·
 //               review/selesai -> tak ada tombol (F-132 tabel state machine).
+//               Label "Jeda" (2026-08-07, keputusan Boss: UI wajib Bahasa Indonesia)
+//               — route/endpoint TETAP "tasks.hold" (kontrak API tidak berubah).
 // DIPANGGIL   : pages/tasks/show.tsx
 // MEMANGGIL   : route('tasks.start'/'tasks.hold'/'tasks.resume'/'tasks.submit')
 //               (TaskController -> TaskTransitionService)
@@ -56,7 +58,7 @@ export default function TaskWorkActions({ projectId, taskId, workState, isAssign
             {workState === 'dikerjakan-aktif' && (
                 <>
                     <Button variant="outline" onClick={() => call('tasks.hold')}>
-                        Hold
+                        Jeda
                     </Button>
                     <Button onClick={() => call('tasks.submit')}>Submit</Button>
                 </>
