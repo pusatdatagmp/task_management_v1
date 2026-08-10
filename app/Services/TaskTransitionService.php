@@ -329,10 +329,11 @@ class TaskTransitionService
      * config poin SAAT INI (kpi_points_ontime/late) — ganti config SETELAH approve
      * TIDAK menulis ulang skor task lama (tak retroaktif, pola F-39). Master toggle
      * kpi_enabled=false -> kpi_score tetap null (fitur "tinggal disable").
-     * $task->approved_at di-assign KE ATTRIBUTE dulu (bukan cuma array update())
-     * SEBELUM strategy dipanggil, supaya Task::isOnTime() (F-47/F-109 — dipanggil
-     * strategy) punya fallback approved_at yang benar untuk task yang masuk review
-     * lewat dropdown/drag (submitted_at masih null, belum pernah klik Submit H7).
+     * $task->approved_at DAN $task->actual_minutes di-assign KE ATTRIBUTE dulu
+     * (bukan cuma array update()) SEBELUM strategy dipanggil — Task::isOnTime()
+     * (F-109, revisi 2026-08-10: actual_minutes vs estimated_minutes) BUTUH
+     * actual_minutes SUDAH terisi saat strategy membacanya, bukan masih null
+     * (TaskObserver::saving() baru menghitungnya belakangan di update() ini).
      */
     public function approve(Task $task, User $admin, int $qualityRating): void
     {
@@ -357,6 +358,19 @@ class TaskTransitionService
         $approvedAt = now();
         $task->approved_at = $approvedAt;
 
+        // BUSINESS RULE (2026-08-10, revisi isOnTime()): actual_minutes WAJIB
+        // di-assign KE ATTRIBUTE di sini, SEBELUM strategy KPI dipanggil --
+        // pola SAMA approved_at di atas. TaskObserver::saving() (F-39) baru
+        // menghitung actual_minutes belakangan, DI DALAM update() yang sama di
+        // bawah -- kalau tidak di-assign duluan, SimpleTimelinessStrategy akan
+        // baca actual_minutes MASIH NULL saat isOnTime() dipanggil, membekukan
+        // kpi_score yang salah (F-167 pelanggaran: skor beku, tak bisa dihitung
+        // ulang). Guard is_null() cegah recompute kalau (secara teori) sudah
+        // pernah terisi -- lihat TaskObserver::saving() untuk guard yang sama.
+        if (is_null($task->actual_minutes)) {
+            $task->actual_minutes = $task->calculateActualMinutes();
+        }
+
         // F-85: preload eksplisit -- Model::preventLazyLoading() aktif di non-produksi,
         // SimpleTimelinessStrategy baca $task->organization->kpi_* langsung.
         $task->loadMissing('organization');
@@ -370,6 +384,7 @@ class TaskTransitionService
             'approved_at' => $approvedAt,
             'approved_by' => $admin->id,
             'quality_rating' => $qualityRating,
+            'actual_minutes' => $task->actual_minutes,
             'kpi_score' => $kpiScore,
         ]);
     }

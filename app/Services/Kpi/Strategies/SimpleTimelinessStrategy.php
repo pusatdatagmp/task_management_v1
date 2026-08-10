@@ -6,11 +6,13 @@
  * KLASIFIKASI : DOMAIN
  * TUJUAN      : Strategy KPI default (F-166, blueprint §14.2, v1.4 KPI-1) — skor
  *               MURNI dari ketepatan-waktu: on-time vs telat, config poin org-level
- *               (admin override lewat Setelan, KPI-2 belum dibangun). Task
- *               tidak-selesai TIDAK relevan di sini — dipanggil HANYA saat approve
- *               (F-28), jadi task yang sampai ke strategy ini SELALU task disetujui.
+ *               (admin override lewat Setelan, KPI-2). Task tidak-selesai TIDAK
+ *               relevan di sini — dipanggil HANYA saat approve (F-28), jadi task
+ *               yang sampai ke strategy ini SELALU task disetujui. "On-time"
+ *               (revisi 2026-08-10) = actual_minutes<=estimated_minutes (EFISIENSI
+ *               jam kerja) — due_date TIDAK LAGI relevan sama sekali di sini.
  * DIPANGGIL   : KpiStrategyRegistry::resolve('simple_timeliness')
- * MEMANGGIL   : Task::isOnTime() (F-47/F-109 — REUSE, bukan penentu on-time kedua),
+ * MEMANGGIL   : Task::isOnTime() (F-109 — REUSE, bukan penentu on-time kedua),
  *               Task::organization (baca config poin)
  * DATA MASUK  : Task yang sedang di-approve, relasi organization sudah di-load
  *               pemanggil (TaskTransitionService::approve(), cegah lazy-load

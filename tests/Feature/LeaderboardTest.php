@@ -6,12 +6,12 @@
  * KLASIFIKASI : UTIL
  * TUJUAN      : v1.2/v1.5 Fase C (F-134) — buktikan LeaderboardController::index()/
  *               LeaderboardService::forPeriod() sesuai kontrak: Point HANYA dari
- *               task DISETUJUI (F-39 beku, C2), on-time% pakai original_due_date
- *               BUKAN due_date tergeser (F-47, C3), on-time% pakai submitted_at
- *               BUKAN approved_at supaya tidak tersandera kapan admin approve
- *               (2026-08-07, C3b), kolom konteks terpisah dari Point (F-62, C4),
- *               gating leaderboard.view TERMASUK admin biasa (F-134, C1), dan
- *               N+1 konstan (F-85, C5).
+ *               task DISETUJUI (F-39 beku, C2), on-time% pakai actual_minutes vs
+ *               estimated_minutes (C3, REVISI 2026-08-10 keputusan Boss -- due_date
+ *               TIDAK LAGI dicek sama sekali, ganti dari original_due_date/
+ *               submitted_at lama, F-78 cakupan setara), kolom konteks terpisah
+ *               dari Point (F-62, C4), gating leaderboard.view TERMASUK admin
+ *               biasa (F-134, C1), dan N+1 konstan (F-85, C5).
  * DIPANGGIL   : php artisan test (Pest)
  * MEMANGGIL   : LeaderboardController, LeaderboardService, RolePermissionSeeder
  * DATA MASUK  : -
@@ -143,10 +143,13 @@ test('point cuma dari task DISETUJUI dalam periode; task belum-selesai TIDAK iku
 });
 
 // =============================================================================
-// C3 -- on-time% pakai original_due_date, BUKAN due_date yang sudah digeser (F-47)
+// C3 -- on-time% pakai actual_minutes vs estimated_minutes (REVISI 2026-08-10,
+// keputusan Boss). due_date/original_due_date/submitted_at TIDAK LAGI dicek
+// sama sekali -- ganti dari due-date-based lama (F-78, cakupan setara: dulu 4
+// test C3/C3b, sekarang 2 test cukup karena cuma 1 sumbu perbandingan tersisa).
 // =============================================================================
 
-test('task yang diperpanjang tidak palsu tampak on-time -- pakai original_due_date (C3/F-47)', function () {
+test('actual_minutes<=estimated_minutes -- on-time 100%, MESKI due_date sudah lewat jauh (C3)', function () {
     $admin = User::factory()->admin()->create();
     grantLeaderboardView($admin);
     $member = User::factory()->create(['organization_id' => $admin->organization_id]);
@@ -154,35 +157,13 @@ test('task yang diperpanjang tidak palsu tampak on-time -- pakai original_due_da
     $anchor = Carbon::create(2026, 8, 10, 12, 0, 0);
     $this->travelTo($anchor);
 
-    // Tenggat ASLI sudah lewat (anchor itu sendiri), tapi due_date SEKARANG sudah
-    // digeser maju (extension disetujui) ke +10 hari. Task baru disetujui di +5
-    // hari -- SEBELUM due_date baru (kelihatan "on-time" kalau salah pakai
-    // due_date), tapi SESUDAH original_due_date (yang benar: TERLAMBAT).
+    // GUARD: due_date SENGAJA jauh di masa lalu (kelihatan "telat" kalau service
+    // salah masih pakai due_date) -- tapi actual<=estimasi harus tetap 100% on-time,
+    // due_date BENAR-BENAR tidak lagi relevan (revisi 2026-08-10).
     createApprovedTask($project, $admin, [$member->id], [
-        'due_date' => $anchor->copy()->addDays(10),
-        'original_due_date' => $anchor,
-        'approved_at' => $anchor->copy()->addDays(5),
-    ]);
-
-    $response = $this->actingAs($admin)->get(route('leaderboard.index', ['from' => '2026-08-01', 'to' => '2026-08-31']));
-
-    $response->assertOk();
-    $rows = collect($response->viewData('page')['props']['rows']);
-    // GUARD F-47: kalau service salah pakai due_date, angka ini akan 100 (palsu on-time).
-    expect($rows->firstWhere('id', $member->id)['on_time_percent'])->toBe(0.0);
-});
-
-test('task TANPA perpanjangan (original_due_date null) pakai due_date sebagai tenggat asli (C3/F-47)', function () {
-    $admin = User::factory()->admin()->create();
-    grantLeaderboardView($admin);
-    $member = User::factory()->create(['organization_id' => $admin->organization_id]);
-    $project = createLbProject($admin, [$member->id]);
-    $anchor = Carbon::create(2026, 8, 10, 12, 0, 0);
-    $this->travelTo($anchor);
-
-    createApprovedTask($project, $admin, [$member->id], [
-        'due_date' => $anchor->copy()->addDay(),
-        'original_due_date' => null,
+        'due_date' => $anchor->copy()->subDays(30),
+        'estimated_minutes' => 60,
+        'actual_minutes' => 45,
         'approved_at' => $anchor,
     ]);
 
@@ -193,15 +174,7 @@ test('task TANPA perpanjangan (original_due_date null) pakai due_date sebagai te
     expect($rows->firstWhere('id', $member->id)['on_time_percent'])->toBe(100.0);
 });
 
-// =============================================================================
-// C3b -- on-time% pakai submitted_at (submit pertama), BUKAN approved_at (2026-08-07)
-// =============================================================================
-
-test('member submit tepat waktu tapi admin telat approve TETAP tercatat on-time (C3b)', function () {
-    // BUSINESS RULE (2026-08-07, keputusan Boss): approved_at tergantung kapan
-    // ADMIN bertindak, bukan kapan MEMBER submit. Task ini submit SEBELUM deadline
-    // tapi admin baru approve JAUH SETELAH deadline lewat -- kalau service masih
-    // pakai approved_at, ini akan salah tercatat TELAT (0%) padahal member on-time.
+test('actual_minutes>estimated_minutes -- telat 0%, MESKI due_date masih jauh di depan (C3)', function () {
     $admin = User::factory()->admin()->create();
     grantLeaderboardView($admin);
     $member = User::factory()->create(['organization_id' => $admin->organization_id]);
@@ -209,31 +182,14 @@ test('member submit tepat waktu tapi admin telat approve TETAP tercatat on-time 
     $anchor = Carbon::create(2026, 8, 10, 12, 0, 0);
     $this->travelTo($anchor);
 
+    // GUARD: due_date SENGAJA jauh di masa depan (kelihatan "on-time" kalau
+    // service salah masih pakai due_date) -- tapi actual>estimasi harus tetap
+    // 0% (telat), due_date BENAR-BENAR tidak lagi relevan (revisi 2026-08-10).
     createApprovedTask($project, $admin, [$member->id], [
-        'due_date' => $anchor,
-        'submitted_at' => $anchor->copy()->subHour(), // submit 1 jam SEBELUM deadline
-        'approved_at' => $anchor->copy()->addDays(5), // admin baru approve 5 hari kemudian
-    ]);
-
-    $response = $this->actingAs($admin)->get(route('leaderboard.index', ['from' => '2026-08-01', 'to' => '2026-08-31']));
-
-    $response->assertOk();
-    $rows = collect($response->viewData('page')['props']['rows']);
-    expect($rows->firstWhere('id', $member->id)['on_time_percent'])->toBe(100.0);
-});
-
-test('task lama tanpa submitted_at (pra-migrasi) fallback ke approved_at (C3b)', function () {
-    $admin = User::factory()->admin()->create();
-    grantLeaderboardView($admin);
-    $member = User::factory()->create(['organization_id' => $admin->organization_id]);
-    $project = createLbProject($admin, [$member->id]);
-    $anchor = Carbon::create(2026, 8, 10, 12, 0, 0);
-    $this->travelTo($anchor);
-
-    createApprovedTask($project, $admin, [$member->id], [
-        'due_date' => $anchor,
-        'submitted_at' => null,
-        'approved_at' => $anchor->copy()->addDay(), // lewat deadline -> fallback harus TELAT
+        'due_date' => $anchor->copy()->addDays(30),
+        'estimated_minutes' => 60,
+        'actual_minutes' => 90,
+        'approved_at' => $anchor,
     ]);
 
     $response = $this->actingAs($admin)->get(route('leaderboard.index', ['from' => '2026-08-01', 'to' => '2026-08-31']));

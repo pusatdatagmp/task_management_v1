@@ -193,29 +193,39 @@ class Task extends Model
     }
 
     /**
-     * KONTRAK (F-47/F-109): SATU-SATUNYA penentu on-time vs telat — dipakai
-     * LeaderboardService::forPeriod() (kolom konteks on_time_percent) DAN
-     * SimpleTimelinessStrategy (v1.4 KPI-1, freeze saat approve). Diekstrak
-     * dari LeaderboardService (sumber asli) supaya KPI-1 bisa reuse tanpa
-     * membuat penentu on-time kedua (F-109) — JANGAN duplikasi logika ini
-     * di tempat lain, tambah pemanggil baru ke method ini.
+     * KONTRAK (F-109, DIREVISI keputusan Boss 2026-08-10): SATU-SATUNYA penentu
+     * on-time vs telat — dipakai LeaderboardService::forPeriod() (kolom konteks
+     * on_time_percent) DAN SimpleTimelinessStrategy (v1.4 KPI-1, freeze saat
+     * approve). JANGAN duplikasi logika ini di tempat lain, tambah pemanggil
+     * baru ke method ini.
      *
-     * Tenggat ASLI = original_due_date KALAU task pernah diperpanjang, else
-     * due_date itu sendiri (F-47 — coalesce WAJIB, tanpa ini task normal
-     * salah dibandingkan ke null). Basis telat = submitted_at (submit
-     * PERTAMA member, keputusan Boss 2026-08-07) — approved_at HANYA
-     * fallback untuk task lama pra-migrasi kolom submitted_at.
+     * BUSINESS RULE (2026-08-10, revisi F-47): "telat" SEKARANG murni soal
+     * EFISIENSI JAM KERJA — actual_minutes (jam nyata via task_time_segments,
+     * F-57 business-hours-only) dibandingkan estimated_minutes. due_date/
+     * original_due_date TIDAK LAGI dicek sama sekali di sini (beda dari desain
+     * lama F-47) — Boss SADAR & TERIMA konsekuensinya: task yang mulai telat
+     * dari deadline tapi actual < estimasi tetap "tepat waktu" di sini.
      *
-     * RISIKO: pemanggil WAJIB pastikan submitted_at ATAU approved_at sudah
-     * terisi (di memori atau DB) sebelum panggil method ini — kalau
-     * keduanya null, lessThanOrEqualTo() meledak (call method di null).
+     * estimated_minutes DIPAKAI APA ADANYA (nilai SEKARANG, BUKAN "versi asli
+     * sebelum perpanjangan") — Boss SADAR & TERIMA celah: perpanjangan yang
+     * disetujui admin (DeadlineExtensionObserver) ikut menaikkan estimated_minutes
+     * (lihat header file itu), jadi member SECARA TEKNIS bisa "melonggarkan"
+     * ambang telat lewat alur perpanjangan yang sama dipakai due_date. Ini
+     * keputusan SADAR (bukan celah lolos tak disadari), lihat CATATAN
+     * 2026-08-10 di 04-FINDING-REGISTRY.md kalau Boss sudah mencatatnya.
+     *
+     * RISIKO: pemanggil WAJIB pastikan actual_minutes SUDAH terisi (di memori
+     * ATAU DB) sebelum panggil method ini -- kalau masih null (task belum
+     * pernah masuk is_completed), perbandingan ini TIDAK BERMAKNA. Lihat
+     * TaskTransitionService::approve() — actual_minutes WAJIB di-assign ke
+     * attribute SEBELUM strategy KPI dipanggil (pola sama approved_at),
+     * TaskObserver::saving() baru menghitungnya belakangan di update() yang
+     * sama, jadi kalau tidak di-assign duluan, kpi_score bisa beku dengan
+     * actual_minutes null/salah.
      */
     public function isOnTime(): bool
     {
-        $originalDeadline = $this->original_due_date ?? $this->due_date;
-        $lateBasis = $this->submitted_at ?? $this->approved_at;
-
-        return $lateBasis->lessThanOrEqualTo($originalDeadline);
+        return $this->actual_minutes <= $this->estimated_minutes;
     }
 
     /**
