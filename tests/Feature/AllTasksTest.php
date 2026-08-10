@@ -225,6 +225,22 @@ test('dropdown filter assignee di Semua Tugas TIDAK menawarkan member nonaktif (
         && ! collect($members)->pluck('id')->contains($inactiveMember->id)));
 });
 
+test('filters.assignee di-echo balik sebagai INTEGER, bukan string (audit Boss 2026-08-10 -- checkbox FE pakai .includes() strict-type)', function () {
+    // BUG FIX (pola sama TaskController::index()): rule validasi 'integer' cuma
+    // MENGECEK, tidak MENGUBAH TIPE -- tanpa array_map('intval', ...), nilai ini
+    // tetap string dari query string ("3" bukan 3), checkbox tasks/all.tsx
+    // (`filters.assignee.includes(m.id)`, m.id NUMBER asli) gagal match walau
+    // data SUDAH terfilter benar -- checkbox kelihatan tidak tercentang meski
+    // filter aktif (laporan Boss).
+    $admin = User::factory()->admin()->create();
+    $member = User::factory()->create(['organization_id' => $admin->organization_id]);
+
+    $response = $this->actingAs($admin)->get(route('tasks.all').'?'.http_build_query(['assignee' => [$member->id]]));
+
+    $response->assertInertia(fn ($page) => $page
+        ->where('filters.assignee.0', fn (mixed $v) => $v === $member->id && is_int($v)));
+});
+
 test('jumlah query Semua Tugas TETAP KONSTAN walau task bertambah banyak (F-85)', function () {
     $admin = User::factory()->admin()->create();
     $project = createAllTasksProject($admin);

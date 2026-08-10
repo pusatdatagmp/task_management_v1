@@ -76,6 +76,16 @@ class TaskController extends Controller
 
         $filters = $request->validated();
 
+        // BUG FIX (audit Boss 2026-08-10, pola sama all()): rule 'integer' cuma
+        // MENGECEK, tidak MENGUBAH TIPE -- status/assignee tetap array string
+        // dari query string. whereIn() tetap benar (MySQL koersi), tapi nilai
+        // ini JUGA di-echo balik ke prop `filters` (return Inertia:: bawah) --
+        // checkbox tasks/index.tsx (`filters.status.includes(s.id)`,
+        // `filters.assignee.includes(m.id)`) gagal match string vs number id
+        // asli, checkbox kelihatan tidak tercentang walau filter aktif.
+        $filters['status'] = array_map('intval', $filters['status'] ?? []);
+        $filters['assignee'] = array_map('intval', $filters['assignee'] ?? []);
+
         $query = self::withChecklistCounts(
             $project->tasks()->with(['taskStatus', 'assignees:id,name', 'parent:id,title'])
         );
@@ -360,6 +370,17 @@ class TaskController extends Controller
     {
         $user = $request->user();
         $filters = $request->validated();
+
+        // BUG FIX (audit Boss 2026-08-10): rule validasi 'integer' cuma MENGECEK
+        // angka, TIDAK MENGUBAH TIPE -- $filters['assignee'] tetap array string
+        // ("3", bukan 3) karena query string HTTP selalu string. whereIn() di
+        // bawah tetap benar (MySQL auto-koersi), TAPI nilai ini juga di-echo
+        // balik ke prop `filters` frontend (baris return Inertia:: di bawah) --
+        // checkbox tasks/all.tsx bandingkan `filters.assignee.includes(m.id)`
+        // dengan m.id NUMBER asli (dari kolom users.id) -- string vs number
+        // GAGAL match (["3"].includes(3) === false), checkbox kelihatan tidak
+        // tercentang walau filter SEDANG aktif & data SUDAH benar difilter.
+        $filters['assignee'] = array_map('intval', $filters['assignee'] ?? []);
 
         // SUMBER: 'project.taskStatuses' (BUKAN cuma 'project:id,name') supaya
         // TaskStatusCell per baris (F-45/F-28) bisa bangun dropdown status project

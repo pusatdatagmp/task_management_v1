@@ -84,6 +84,27 @@ test('filtering by assignee only returns tasks assigned to that user', function 
     $response->assertInertia(fn ($page) => $page->component('tasks/index')->has('tasks.data', 1)->where('tasks.data.0.id', $taskA->id));
 });
 
+test('filters.status/filters.assignee di-echo balik sebagai INTEGER, bukan string (audit Boss 2026-08-10 -- checkbox FE pakai .includes() strict-type)', function () {
+    // BUG FIX: rule validasi 'integer' cuma MENGECEK, tidak MENGUBAH TIPE --
+    // tanpa array_map('intval', ...) di controller, nilai ini tetap string dari
+    // query string ("3" bukan 3), checkbox tasks/index.tsx (`filters.assignee.
+    // includes(m.id)`, m.id NUMBER asli) gagal match walau data SUDAH terfilter
+    // benar -- checkbox kelihatan tidak tercentang meski filter aktif.
+    $admin = User::factory()->admin()->create();
+    $project = createFilterProject($admin);
+    $member = User::factory()->create(['organization_id' => $admin->organization_id]);
+    $project->members()->sync([$admin->id, $member->id]);
+    $todo = TaskStatus::where('project_id', $project->id)->where('position', 0)->firstOrFail();
+
+    $response = $this->actingAs($admin)->get(
+        route('tasks.index', $project).'?'.http_build_query(['status' => [$todo->id], 'assignee' => [$member->id]])
+    );
+
+    $response->assertInertia(fn ($page) => $page
+        ->where('filters.status.0', fn (mixed $v) => $v === $todo->id && is_int($v))
+        ->where('filters.assignee.0', fn (mixed $v) => $v === $member->id && is_int($v)));
+});
+
 test('overdue filter returns only past-due, not-yet-completed tasks (C8, F-44)', function () {
     $admin = User::factory()->admin()->create();
     $project = createFilterProject($admin);
