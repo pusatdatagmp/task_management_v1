@@ -240,6 +240,108 @@ test('an archived FUTURE version never becomes active even after its effective_f
         ->and($active->id)->not->toBe($cancelled->id);
 });
 
+// =============================================================================
+// "Jadikan Aktif Sekarang" (permintaan Boss 2026-08-10 -- pilih mana yang
+// aktif TANPA urus tanggal, TETAP F-40: SALIN ke baris baru, bukan toggle flag)
+// =============================================================================
+
+test('activating an OLD (historical) version copies it into a NEW row today -- source row untouched', function () {
+    $admin = User::factory()->admin()->create();
+    $old = WorkSchedule::create([
+        'organization_id' => $admin->organization_id,
+        'effective_from' => now()->subMonth()->toDateString(),
+        'days_of_week' => [6, 7],
+        'start_time' => '10:00',
+        'end_time' => '14:00',
+        'daily_capacity_minutes' => 200,
+        'created_by' => $admin->id,
+    ]);
+    $countBefore = WorkSchedule::count();
+
+    $response = $this->actingAs($admin)->post(route('work-schedules.activate-now', $old));
+
+    $response->assertRedirect(route('work-schedules.index'));
+    expect(WorkSchedule::count())->toBe($countBefore + 1); // INSERT, bukan UPDATE.
+
+    // Baris SUMBER (riwayat lama) sama sekali tidak berubah -- F-40.
+    $old->refresh();
+    expect($old->effective_from->toDateString())->toBe(now()->subMonth()->toDateString())
+        ->and($old->daily_capacity_minutes)->toBe(200);
+
+    // Baris BARU: salinan isi $old, effective_from HARI INI.
+    $newRow = WorkSchedule::where('effective_from', now()->toDateString())->firstOrFail();
+    expect($newRow->id)->not->toBe($old->id)
+        ->and($newRow->days_of_week)->toBe([6, 7])
+        ->and($newRow->daily_capacity_minutes)->toBe(200);
+
+    // Otomatis jadi versi AKTIF sekarang (effective_from paling baru <= hari ini).
+    expect(WorkSchedule::active($admin->organization_id)->id)->toBe($newRow->id);
+});
+
+test('activating a FUTURE (not-yet-active) version early also copies it to today', function () {
+    $admin = User::factory()->admin()->create();
+    $future = WorkSchedule::create([
+        'organization_id' => $admin->organization_id,
+        'effective_from' => now()->addWeek()->toDateString(),
+        'days_of_week' => [1, 2, 3],
+        'start_time' => '07:00',
+        'end_time' => '15:00',
+        'daily_capacity_minutes' => 300,
+        'created_by' => $admin->id,
+    ]);
+
+    $this->actingAs($admin)->post(route('work-schedules.activate-now', $future))->assertRedirect();
+
+    $newRow = WorkSchedule::where('effective_from', now()->toDateString())->firstOrFail();
+    expect($newRow->daily_capacity_minutes)->toBe(300);
+    // Versi future SUMBER tetap ada apa adanya, belum diapa-apakan.
+    expect($future->fresh()->effective_from->toDateString())->toBe(now()->addWeek()->toDateString());
+});
+
+test('activating a version when one already exists for today fails with a clear error', function () {
+    $admin = User::factory()->admin()->create();
+    WorkSchedule::create([
+        'organization_id' => $admin->organization_id,
+        'effective_from' => now()->toDateString(),
+        'days_of_week' => [1, 2, 3, 4, 5],
+        'start_time' => '08:00',
+        'end_time' => '17:00',
+        'daily_capacity_minutes' => 480,
+        'created_by' => $admin->id,
+    ]);
+    $old = WorkSchedule::create([
+        'organization_id' => $admin->organization_id,
+        'effective_from' => now()->subMonth()->toDateString(),
+        'days_of_week' => [6, 7],
+        'start_time' => '10:00',
+        'end_time' => '14:00',
+        'daily_capacity_minutes' => 200,
+        'created_by' => $admin->id,
+    ]);
+    $countBefore = WorkSchedule::count();
+
+    $response = $this->actingAs($admin)->post(route('work-schedules.activate-now', $old));
+
+    $response->assertSessionHasErrors('effective_from');
+    expect(WorkSchedule::count())->toBe($countBefore); // Nol baris baru.
+});
+
+test('member cannot activate a work schedule version', function () {
+    $admin = User::factory()->admin()->create();
+    $member = User::factory()->create(['organization_id' => $admin->organization_id]);
+    $old = WorkSchedule::create([
+        'organization_id' => $admin->organization_id,
+        'effective_from' => now()->subMonth()->toDateString(),
+        'days_of_week' => [1, 2, 3, 4, 5],
+        'start_time' => '08:00',
+        'end_time' => '17:00',
+        'daily_capacity_minutes' => 480,
+        'created_by' => $admin->id,
+    ]);
+
+    $this->actingAs($member)->post(route('work-schedules.activate-now', $old))->assertForbidden();
+});
+
 test('member cannot edit or archive work schedule versions', function () {
     $admin = User::factory()->admin()->create();
     $member = User::factory()->create(['organization_id' => $admin->organization_id]);

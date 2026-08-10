@@ -151,6 +151,14 @@ export default function WorkSchedulesIndex({ schedules, activeId }: { schedules:
         router.patch(route('work-schedules.archive', schedule.id), {}, { preserveScroll: true });
     };
 
+    // Permintaan Boss (2026-08-10): "pilih mana yang aktif" tanpa urus tanggal --
+    // SALIN isi baris ini ke versi baru berlaku HARI INI (F-40 tetap INSERT,
+    // baris sumber di riwayat TIDAK disentuh/dihapus).
+    const activateNow = async (schedule: WorkScheduleRow) => {
+        if (!(await confirmAction(`Jadikan setelan ini ("${formatDays(schedule.days_of_week)}", ${formatTime(schedule.start_time)}–${formatTime(schedule.end_time)}) aktif mulai hari ini?`))) return;
+        router.post(route('work-schedules.activate-now', schedule.id), {}, { preserveScroll: true });
+    };
+
     const toggleDay = (value: number, checked: boolean) => {
         setData('days_of_week', checked ? [...data.days_of_week, value].sort() : data.days_of_week.filter((d) => d !== value));
     };
@@ -285,16 +293,26 @@ export default function WorkSchedulesIndex({ schedules, activeId }: { schedules:
                                                     )}
                                                 </td>
                                                 <td className="py-2 pr-4">
-                                                    {editable && (
-                                                        <div className="flex gap-2">
-                                                            <Button type="button" variant="outline" size="sm" onClick={() => startEdit(schedule)}>
-                                                                Edit
+                                                    <div className="flex gap-2">
+                                                        {editable && (
+                                                            <>
+                                                                <Button type="button" variant="outline" size="sm" onClick={() => startEdit(schedule)}>
+                                                                    Edit
+                                                                </Button>
+                                                                <Button type="button" variant="destructive" size="sm" onClick={() => archive(schedule)}>
+                                                                    Arsipkan
+                                                                </Button>
+                                                            </>
+                                                        )}
+                                                        {/* SUMBER: tombol "pilih aktif" (permintaan Boss) -- tampil di SEMUA
+                                                            baris KECUALI yang sudah aktif sekarang (redundan) dan yang
+                                                            dibatalkan (data sengaja tak dipakai, hindari kebingungan). */}
+                                                        {schedule.id !== activeId && !schedule.is_archived && (
+                                                            <Button type="button" variant="secondary" size="sm" onClick={() => activateNow(schedule)}>
+                                                                Jadikan Aktif Sekarang
                                                             </Button>
-                                                            <Button type="button" variant="destructive" size="sm" onClick={() => archive(schedule)}>
-                                                                Arsipkan
-                                                            </Button>
-                                                        </div>
-                                                    )}
+                                                        )}
+                                                    </div>
                                                 </td>
                                             </tr>
                                         );

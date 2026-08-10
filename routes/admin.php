@@ -34,6 +34,9 @@ Route::middleware(['auth', 'can:workschedule.manage'])->group(function () {
     // projects.archive ('{resource}/{id}/archive', PATCH).
     Route::put('pengaturan/jam-kerja/{workSchedule}', [WorkScheduleController::class, 'update'])->name('work-schedules.update');
     Route::patch('pengaturan/jam-kerja/{workSchedule}/archive', [WorkScheduleController::class, 'archive'])->name('work-schedules.archive');
+    // Permintaan Boss (2026-08-10) -- "pilih mana yang aktif" TANPA urus
+    // tanggal. TETAP INSERT (F-40) -- lihat komentar activateNow() di controller.
+    Route::post('pengaturan/jam-kerja/{workSchedule}/activate-now', [WorkScheduleController::class, 'activateNow'])->name('work-schedules.activate-now');
 
     // F-43 (HARDEN Fase D) — reuse permission workschedule.manage (setara, sama-sama
     // "kelola konfigurasi jendela kerja organisasi"), tidak perlu permission baru.

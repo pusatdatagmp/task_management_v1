@@ -6,7 +6,10 @@
  * KLASIFIKASI : DOMAIN
  * TUJUAN      : Pengaturan Jam Kerja (F-40, versioned). index + store (versi baru,
  *               INSERT) + update/archive TERBATAS versi FUTURE (permintaan Boss
- *               2026-08-10, audit F-40 -- lihat RISIKO).
+ *               2026-08-10, audit F-40 -- lihat RISIKO) + activateNow() (Boss
+ *               mau "pilih mana yang aktif" TANPA urus tanggal -- diselesaikan
+ *               TETAP dalam batas F-40: SALIN ke baris baru effective_from hari
+ *               ini, bukan toggle flag "aktif" lintas tanggal).
  * DIPANGGIL   : routes/admin.php
  * MEMANGGIL   : WorkSchedule (INSERT untuk versi baru; UPDATE HANYA utk versi
  *               yang belum pernah aktif)
@@ -105,6 +108,44 @@ class WorkScheduleController extends Controller
         }
 
         $workSchedule->update(['is_archived' => true]);
+
+        return to_route('work-schedules.index');
+    }
+
+    /**
+     * KONTRAK: "Jadikan Aktif Sekarang" (permintaan Boss 2026-08-10 — mau bisa
+     * PILIH versi mana yang aktif, tanpa mengurus tanggal/arsip). BUKAN toggle
+     * flag (itu akan melanggar F-40 -- lihat audit sebelumnya: pilih-manual-
+     * tanpa-tanggal bisa menulis ulang KPI task yang sedang berjalan). SEBAGAI
+     * GANTINYA: SALIN isi $workSchedule (baris manapun -- riwayat lama ATAU
+     * versi future) ke baris BARU dengan effective_from HARI INI (F-40 TETAP
+     * INSERT, bukan UPDATE) -- baris sumber TIDAK disentuh sama sekali, tetap
+     * apa adanya di riwayat. Efeknya: versi itu langsung "aktif" mulai sekarang,
+     * Boss cuma klik satu tombol, nol input tanggal manual.
+     */
+    public function activateNow(WorkSchedule $workSchedule): RedirectResponse
+    {
+        $today = now()->toDateString();
+
+        // GUARD: baris utk hari ini SUDAH ada (mis. Boss klik tombol ini dua kali,
+        // atau sudah ada versi 'Terjadwal' yang effective_from-nya kebetulan hari
+        // ini) -- unique constraint DB bakal tolak insert kedua, tapi pesan error
+        // jelas di sini LEBIH RAMAH daripada exception mentah dari constraint.
+        if (WorkSchedule::where('effective_from', $today)->exists()) {
+            throw ValidationException::withMessages([
+                'effective_from' => 'Sudah ada versi yang mulai berlaku hari ini. Edit versi itu (baris berstatus "Terjadwal") kalau mau isinya beda.',
+            ]);
+        }
+
+        WorkSchedule::create([
+            'organization_id' => $workSchedule->organization_id,
+            'effective_from' => $today,
+            'days_of_week' => $workSchedule->days_of_week,
+            'start_time' => $workSchedule->start_time,
+            'end_time' => $workSchedule->end_time,
+            'daily_capacity_minutes' => $workSchedule->daily_capacity_minutes,
+            'created_by' => request()->user()->id,
+        ]);
 
         return to_route('work-schedules.index');
     }
