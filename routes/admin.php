@@ -98,6 +98,9 @@ Route::middleware(['auth', 'can:settings.manage'])->group(function () {
     // v1.2 DS-3 (F-143) -- tab Tema, permission SAMA settings.manage (reuse DS-2,
     // 1 halaman 1 gate walau 2 tab -- F-143 "Gate settings.manage (reuse DS-2)").
     Route::post('pengaturan/setelan/tema', [SettingsController::class, 'updateTheme'])->name('settings.theme.update');
+    // v1.4 KPI-2 (F-166) -- tab KPI, permission SAMA settings.manage (reuse
+    // DS-2/DS-3, pola konsisten: 1 halaman Setelan, 1 gate, N tab).
+    Route::post('pengaturan/setelan/kpi', [SettingsController::class, 'updateKpi'])->name('settings.kpi.update');
 });
 
 // RBAC §C2/E1/E2 — CRUD user + kelola role, permission user.manage. 'create'

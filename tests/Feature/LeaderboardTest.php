@@ -325,6 +325,69 @@ test('jumlah query leaderboard TETAP KONSTAN walau user/task bertambah banyak (C
 });
 
 // =============================================================================
+// D1 (v1.4 KPI-2) -- kpi_total = Σ kpi_score task disetujui; Point=Σpts TETAP
+// tidak terpengaruh (F-168, kolom terpisah)
+// =============================================================================
+
+test('kpi_total = Σ kpi_score task disetujui periode; Point=Σpts TETAP tak berubah (D1/F-168)', function () {
+    $admin = User::factory()->admin()->create();
+    grantLeaderboardView($admin);
+    $member = User::factory()->create(['organization_id' => $admin->organization_id]);
+    $project = createLbProject($admin, [$member->id]);
+    $anchor = Carbon::create(2026, 8, 10, 12, 0, 0);
+    $this->travelTo($anchor);
+
+    // Poin & kpi_score SENGAJA angka berbeda -- kalau service keliru mencampur
+    // keduanya (mis. kpi_total ikut Σpts), test ini ketahuan.
+    createApprovedTask($project, $admin, [$member->id], ['points' => 10, 'kpi_score' => 5, 'approved_at' => $anchor]);
+    createApprovedTask($project, $admin, [$member->id], ['points' => 20, 'kpi_score' => 3, 'approved_at' => $anchor]);
+
+    $response = $this->actingAs($admin)->get(route('leaderboard.index', ['from' => '2026-08-01', 'to' => '2026-08-31']));
+
+    $response->assertOk();
+    $row = collect($response->viewData('page')['props']['rows'])->firstWhere('id', $member->id);
+
+    expect($row['point'])->toBe(30) // Σpts TETAP -- F-168 guard utama.
+        ->and($row['kpi_total'])->toBe(8); // Σ kpi_score = 5+3.
+});
+
+test('task disetujui dengan kpi_score null (approved saat kpi_enabled off) menyumbang 0 ke kpi_total, bukan error (D1/F-166)', function () {
+    $admin = User::factory()->admin()->create();
+    grantLeaderboardView($admin);
+    $member = User::factory()->create(['organization_id' => $admin->organization_id]);
+    $project = createLbProject($admin, [$member->id]);
+    $anchor = Carbon::create(2026, 8, 10, 12, 0, 0);
+    $this->travelTo($anchor);
+
+    createApprovedTask($project, $admin, [$member->id], ['points' => 10, 'kpi_score' => null, 'approved_at' => $anchor]);
+
+    $response = $this->actingAs($admin)->get(route('leaderboard.index', ['from' => '2026-08-01', 'to' => '2026-08-31']));
+
+    $response->assertOk();
+    $row = collect($response->viewData('page')['props']['rows'])->firstWhere('id', $member->id);
+    expect($row['kpi_total'])->toBe(0);
+});
+
+// =============================================================================
+// D2 (v1.4 KPI-2) -- kpi_enabled dikirim ke frontend, sumber gate kolom KPI
+// =============================================================================
+
+test('prop kpi_enabled dikirim ke halaman leaderboard sesuai config organisasi (D2/F-166)', function () {
+    $admin = User::factory()->admin()->create();
+    grantLeaderboardView($admin);
+
+    $response = $this->actingAs($admin)->get(route('leaderboard.index'));
+    $response->assertOk();
+    expect($response->viewData('page')['props']['kpi_enabled'])->toBeTrue(); // default DB.
+
+    $admin->organization->update(['kpi_enabled' => false]);
+
+    $response = $this->actingAs($admin)->get(route('leaderboard.index'));
+    $response->assertOk();
+    expect($response->viewData('page')['props']['kpi_enabled'])->toBeFalse();
+});
+
+// =============================================================================
 // F-4 -- nol pemetaan rupiah/gaji
 // =============================================================================
 

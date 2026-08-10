@@ -5,31 +5,39 @@
  * MODUL       : SettingsController
  * KLASIFIKASI : DOMAIN
  * TUJUAN      : Halaman "Setelan" org-level — tab Branding (F-142, v1.2 DS-2) +
- *               tab Tema (F-143, v1.2 DS-3, token+gradasi). SATU controller
- *               untuk shell halaman + tiap tab (F-144 -- editor MENGUBAH NILAI
- *               TOKEN, komponen mewarisi lewat CSS var, controller ini TIDAK
- *               PERNAH menyentuh warna per-komponen).
+ *               tab Tema (F-143, v1.2 DS-3, token+gradasi) + tab KPI (F-166,
+ *               v1.4 KPI-2, config poin+toggle). SATU controller untuk shell
+ *               halaman + tiap tab (F-144 -- editor MENGUBAH NILAI TOKEN,
+ *               komponen mewarisi lewat CSS var, controller ini TIDAK PERNAH
+ *               menyentuh warna per-komponen).
  * DIPANGGIL   : routes/admin.php (can:settings.manage)
- * MEMANGGIL   : Organization (branding/tema SELALU milik Auth::user()->organization,
+ * MEMANGGIL   : Organization (branding/tema/KPI SELALU milik Auth::user()->organization,
  *               TIDAK PERNAH dari route model binding — F-5, cegah IDOR org lain)
  * DATA MASUK  : Form Branding (UpdateBrandingRequest), Form Tema (UpdateThemeRequest)
- *               -- tokens{sidebar_bg,ink,ink2,paper,card,amber,button_text,tx,tx2} + gradient
- * DATA KELUAR : Inertia page 'org-settings/index', update organizations.{*, theme_config}
+ *               -- tokens{sidebar_bg,ink,ink2,paper,card,amber,button_text,tx,tx2} + gradient,
+ *               Form KPI (UpdateKpiRequest) -- kpi_enabled + kpi_points_ontime/late/notdone
+ * DATA KELUAR : Inertia page 'org-settings/index', update organizations.{*, theme_config,
+ *               kpi_enabled, kpi_points_ontime, kpi_points_late, kpi_points_notdone}
  * RISIKO      : SUMBER : organization SELALU diambil dari user login
  *               ($request->user()->organization), BUKAN {organization} di URL —
  *               kalau nanti ada yang "memudahkan" jadi route model binding,
- *               admin org A bisa timpa branding/tema org B (IDOR, F-5 bocor).
+ *               admin org A bisa timpa branding/tema/KPI org B (IDOR, F-5 bocor).
  *               Logo lama DIHAPUS fisik saat diganti (beda dari Attachment F-104/105
  *               yang append-only/riwayat) — branding cuma 1 nilai aktif, bukan audit trail.
  *               updateTheme() HANYA menyimpan key yang lolos UpdateThemeRequest::
  *               tokenKeys() -- payload liar tak pernah ikut masuk theme_config
  *               walau validasi FormRequest 'array' longgar soal key tambahan.
+ *               updateKpi() TIDAK menyentuh kpi_strategy (F-166 -- cuma 1 strategy
+ *               terdaftar sekarang, lihat header UpdateKpiRequest) dan TIDAK PERNAH
+ *               menulis ulang tasks.kpi_score task lama (F-167/F-39 -- freeze
+ *               ditegakkan di TaskTransitionService::approve(), bukan di sini).
  * ==========================================================
  */
 
 namespace App\Http\Controllers;
 
 use App\Http\Requests\Branding\UpdateBrandingRequest;
+use App\Http\Requests\Branding\UpdateKpiRequest;
 use App\Http\Requests\Branding\UpdateThemeRequest;
 use Illuminate\Http\RedirectResponse;
 use Illuminate\Http\Request;
@@ -50,6 +58,7 @@ class SettingsController extends Controller
                 'logo_url' => $organization->logoUrl(),
             ],
             'theme' => $organization->theme_config,
+            'kpi' => $organization->only(['kpi_enabled', 'kpi_points_ontime', 'kpi_points_late', 'kpi_points_notdone']),
         ]);
     }
 
@@ -107,6 +116,23 @@ class SettingsController extends Controller
             'tokens' => $tokens,
             'gradient' => $gradient,
         ];
+        $organization->save();
+
+        return back();
+    }
+
+    /**
+     * BUSINESS RULE: F-166 -- cuma override 4 kolom config (toggle+3 poin).
+     * kpi_strategy TIDAK disentuh (lihat header UpdateKpiRequest). Task yang
+     * SUDAH di-approve TIDAK ikut berubah walau poin di sini diganti (F-167/
+     * F-39 -- kpi_score sudah beku di kolom tasks, strategy hanya dipanggil
+     * lagi saat approve BERIKUTNYA).
+     */
+    public function updateKpi(UpdateKpiRequest $request): RedirectResponse
+    {
+        $organization = $request->user()->organization;
+
+        $organization->fill($request->validated());
         $organization->save();
 
         return back();

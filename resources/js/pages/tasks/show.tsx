@@ -92,6 +92,12 @@ interface TaskDetail {
     actual_minutes: number | null;
     quality_rating: number | null;
     rejection_count: number;
+    // F-136/F-168: OPSIONAL -- key ini TIDAK ADA di payload sama sekali kalau
+    // viewer bukan management (TaskController::show() $canViewKpiScore, F-90).
+    // BEDAKAN dari `null` (viewer management TAPI task belum di-approve/di-approve
+    // saat kpi_enabled=false) -- pakai `'kpi_score' in task`, bukan `!== undefined`
+    // saja (spread absen = properti benar-benar tidak ada, tapi tetap aman dicek).
+    kpi_score?: number | null;
     approved_at: string | null;
     original_due_date: string | null;
     description_html: string | null;
@@ -275,6 +281,14 @@ export default function TaskShow({ project, task, statuses, projectMembers }: Ta
                                     <div className="flex justify-between gap-2">
                                         <span className="text-muted-foreground">Ditolak</span>
                                         <span>{task.rejection_count}x</span>
+                                    </div>
+                                )}
+                                {/* F-136: baris ini TIDAK PERNAH tampil ke assignee -- key `kpi_score`
+                                    absen total dari payload kalau bukan management (cegah gaming, F-4). */}
+                                {'kpi_score' in task && (
+                                    <div className="flex justify-between gap-2">
+                                        <span className="text-muted-foreground">Skor KPI</span>
+                                        <span>{task.kpi_score !== null ? task.kpi_score : '-'}</span>
                                     </div>
                                 )}
                             </CardContent>

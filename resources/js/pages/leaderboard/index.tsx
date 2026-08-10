@@ -18,7 +18,9 @@
 // DIPANGGIL   : LeaderboardController::index() (route 'leaderboard', can:leaderboard.view)
 // MEMANGGIL   : todayRange/thisWeekRange/thisMonthRange (lib/leaderboard-period,
 //               MURNI tanggal, F-109), useInitials (hooks, REUSE F-avatar sama UserInfo)
-// DATA MASUK  : from, to (string 'Y-m-d'), rows[] (sudah urut Point desc)
+// DATA MASUK  : from, to (string 'Y-m-d'), rows[] (sudah urut Point desc, tiap row
+//               bawa kpi_total F-168), kpi_enabled (toggle org-level F-166 -- kolom
+//               KPI di tabel disembunyikan total kalau false, "tinggal disable")
 // DATA KELUAR : router.get (filter periode, tercermin URL — pola sama activity-logs/index.tsx)
 // RISIKO      : SUMBER F-4/F-134 — halaman ini SKOR RANKING, BUKAN nominal uang.
 //               JANGAN PERNAH tambah rupiah/gaji/reward di sini (itu v2.0). Skor
@@ -47,12 +49,17 @@ interface LeaderboardRow {
     revisi: number;
     ditolak: number;
     on_time_percent: number | null;
+    // F-168: KOLOM TERPISAH dari point (Σpts TETAP) -- indikator ketepatan-waktu,
+    // BUKAN pengganti Point.
+    kpi_total: number;
 }
 
 interface LeaderboardProps {
     from: string;
     to: string;
     rows: LeaderboardRow[];
+    // F-166: master toggle org-level -- kolom KPI di tabel disembunyikan kalau false.
+    kpi_enabled: boolean;
 }
 
 const breadcrumbs: BreadcrumbItem[] = [{ title: 'Leaderboard', href: '/leaderboard' }];
@@ -101,7 +108,7 @@ function LeaderCard({ row, rank, variant }: { row: LeaderboardRow; rank: number;
     );
 }
 
-export default function LeaderboardIndex({ from, to, rows }: LeaderboardProps) {
+export default function LeaderboardIndex({ from, to, rows, kpi_enabled }: LeaderboardProps) {
     const applyRange = (range: { from: string; to: string }) => {
         router.get(route('leaderboard.index'), range, { preserveState: true, preserveScroll: true, replace: true });
     };
@@ -194,6 +201,9 @@ export default function LeaderboardIndex({ from, to, rows }: LeaderboardProps) {
                                     <th className="p-3">Rank</th>
                                     <th className="p-3">Nama</th>
                                     <th className="p-3">Point</th>
+                                    {/* F-168: kolom TERPISAH dari Point, disembunyikan total kalau
+                                        kpi_enabled=false (F-166 -- "tinggal disable"). */}
+                                    {kpi_enabled && <th className="p-3">KPI</th>}
                                     <th className="p-3">Rating</th>
                                     <th className="p-3">Revisi</th>
                                     <th className="p-3">Ditolak</th>
@@ -223,6 +233,7 @@ export default function LeaderboardIndex({ from, to, rows }: LeaderboardProps) {
                                                 </div>
                                             </td>
                                             <td className="p-3 font-semibold">{row.point}</td>
+                                            {kpi_enabled && <td className="p-3">{row.kpi_total}</td>}
                                             <td className="p-3">{row.rating !== null ? row.rating.toFixed(2) : '-'}</td>
                                             <td className="p-3">{row.revisi}</td>
                                             <td className="p-3">{row.ditolak}</td>
@@ -233,7 +244,7 @@ export default function LeaderboardIndex({ from, to, rows }: LeaderboardProps) {
 
                                 {rows.length === 0 && (
                                     <tr>
-                                        <td colSpan={7} className="p-8 text-center text-muted-foreground">
+                                        <td colSpan={kpi_enabled ? 8 : 7} className="p-8 text-center text-muted-foreground">
                                             Tidak ada user aktif untuk ditampilkan.
                                         </td>
                                     </tr>

@@ -209,6 +209,20 @@ class TaskController extends Controller
 
         $sanitizer = new HtmlSanitizer((new HtmlSanitizerConfig)->allowSafeElements());
 
+        // F-136 (v1.4 KPI-2): kpi_score GATED management-only -- assignee TIDAK
+        // boleh lihat skornya sendiri (cegah gaming, beda dari quality_rating/
+        // rejection_count di atas yang MEMANG tampil ke semua viewer halaman ini).
+        // Gate GANDA: (a) permission leaderboard.view ATAU settings.manage (dua
+        // permission "management" yang sudah ada, F-134/F-142 -- BUKAN permission
+        // baru), (b) kpi_enabled organisasi saat ini (F-166 -- toggle mati =
+        // fitur hilang total dari UI, bukan cuma dari leaderboard). Key TIDAK
+        // dikirim sama sekali kalau gate gagal (BUKAN kirim null) -- null dipakai
+        // arti lain ("task belum di-approve"/"approved saat kpi_enabled=false",
+        // lihat header migrasi tasks.kpi_score), dua makna itu TIDAK BOLEH
+        // dicampur dengan makna ketiga "disembunyikan dari viewer ini".
+        $canViewKpiScore = $user->organization->kpi_enabled
+            && ($user->can('leaderboard.view') || $user->can('settings.manage'));
+
         // F-90/D3: TIDAK ADA lagi 'isAdmin' di props — frontend baca
         // auth.permissions (shared global, HandleInertiaRequests) langsung.
         // F-94/B1/B6: counter live — gating akses via check membership di atas
@@ -227,6 +241,11 @@ class TaskController extends Controller
                     'approved_at', // v0.8 H5: frontend pakai ini untuk kunci upload output (F-104).
                     'original_due_date', // v0.8 H6 (F-47): NULL kalau belum pernah diperpanjang.
                 ]),
+                // F-136/F-168: key ini TIDAK ADA sama sekali di payload kalau
+                // $canViewKpiScore false (lihat guard di atas) -- frontend cukup
+                // cek `'kpi_score' in task` (pola sama LiveTaskCounter B5), bukan
+                // dikirim sebagai null yang bisa disalahartikan "belum di-approve".
+                ...($canViewKpiScore ? ['kpi_score' => $task->kpi_score] : []),
                 'description_html' => $task->description ? $sanitizer->sanitize($task->description) : null,
                 'task_status' => $task->taskStatus,
                 // H7/F-132/F-138: state 5-nilai task-wide, dipakai frontend untuk

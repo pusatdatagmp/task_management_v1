@@ -2,20 +2,24 @@
 // MODUL       : org-settings/index
 // KLASIFIKASI : UI
 // TUJUAN      : Halaman "Setelan" org-level — tab Branding (F-142, v1.2 DS-2) +
-//               tab Tema (F-143, v1.2 DS-3, token+gradasi). 1 URL, tab
-//               client-side (useState) — BUKAN shadcn <Tabs>, @radix-ui/react-tabs
-//               belum jadi dependency project ini (cek package.json), pasang
-//               primitive baru tanpa approval eksplisit melanggar aturan proyek.
+//               tab Tema (F-143, v1.2 DS-3, token+gradasi) + tab KPI (F-166,
+//               v1.4 KPI-2, toggle+poin). 1 URL, tab client-side (useState) —
+//               BUKAN shadcn <Tabs>, @radix-ui/react-tabs belum jadi dependency
+//               project ini (cek package.json), pasang primitive baru tanpa
+//               approval eksplisit melanggar aturan proyek.
 // DIPANGGIL   : SettingsController::edit()
 // MEMANGGIL   : route('settings.branding.update') — POST (file logo opsional,
 //               PHP tak parse multipart di method PATCH/PUT tanpa method-spoofing).
 //               route('settings.theme.update') — POST token+gradasi.
+//               route('settings.kpi.update') — POST toggle+poin (F-166).
 //               lib/theme-tokens (applyThemeTokens, F-144 — editor ubah TOKEN,
 //               komponen mewarisi via CSS var, TIDAK PERNAH edit warna langsung).
-// DATA MASUK  : branding {..., logo_url} + theme {tokens, gradient} — keduanya
-//               null-able, org belum tentu pernah isi (fallback default TEMPO)
+// DATA MASUK  : branding {..., logo_url} + theme {tokens, gradient} + kpi
+//               {kpi_enabled, kpi_points_ontime/late/notdone} — branding/theme
+//               null-able (fallback default TEMPO), kpi SELALU terisi (kolom
+//               organizations punya default DB, migrasi KPI-1).
 // DATA KELUAR : POST FormData -> organizations.* (branding), organizations.
-//               theme_config (tema)
+//               theme_config (tema), organizations.kpi_* (KPI, F-166)
 // RISIKO      : SUMBER (Branding): preview logo pilihan BARU pakai
 //               URL.createObjectURL — WAJIB revokeObjectURL saat file diganti/
 //               unmount, atau blob URL bocor memory selama tab browser terbuka.
@@ -23,6 +27,10 @@
 //               tiap picker berubah (lihat ThemeTab) — WAJIB di-reset ke nilai
 //               tersimpan server saat pindah tab/unmount TANPA Simpan, atau
 //               draft yang batal keliru terlihat permanen sampai reload.
+//               SUMBER (KPI): tab ini TIDAK PERNAH menulis ulang tasks.kpi_score
+//               task lama (F-167/F-39 — freeze ditegakkan server-side saat
+//               approve, bukan di form ini). kpi_strategy SENGAJA tak ada field
+//               (cuma 1 strategy terdaftar sekarang, lihat KpiStrategyRegistry).
 // ==========================================================
 
 import HeadingSmall from '@/components/heading-small';
@@ -49,11 +57,18 @@ interface Branding {
     logo_url: string | null;
 }
 
+interface KpiConfig {
+    kpi_enabled: boolean;
+    kpi_points_ontime: number;
+    kpi_points_late: number;
+    kpi_points_notdone: number;
+}
+
 const breadcrumbs: BreadcrumbItem[] = [{ title: 'Setelan', href: '/pengaturan/setelan' }];
 
-type TabKey = 'branding' | 'tema';
+type TabKey = 'branding' | 'tema' | 'kpi';
 
-export default function OrgSettingsIndex({ branding, theme }: { branding: Branding; theme: ThemeConfig | null }) {
+export default function OrgSettingsIndex({ branding, theme, kpi }: { branding: Branding; theme: ThemeConfig | null; kpi: KpiConfig }) {
     const [activeTab, setActiveTab] = useState<TabKey>('branding');
 
     return (
@@ -83,10 +98,20 @@ export default function OrgSettingsIndex({ branding, theme }: { branding: Brandi
                     >
                         Tema
                     </button>
+                    <button
+                        type="button"
+                        onClick={() => setActiveTab('kpi')}
+                        className={`border-b-2 px-3 py-2 text-sm font-medium ${
+                            activeTab === 'kpi' ? 'border-primary text-foreground' : 'border-transparent text-muted-foreground'
+                        }`}
+                    >
+                        KPI
+                    </button>
                 </div>
 
                 {activeTab === 'branding' && <BrandingTab branding={branding} />}
                 {activeTab === 'tema' && <ThemeTab theme={theme} />}
+                {activeTab === 'kpi' && <KpiTab kpi={kpi} />}
             </div>
         </AppLayout>
     );
@@ -406,6 +431,100 @@ function ThemeTab({ theme }: { theme: ThemeConfig | null }) {
                             <p className="text-sm text-muted-foreground">Tersimpan</p>
                         </Transition>
                     </div>
+                </form>
+            </CardContent>
+        </Card>
+    );
+}
+
+// F-166: tab KPI (v1.4 KPI-2) -- toggle master + override poin default
+// SimpleTimelinessStrategy. kpi_strategy SENGAJA tidak ada field di sini (lihat
+// header file) -- cuma 1 strategy terdaftar di KpiStrategyRegistry sekarang.
+function KpiTab({ kpi }: { kpi: KpiConfig }) {
+    // SUMBER: inline type literal (BUKAN generic <KpiConfig>) -- pola SAMA
+    // BrandingTab di atas. Interface bernama tidak punya index signature dan
+    // gagal constraint FormDataType Inertia (lihat komentar ThemeTab).
+    const { data, setData, post, errors, processing, recentlySuccessful } = useForm<{
+        kpi_enabled: boolean;
+        kpi_points_ontime: number;
+        kpi_points_late: number;
+        kpi_points_notdone: number;
+    }>({
+        kpi_enabled: kpi.kpi_enabled,
+        kpi_points_ontime: kpi.kpi_points_ontime,
+        kpi_points_late: kpi.kpi_points_late,
+        kpi_points_notdone: kpi.kpi_points_notdone,
+    });
+
+    const submit: FormEventHandler = (e) => {
+        e.preventDefault();
+
+        post(route('settings.kpi.update'), { preserveScroll: true });
+    };
+
+    return (
+        <Card className="max-w-2xl">
+            <CardHeader>
+                <CardTitle>KPI</CardTitle>
+            </CardHeader>
+            <CardContent>
+                <form onSubmit={submit} className="space-y-6">
+                    <HeadingSmall
+                        title="Indikator ketepatan-waktu"
+                        description="Poin dihitung saat task disetujui, lalu DIBEKUKAN permanen — ubah nilai di sini tidak mengubah skor task yang sudah disetujui (F-167)."
+                    />
+
+                    <label className="flex items-center gap-2 text-sm">
+                        <input type="checkbox" checked={data.kpi_enabled} onChange={(e) => setData('kpi_enabled', e.target.checked)} />
+                        Aktifkan skor KPI
+                    </label>
+
+                    <div className="grid grid-cols-1 gap-4 sm:grid-cols-3">
+                        <div className="grid gap-1">
+                            <Label htmlFor="kpi_points_ontime">Tepat waktu</Label>
+                            <Input
+                                id="kpi_points_ontime"
+                                type="number"
+                                min={0}
+                                value={data.kpi_points_ontime}
+                                onChange={(e) => setData('kpi_points_ontime', Number(e.target.value))}
+                            />
+                            <InputError message={errors.kpi_points_ontime} />
+                        </div>
+                        <div className="grid gap-1">
+                            <Label htmlFor="kpi_points_late">Telat</Label>
+                            <Input
+                                id="kpi_points_late"
+                                type="number"
+                                min={0}
+                                value={data.kpi_points_late}
+                                onChange={(e) => setData('kpi_points_late', Number(e.target.value))}
+                            />
+                            <InputError message={errors.kpi_points_late} />
+                        </div>
+                        <div className="grid gap-1">
+                            <Label htmlFor="kpi_points_notdone">Tidak selesai</Label>
+                            <Input
+                                id="kpi_points_notdone"
+                                type="number"
+                                min={0}
+                                value={data.kpi_points_notdone}
+                                onChange={(e) => setData('kpi_points_notdone', Number(e.target.value))}
+                            />
+                            <InputError message={errors.kpi_points_notdone} />
+                        </div>
+                    </div>
+
+                    <div className="flex items-center gap-4">
+                        <Button disabled={processing}>Simpan</Button>
+
+                        <Transition show={recentlySuccessful} enter="transition ease-in-out" enterFrom="opacity-0" leave="transition ease-in-out" leaveTo="opacity-0">
+                            <p className="text-sm text-muted-foreground">Tersimpan</p>
+                        </Transition>
+                    </div>
+
+                    {/* F-2: catatan provisional WAJIB tetap ada sampai v1.5 kalibrasi. */}
+                    <p className="text-xs text-muted-foreground">Indikator sementara (provisional) — formula final dikalibrasi dari data nyata di v1.5.</p>
                 </form>
             </CardContent>
         </Card>
