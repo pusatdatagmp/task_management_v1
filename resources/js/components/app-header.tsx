@@ -100,7 +100,8 @@ export function AppHeader({ breadcrumbs = [] }: AppHeaderProps) {
                         </Sheet>
                     </div>
 
-                    <Link href="/dashboard" prefetch className="flex items-center space-x-2">
+                    {/* F-169: TANPA prefetch -- lihat komentar nav-main.tsx. */}
+                    <Link href="/dashboard" className="flex items-center space-x-2">
                         <AppLogo />
                     </Link>
 

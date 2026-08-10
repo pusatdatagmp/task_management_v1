@@ -23,8 +23,14 @@ export function NavMain({ label, items = [] }: { label: string; items: NavItem[]
                         </SidebarMenuItem>
                     ) : (
                         <SidebarMenuItem key={item.title}>
+                            {/* F-169 (audit Boss 2026-08-10): TANPA prefetch -- Inertia v2
+                                prefetch-on-hover cache respons 30 detik, jadi kalau data
+                                berubah (mis. approve task) lalu pindah halaman lewat
+                                sidebar, yang tampil bisa BASI sampai user refresh manual.
+                                App performance-management ini butuh data SELALU akurat
+                                > transisi terasa instan. */}
                             <SidebarMenuButton asChild isActive={item.url === page.url}>
-                                <Link href={item.url} prefetch>
+                                <Link href={item.url}>
                                     {item.icon && <item.icon />}
                                     <span>{item.title}</span>
                                 </Link>

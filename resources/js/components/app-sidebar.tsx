@@ -118,7 +118,8 @@ export function AppSidebar() {
                 <SidebarMenu>
                     <SidebarMenuItem>
                         <SidebarMenuButton size="lg" asChild>
-                            <Link href={homeUrl} prefetch>
+                            {/* F-169: TANPA prefetch -- lihat komentar nav-main.tsx. */}
+                            <Link href={homeUrl}>
                                 <AppLogo />
                             </Link>
                         </SidebarMenuButton>
