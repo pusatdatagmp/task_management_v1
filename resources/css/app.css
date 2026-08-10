@@ -196,6 +196,36 @@
     background-image: var(--tempo-gradient);
 }
 
+/* Permintaan Boss (2026-08-10): scrollbar sidebar TIPIS & senada warna teks
+   sidebar -- ganti scrollbar abu-abu tebal bawaan OS/browser yang bikin
+   sidebar navy sempit terlihat penuh/berat. Ditarget lewat [data-sidebar=
+   content] (atribut sudah ada di ui/sidebar.tsx, F-144-style: NOL file
+   komponen disentuh, styling ditempel lewat selector saja).
+   color-mix() (bukan hex/rgba hardcode) supaya WARNA IKUT --sidebar-foreground
+   -- token yang sama Boss bisa ubah lewat editor Tema (F-143/F-144); kalau
+   pakai warna solid terpisah, scrollbar bisa mismatch begitu Boss ganti tema. */
+[data-sidebar='content'] {
+    scrollbar-width: thin;
+    scrollbar-color: color-mix(in srgb, var(--sidebar-foreground) 25%, transparent) transparent;
+}
+
+[data-sidebar='content']::-webkit-scrollbar {
+    width: 6px;
+}
+
+[data-sidebar='content']::-webkit-scrollbar-track {
+    background: transparent;
+}
+
+[data-sidebar='content']::-webkit-scrollbar-thumb {
+    background-color: color-mix(in srgb, var(--sidebar-foreground) 25%, transparent);
+    border-radius: 9999px;
+}
+
+[data-sidebar='content']::-webkit-scrollbar-thumb:hover {
+    background-color: color-mix(in srgb, var(--sidebar-foreground) 45%, transparent);
+}
+
 .dark {
     --background: hsl(0, 0%, 3.9%);
     --foreground: hsl(0, 0%, 98%);
