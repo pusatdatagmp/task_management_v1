@@ -47,6 +47,8 @@ export interface Branding {
 
 export interface SharedData {
     name: string;
+    // F-169 (2026-08-10): label versi sistem, tampil footer sidebar.
+    version: string;
     quote: { message: string; author: string };
     auth: Auth;
     unreadNotificationsCount: number;

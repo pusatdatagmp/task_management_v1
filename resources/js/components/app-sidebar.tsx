@@ -32,7 +32,7 @@ export function AppSidebar() {
     // isAdmin — role custom dengan user.manage tapi bukan workschedule.manage
     // (mis.) akan lihat menu User tapi bukan Jam Kerja. Ini HANYA gating
     // tampilan — penegakan sebenarnya di middleware `can:xxx` server-side.
-    const { auth, branding } = usePage<SharedData>().props;
+    const { auth, branding, version } = usePage<SharedData>().props;
     const can = (permission: string) => auth.permissions.includes(permission);
 
     // F-142 (v1.2 DS-2): link sosmed/wa Branding org -- reuse NavFooter (sudah
@@ -146,6 +146,10 @@ export function AppSidebar() {
                 )}
                 {brandingFooterItems.length > 0 && <NavFooter items={brandingFooterItems} className="mt-0" />}
                 <NavUser />
+                {/* Permintaan Boss (2026-08-10, F-169): label versi sistem --
+                    sekadar info build, disembunyikan otomatis saat sidebar
+                    di-collapse ke mode ikon (pola sama alamat branding di atas). */}
+                <p className="px-2 pt-1 text-center text-[10px] text-sidebar-foreground/50 group-data-[collapsible=icon]:hidden">{version}</p>
             </SidebarFooter>
         </Sidebar>
     );

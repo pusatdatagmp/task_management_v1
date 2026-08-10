@@ -17,6 +17,20 @@ return [
 
     /*
     |--------------------------------------------------------------------------
+    | Application Version
+    |--------------------------------------------------------------------------
+    |
+    | Permintaan Boss (2026-08-10): tampil di footer sidebar (F-169) supaya
+    | Boss tahu build mana yang sedang jalan. Update manual di .env tiap kali
+    | ganti versi -- TIDAK otomatis dari git tag/composer.json (keduanya bisa
+    | tidak ada di server produksi/deploy artifact).
+    |
+    */
+
+    'version' => env('APP_VERSION', 'v1.4'),
+
+    /*
+    |--------------------------------------------------------------------------
     | Application Environment
     |--------------------------------------------------------------------------
     |
