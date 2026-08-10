@@ -568,6 +568,12 @@ class DashboardController extends Controller
      * di bawah, nol logic ganda). 2 query TETAP (holidays + meetings sebulan,
      * F-85 -- konstan, bukan per-hari/per-baris).
      *
+     * Permintaan Boss (2026-08-10): hari Minggu OTOMATIS ikon 'libur' + label
+     * "Hari Minggu" -- DIHITUNG saat render (Carbon::isSunday()), BUKAN baris
+     * Holiday di DB (F-38-style, nol scheduler). MURNI tampilan -- beban/level
+     * TETAP 100% dari WorkSchedule.days_of_week org, dua konsep sengaja terpisah.
+     *
+
      * @return array{month: string, days: array<int, array{date:string, beban:?int, level:?string, type:?string, holiday:?string, meetings:array<int,array<string,mixed>>}>, active_user_count:int}
      */
     private function heatmap(DashboardService $service, Collection $users, ?string $monthParam, Carbon $today): array
@@ -614,7 +620,17 @@ class DashboardController extends Controller
         $cursor = $firstDay->copy();
         while ($cursor->lessThanOrEqualTo($lastDay)) {
             $key = $cursor->toDateString();
-            $holidayName = $holidays->get($key)?->name;
+            // Permintaan Boss (2026-08-10): Minggu OTOMATIS ikon 'libur' -- TANPA
+            // baris Holiday manual di DB (F-38-style: dihitung saat ditanya, bukan
+            // di-materialize/di-scheduler tiap minggu ke masa depan). SENGAJA
+            // MURNI TAMPILAN ikon+label modal detail -- beban/level (workloadSpread()/
+            // dailyLoadTotals() di atas) TIDAK disentuh, tetap 100% tunduk
+            // WorkSchedule.days_of_week org (kalau admin justru MENCENTANG Minggu
+            // sebagai hari kerja, beban tetap dihitung hari itu apa adanya --
+            // dua konsep sengaja dipisah, keputusan Boss). Holiday manual (mis.
+            // nama libur nasional yang KEBETULAN jatuh hari Minggu) TETAP MENANG
+            // -- ?? cuma isi kalau belum ada nama dari DB.
+            $holidayName = $holidays->get($key)?->name ?? ($cursor->isSunday() ? 'Hari Minggu' : null);
             $meetings = ($meetingsByDate->get($key) ?? collect())
                 ->map(fn (Meeting $m) => [
                     'id' => $m->id,

@@ -23,6 +23,7 @@
  * ==========================================================
  */
 
+use App\Models\Holiday;
 use App\Models\Permission;
 use App\Models\Project;
 use App\Models\Role;
@@ -301,6 +302,52 @@ test('heatmap = beban F-118, angka IDENTIK DashboardService::forUsers, hari lewa
     $expectedFuture = collect((new DashboardService)->forUsers($activeUsers, $futureDate))->sum('beban');
     $futureEntry = $days->firstWhere('date', '2026-08-04');
     expect($futureEntry['beban'])->toBe($expectedFuture);
+});
+
+test('hari Minggu OTOMATIS ikon libur + label "Hari Minggu", TANPA baris Holiday manual (permintaan Boss 2026-08-10)', function () {
+    $admin = User::factory()->admin()->create();
+    $anchor = ccAnchor(); // Senin 2026-08-03
+    seedCcSchedule($admin, $anchor); // Mon-Fri saja -- Minggu BUKAN hari kerja di WorkSchedule ini.
+    $this->travelTo($anchor);
+
+    $response = $this->actingAs($admin)->getJson(route('dashboard.command-center', ['month' => '2026-08']));
+    $response->assertOk();
+
+    $days = collect($response->json('heatmap.days'));
+
+    // 2026-08-09 = Minggu, TIDAK ada baris Holiday manual sama sekali di DB.
+    $sunday = $days->firstWhere('date', '2026-08-09');
+    expect($sunday['type'])->toBe('libur')
+        ->and($sunday['holiday'])->toBe('Hari Minggu');
+
+    // GUARD: MURNI ikon tampilan -- beban/level TETAP dihitung normal (tidak
+    // di-null-kan/diperlakukan khusus), tunduk WorkSchedule.days_of_week apa
+    // adanya (Minggu bukan hari kerja di schedule ini, jadi task manapun TIDAK
+    // menyumbang beban ke hari ini -- tapi itu KARENA WorkSchedule, BUKAN karena
+    // flag 'libur' ikon ini).
+    expect($sunday['level'])->not->toBeNull()
+        ->and($sunday['beban'])->not->toBeNull();
+});
+
+test('libur manual (Holiday DB) yang KEBETULAN jatuh hari Minggu TETAP menang -- nama asli, bukan "Hari Minggu" generik', function () {
+    $admin = User::factory()->admin()->create();
+    $anchor = ccAnchor(); // Senin 2026-08-03
+    seedCcSchedule($admin, $anchor);
+    $this->travelTo($anchor);
+
+    // 2026-08-16 = Minggu -- pasang Holiday manual bernama di tanggal itu.
+    Holiday::create([
+        'organization_id' => $admin->organization_id,
+        'date' => '2026-08-16',
+        'name' => 'Libur Khusus Perusahaan',
+    ]);
+
+    $response = $this->actingAs($admin)->getJson(route('dashboard.command-center', ['month' => '2026-08']));
+    $response->assertOk();
+
+    $entry = collect($response->json('heatmap.days'))->firstWhere('date', '2026-08-16');
+    expect($entry['type'])->toBe('libur')
+        ->and($entry['holiday'])->toBe('Libur Khusus Perusahaan'); // BUKAN "Hari Minggu" -- manual menang.
 });
 
 test('top-10 task: urut prio_score (bobot Eisenhower) lalu due_date, hanya task belum selesai (A7/F-122)', function () {
