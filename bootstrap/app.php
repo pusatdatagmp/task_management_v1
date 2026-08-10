@@ -59,6 +59,19 @@ return Application::configure(basePath: dirname(__DIR__))
                 return $response;
             }
 
+            // F-169 (audit Boss 2026-08-10): route yang TIDAK match SAMA SEKALI
+            // (404 murni) melempar NotFoundHttpException dari Router::findRoute()
+            // SEBELUM pipeline middleware route (termasuk HandleInertiaRequests,
+            // di-append ke grup 'web') pernah jalan -- Inertia::share() jadi
+            // KOSONG, branding/theme/auth hilang total dari props (bukan cuma
+            // null), AppLogo & applyThemeTokens frontend fallback ke default
+            // TEMPO walau org sudah kustom. 403 lewat abort() di route yang
+            // SUDAH match TIDAK kena masalah ini (middleware sudah sempat jalan)
+            // -- tapi panggil ulang di sini AMAN (idempotent, cuma re-query)
+            // dan menyeragamkan ketiga status tanpa perlu tahu mana yang middleware-
+            // nya sempat jalan mana yang tidak.
+            Inertia::share(app(HandleInertiaRequests::class)->share($request));
+
             return Inertia::render('errors/error', ['status' => $status])
                 ->toResponse($request)
                 ->setStatusCode($status);
