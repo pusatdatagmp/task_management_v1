@@ -10,9 +10,15 @@
  * MEMANGGIL   : Organization, User (created_by)
  * DATA MASUK  : Seeder Hari-1 (1 baris), form pengaturan jam kerja (Hari-2)
  * DATA KELUAR : daily_capacity_minutes, days_of_week, start_time/end_time
- * RISIKO      : SUMBER : F-40 — JANGAN PERNAH update baris lama lewat model ini.
- *               Ubah setting = create() baris baru dengan effective_from baru.
- *               active() sengaja tidak punya method update/edit setting di tempat lain.
+ * RISIKO      : SUMBER : F-40 — JANGAN PERNAH update baris yang SUDAH PERNAH aktif
+ *               (effective_from <= hari ini, PERNAH dipakai hitung actual_minutes/KPI)
+ *               lewat model ini. Ubah setting versi itu = create() baris baru dengan
+ *               effective_from baru.
+ *               REVISI 2026-08-10 (audit Boss, F-40 tetap dihormati): edit/arsip
+ *               manual SEKARANG diizinkan TERBATAS untuk versi FUTURE (effective_from
+ *               > hari ini, belum pernah aktif, nol dampak KPI) -- guard ketat ada
+ *               di WorkScheduleController::update()/archive(), BUKAN di model ini
+ *               (model tetap pasif, nol validasi tanggal di sini).
  *               F-72 — serializeDate() DIPINDAH ke trait SerializesDatesInAppTimezone
  *               (dipasang di semua 14 model bisnis), bukan override lokal di sini lagi.
  * ==========================================================
@@ -39,6 +45,7 @@ class WorkSchedule extends Model
         'end_time',
         'daily_capacity_minutes',
         'created_by',
+        'is_archived',
     ];
 
     protected function casts(): array
@@ -46,6 +53,7 @@ class WorkSchedule extends Model
         return [
             'effective_from' => 'date',
             'days_of_week' => 'array',
+            'is_archived' => 'boolean',
         ];
     }
 
@@ -73,7 +81,12 @@ class WorkSchedule extends Model
             $query->where('organization_id', $organizationId);
         }
 
+        // F-40 (revisi 2026-08-10): is_archived DIKECUALIKAN -- versi yang
+        // dibatalkan admin (SELALU versi future saat diarsipkan, lihat guard
+        // WorkScheduleController::archive()) tidak boleh diam-diam "hidup lagi"
+        // jadi versi aktif kalau kalender jalan terus melewati effective_from-nya.
         return $query->where('effective_from', '<=', ($asOf ?? now())->toDateString())
+            ->where('is_archived', false)
             ->orderByDesc('effective_from')
             ->first();
     }

@@ -29,6 +29,11 @@ use Illuminate\Support\Facades\Route;
 Route::middleware(['auth', 'can:workschedule.manage'])->group(function () {
     Route::get('pengaturan/jam-kerja', [WorkScheduleController::class, 'index'])->name('work-schedules.index');
     Route::post('pengaturan/jam-kerja', [WorkScheduleController::class, 'store'])->name('work-schedules.store');
+    // Permintaan Boss (2026-08-10, audit F-40) -- edit/arsip TERBATAS versi
+    // FUTURE (guard di controller, bukan di sini). Pola nama route sama
+    // projects.archive ('{resource}/{id}/archive', PATCH).
+    Route::put('pengaturan/jam-kerja/{workSchedule}', [WorkScheduleController::class, 'update'])->name('work-schedules.update');
+    Route::patch('pengaturan/jam-kerja/{workSchedule}/archive', [WorkScheduleController::class, 'archive'])->name('work-schedules.archive');
 
     // F-43 (HARDEN Fase D) — reuse permission workschedule.manage (setara, sama-sama
     // "kelola konfigurasi jendela kerja organisasi"), tidak perlu permission baru.

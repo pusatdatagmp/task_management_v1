@@ -1,14 +1,25 @@
 // ==========================================================
 // MODUL       : work-schedules/index
 // KLASIFIKASI : UI
-// TUJUAN      : Pengaturan > Jam Kerja — riwayat versi (F-40) + form tambah versi baru.
-//               TIDAK ADA edit/delete (B6) — versi lama arsip permanen.
+// TUJUAN      : Pengaturan > Jam Kerja — riwayat versi (F-40) + form tambah versi
+//               baru. Permintaan Boss (2026-08-10, audit F-40): edit + arsip
+//               manual SEKARANG ada, TAPI HANYA untuk versi FUTURE (effective_from
+//               > hari ini, belum pernah aktif, nol dampak KPI) — versi yang
+//               SUDAH PERNAH aktif (Aktif sekarang / Arsip historis) TETAP
+//               terkunci permanen sesuai F-40 asli, tombol Edit/Arsipkan
+//               SENGAJA tidak dirender untuk baris itu (guard ganda — server
+//               juga menolak, WorkScheduleController::update()/archive()).
 // DIPANGGIL   : WorkScheduleController::index()
-// MEMANGGIL   : route('work-schedules.store')
-// DATA MASUK  : schedules[] (riwayat, urut effective_from desc), activeId (versi aktif)
-// DATA KELUAR : POST form -> WorkScheduleController::store()
+// MEMANGGIL   : route('work-schedules.store'/'update'/'archive')
+// DATA MASUK  : schedules[] (riwayat, urut effective_from desc, is_archived),
+//               activeId (versi aktif)
+// DATA KELUAR : POST/PUT/PATCH form -> WorkScheduleController
 // RISIKO      : F-70 — effective_from di form TIDAK punya date picker yang izinkan
 //               tanggal lampau; validasi keras tetap di server (FormRequest), ini cuma UX.
+//               SUMBER edit: klik "Edit" memuat data baris itu ke form YANG SAMA
+//               (bukan form terpisah) lalu ganti mode ke PUT — "Batal edit"
+//               WAJIB reset ke mode tambah, atau form nyangkut di mode edit
+//               baris yang sudah tidak relevan.
 // ==========================================================
 
 import HeadingSmall from '@/components/heading-small';
@@ -20,9 +31,10 @@ import { Checkbox } from '@/components/ui/checkbox';
 import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
 import AppLayout from '@/layouts/app-layout';
+import { confirmAction } from '@/lib/swal';
 import { type BreadcrumbItem } from '@/types';
-import { Head, useForm } from '@inertiajs/react';
-import { FormEventHandler } from 'react';
+import { Head, router, useForm } from '@inertiajs/react';
+import { FormEventHandler, useState } from 'react';
 
 interface WorkScheduleRow {
     id: number;
@@ -32,6 +44,7 @@ interface WorkScheduleRow {
     end_time: string;
     daily_capacity_minutes: number;
     creator: { id: number; name: string } | null;
+    is_archived: boolean;
 }
 
 const DAY_LABELS: { value: number; label: string }[] = [
@@ -62,29 +75,80 @@ function formatTime(time: string): string {
     return time.slice(0, 5);
 }
 
+// SUMBER: "future" = effective_from > HARI INI (bukan >=) -- versi yang
+// effective_from-nya PERSIS hari ini SUDAH dianggap aktif oleh
+// WorkSchedule::active() (pakai <=), jadi harus ikut TERKUNCI di frontend
+// juga, konsisten dengan guard server (WorkScheduleController::update()/archive()).
+function isFutureVersion(isoDateTime: string): boolean {
+    return formatDate(isoDateTime) > new Date().toISOString().slice(0, 10);
+}
+
 const breadcrumbs: BreadcrumbItem[] = [{ title: 'Pengaturan Jam Kerja', href: '/pengaturan/jam-kerja' }];
 
+type FormShape = {
+    days_of_week: number[];
+    start_time: string;
+    end_time: string;
+    daily_capacity_minutes: number;
+    effective_from: string;
+};
+
+const BLANK_FORM: FormShape = {
+    days_of_week: [1, 2, 3, 4, 5],
+    start_time: '08:00',
+    end_time: '17:00',
+    daily_capacity_minutes: 480,
+    effective_from: new Date().toISOString().slice(0, 10),
+};
+
 export default function WorkSchedulesIndex({ schedules, activeId }: { schedules: WorkScheduleRow[]; activeId: number | null }) {
-    const { data, setData, post, processing, errors, reset } = useForm<{
-        days_of_week: number[];
-        start_time: string;
-        end_time: string;
-        daily_capacity_minutes: number;
-        effective_from: string;
-    }>({
-        days_of_week: [1, 2, 3, 4, 5],
-        start_time: '08:00',
-        end_time: '17:00',
-        daily_capacity_minutes: 480,
-        effective_from: new Date().toISOString().slice(0, 10),
-    });
+    const { data, setData, post, put, processing, errors, reset, clearErrors } = useForm<FormShape>(BLANK_FORM);
+
+    // SUMBER: null = mode "Tambah Versi Baru" (POST). Terisi = mode "Edit Versi"
+    // (PUT ke baris ini) -- state LOKAL terpisah dari `data` (pola sama
+    // targetProject di tasks/all.tsx), supaya form tunggal bisa dipakai dua mode
+    // tanpa duplikasi markup.
+    const [editingId, setEditingId] = useState<number | null>(null);
+
+    const startEdit = (schedule: WorkScheduleRow) => {
+        setEditingId(schedule.id);
+        clearErrors();
+        setData({
+            days_of_week: schedule.days_of_week,
+            start_time: formatTime(schedule.start_time),
+            end_time: formatTime(schedule.end_time),
+            daily_capacity_minutes: schedule.daily_capacity_minutes,
+            effective_from: formatDate(schedule.effective_from),
+        });
+    };
+
+    const cancelEdit = () => {
+        setEditingId(null);
+        clearErrors();
+        reset();
+        setData(BLANK_FORM);
+    };
 
     const submit: FormEventHandler = (e) => {
         e.preventDefault();
 
-        post(route('work-schedules.store'), {
-            onSuccess: () => reset('effective_from'),
-        });
+        if (editingId) {
+            put(route('work-schedules.update', editingId), {
+                onSuccess: () => {
+                    setEditingId(null);
+                    setData(BLANK_FORM);
+                },
+            });
+        } else {
+            post(route('work-schedules.store'), {
+                onSuccess: () => reset('effective_from'),
+            });
+        }
+    };
+
+    const archive = async (schedule: WorkScheduleRow) => {
+        if (!(await confirmAction(`Arsipkan versi Jam Kerja mulai ${formatDate(schedule.effective_from)}? Versi ini belum pernah aktif, jadi aman dibatalkan.`))) return;
+        router.patch(route('work-schedules.archive', schedule.id), {}, { preserveScroll: true });
     };
 
     const toggleDay = (value: number, checked: boolean) => {
@@ -98,7 +162,7 @@ export default function WorkSchedulesIndex({ schedules, activeId }: { schedules:
             <div className="flex flex-col gap-6 p-4">
                 <Card>
                     <CardHeader>
-                        <CardTitle>Tambah Versi Jam Kerja</CardTitle>
+                        <CardTitle>{editingId ? 'Edit Versi Jam Kerja' : 'Tambah Versi Jam Kerja'}</CardTitle>
                     </CardHeader>
                     <CardContent>
                         <form onSubmit={submit} className="space-y-6">
@@ -160,14 +224,24 @@ export default function WorkSchedulesIndex({ schedules, activeId }: { schedules:
                                 <InputError message={errors.effective_from} />
                             </div>
 
-                            <Button disabled={processing}>Simpan sebagai versi baru</Button>
+                            <div className="flex items-center gap-2">
+                                <Button disabled={processing}>{editingId ? 'Simpan Perubahan' : 'Simpan sebagai versi baru'}</Button>
+                                {editingId && (
+                                    <Button type="button" variant="outline" onClick={cancelEdit}>
+                                        Batal edit
+                                    </Button>
+                                )}
+                            </div>
                         </form>
                     </CardContent>
                 </Card>
 
                 <Card>
                     <CardHeader>
-                        <HeadingSmall title="Riwayat Versi" description="Versi lama tidak bisa diedit/dihapus — arsip permanen (F-40)" />
+                        <HeadingSmall
+                            title="Riwayat Versi"
+                            description="Versi yang sudah pernah aktif tidak bisa diedit/dihapus — arsip permanen (F-40). Versi terjadwal (belum aktif) boleh diedit/diarsipkan."
+                        />
                     </CardHeader>
                     <CardContent>
                         <div className="overflow-x-auto">
@@ -180,23 +254,51 @@ export default function WorkSchedulesIndex({ schedules, activeId }: { schedules:
                                         <th className="py-2 pr-4">Kapasitas</th>
                                         <th className="py-2 pr-4">Dibuat oleh</th>
                                         <th className="py-2 pr-4">Status</th>
+                                        <th className="py-2 pr-4">Aksi</th>
                                     </tr>
                                 </thead>
                                 <tbody>
-                                    {schedules.map((schedule) => (
-                                        <tr key={schedule.id} className="border-b last:border-0">
-                                            <td className="py-2 pr-4">{formatDate(schedule.effective_from)}</td>
-                                            <td className="py-2 pr-4">{formatDays(schedule.days_of_week)}</td>
-                                            <td className="py-2 pr-4">
-                                                {formatTime(schedule.start_time)}–{formatTime(schedule.end_time)}
-                                            </td>
-                                            <td className="py-2 pr-4">{schedule.daily_capacity_minutes} menit</td>
-                                            <td className="py-2 pr-4">{schedule.creator?.name ?? '-'}</td>
-                                            <td className="py-2 pr-4">
-                                                {schedule.id === activeId ? <Badge>Aktif</Badge> : <Badge variant="secondary">Arsip</Badge>}
-                                            </td>
-                                        </tr>
-                                    ))}
+                                    {schedules.map((schedule) => {
+                                        // SUMBER: cuma versi FUTURE (belum pernah aktif) DAN belum
+                                        // diarsipkan yang boleh diedit/diarsipkan -- pola sama guard
+                                        // server (WorkScheduleController::update()/archive()).
+                                        const editable = !schedule.is_archived && isFutureVersion(schedule.effective_from);
+
+                                        return (
+                                            <tr key={schedule.id} className="border-b last:border-0">
+                                                <td className="py-2 pr-4">{formatDate(schedule.effective_from)}</td>
+                                                <td className="py-2 pr-4">{formatDays(schedule.days_of_week)}</td>
+                                                <td className="py-2 pr-4">
+                                                    {formatTime(schedule.start_time)}–{formatTime(schedule.end_time)}
+                                                </td>
+                                                <td className="py-2 pr-4">{schedule.daily_capacity_minutes} menit</td>
+                                                <td className="py-2 pr-4">{schedule.creator?.name ?? '-'}</td>
+                                                <td className="py-2 pr-4">
+                                                    {schedule.id === activeId ? (
+                                                        <Badge>Aktif</Badge>
+                                                    ) : schedule.is_archived ? (
+                                                        <Badge variant="outline">Dibatalkan</Badge>
+                                                    ) : editable ? (
+                                                        <Badge variant="secondary">Terjadwal</Badge>
+                                                    ) : (
+                                                        <Badge variant="secondary">Arsip</Badge>
+                                                    )}
+                                                </td>
+                                                <td className="py-2 pr-4">
+                                                    {editable && (
+                                                        <div className="flex gap-2">
+                                                            <Button type="button" variant="outline" size="sm" onClick={() => startEdit(schedule)}>
+                                                                Edit
+                                                            </Button>
+                                                            <Button type="button" variant="destructive" size="sm" onClick={() => archive(schedule)}>
+                                                                Arsipkan
+                                                            </Button>
+                                                        </div>
+                                                    )}
+                                                </td>
+                                            </tr>
+                                        );
+                                    })}
                                 </tbody>
                             </table>
                         </div>
