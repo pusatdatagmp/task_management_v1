@@ -201,11 +201,17 @@ export default function TaskShow({ project, task, statuses, projectMembers }: Ta
                     </div>
 
                     {can('task.manage') && (
+                        // Permintaan Boss (2026-08-10): dulu dua-duanya "outline" (nyaris
+                        // tak kelihatan, warna netral sama kayak tombol lain di halaman).
+                        // Edit -> "default" (warna brand solid, aksi utama). Hapus ->
+                        // "destructive" (merah solid) -- pola SAMA dialog konfirmasi di
+                        // atas (confirmAction(..., {danger:true})), warna tombol sekarang
+                        // konsisten dengan tingkat bahaya aksinya.
                         <div className="flex gap-2">
-                            <Button type="button" variant="outline" size="sm" asChild>
+                            <Button type="button" variant="default" size="sm" asChild>
                                 <Link href={route('tasks.edit', [project.id, task.id])}>Edit</Link>
                             </Button>
-                            <Button type="button" variant="outline" size="sm" onClick={destroy}>
+                            <Button type="button" variant="destructive" size="sm" onClick={destroy}>
                                 Hapus
                             </Button>
                         </div>
