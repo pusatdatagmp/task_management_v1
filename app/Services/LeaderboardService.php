@@ -19,12 +19,14 @@
  *               (angka MENTAH — pemetaan rupiah/skor-kinerja lain TIDAK PERNAH terjadi
  *               di sini atau di mana pun, F-4/F-134). kpi_total = Σ kpi_score task
  *               disetujui periode ini, KOLOM TERPISAH dari point (F-168).
- * RISIKO      : SUMBER on-time — logika (revisi 2026-08-10: actual_minutes vs
- *               estimated_minutes, due_date TIDAK LAGI dicek) hidup SATU-SATUNYA di
- *               Task::isOnTime() (diekstrak v1.4 KPI-1, F-109) supaya SimpleTimelinessStrategy
- *               bisa reuse PERSIS logika yang sama saat freeze kpi_score di approve() —
- *               JANGAN tulis ulang logika on-time inline di sini lagi, itu bikin
- *               penentu on-time kedua yang bisa drift dari yang dipakai KPI.
+ * RISIKO      : SUMBER on-time — logika (revisi KEDUA 2026-08-10: GABUNGAN due_date
+ *               (F-47, original_due_date??due_date vs submitted_at??approved_at) DAN
+ *               actual_minutes<=estimated_minutes, keduanya WAJIB terpenuhi) hidup
+ *               SATU-SATUNYA di Task::isOnTime() (diekstrak v1.4 KPI-1, F-109) supaya
+ *               SimpleTimelinessStrategy bisa reuse PERSIS logika yang sama saat
+ *               freeze kpi_score di approve() — JANGAN tulis ulang logika on-time
+ *               inline di sini lagi, itu bikin penentu on-time kedua yang bisa
+ *               drift dari yang dipakai KPI.
  * ==========================================================
  */
 
@@ -64,11 +66,14 @@ class LeaderboardService
             ->whereBetween('approved_at', [$from, $to])
             ->whereHas('assignees', fn ($q) => $q->whereIn('users.id', $userIds))
             ->with('assignees:id')
-            // due_date/original_due_date/submitted_at DIHAPUS dari select (revisi
-            // 2026-08-10): isOnTime() tidak lagi memakainya. actual_minutes/
-            // estimated_minutes DITAMBAH -- keduanya WAJIB ada di memori sebelum
-            // Task::isOnTime() dipanggil di loop bawah (lazy-load dilarang, F-85).
-            ->get(['id', 'points', 'quality_rating', 'rejection_count', 'actual_minutes', 'estimated_minutes', 'approved_at', 'kpi_score']);
+            // due_date/original_due_date/submitted_at DIKEMBALIKAN (revisi KEDUA
+            // 2026-08-10, F-47 aktif lagi) -- isOnTime() sekarang butuh KEDUA
+            // sumbu (due_date DAN actual/estimated_minutes) SEKALIGUS di memori
+            // sebelum dipanggil di loop bawah (lazy-load dilarang, F-85).
+            ->get([
+                'id', 'points', 'quality_rating', 'rejection_count', 'due_date', 'original_due_date',
+                'submitted_at', 'approved_at', 'actual_minutes', 'estimated_minutes', 'kpi_score',
+            ]);
 
         // Akumulator mentah per user -- SATU pass PHP di memori, bukan query lagi
         // per task/user (F-85). ratingSum/ratingCount terpisah supaya rata-rata
@@ -79,10 +84,10 @@ class LeaderboardService
         }
 
         foreach ($tasks as $task) {
-            // F-109 (revisi 2026-08-10): on-time diekstrak ke Task::isOnTime() (v1.4
-            // KPI-1) supaya SimpleTimelinessStrategy bisa reuse persis logika yang
-            // sama saat freeze di approve() -- SATU sumber, nol penentu on-time kedua.
-            // Sekarang murni actual_minutes<=estimated_minutes, lihat header method itu.
+            // F-109 (revisi KEDUA 2026-08-10): on-time diekstrak ke Task::isOnTime()
+            // (v1.4 KPI-1) supaya SimpleTimelinessStrategy bisa reuse persis logika
+            // yang sama saat freeze di approve() -- SATU sumber, nol penentu on-time
+            // kedua. GABUNGAN due_date DAN actual/estimated_minutes, lihat header method itu.
             $onTime = $task->isOnTime();
 
             foreach ($task->assignees as $assignee) {

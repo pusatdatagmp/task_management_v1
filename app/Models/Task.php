@@ -193,39 +193,50 @@ class Task extends Model
     }
 
     /**
-     * KONTRAK (F-109, DIREVISI keputusan Boss 2026-08-10): SATU-SATUNYA penentu
-     * on-time vs telat — dipakai LeaderboardService::forPeriod() (kolom konteks
-     * on_time_percent) DAN SimpleTimelinessStrategy (v1.4 KPI-1, freeze saat
-     * approve). JANGAN duplikasi logika ini di tempat lain, tambah pemanggil
-     * baru ke method ini.
+     * KONTRAK (F-109, DIREVISI KEDUA KALI keputusan Boss 2026-08-10): SATU-
+     * SATUNYA penentu on-time vs telat — dipakai LeaderboardService::forPeriod()
+     * (kolom konteks on_time_percent) DAN SimpleTimelinessStrategy (v1.4 KPI-1,
+     * freeze saat approve). JANGAN duplikasi logika ini di tempat lain, tambah
+     * pemanggil baru ke method ini.
      *
-     * BUSINESS RULE (2026-08-10, revisi F-47): "telat" SEKARANG murni soal
-     * EFISIENSI JAM KERJA — actual_minutes (jam nyata via task_time_segments,
-     * F-57 business-hours-only) dibandingkan estimated_minutes. due_date/
-     * original_due_date TIDAK LAGI dicek sama sekali di sini (beda dari desain
-     * lama F-47) — Boss SADAR & TERIMA konsekuensinya: task yang mulai telat
-     * dari deadline tapi actual < estimasi tetap "tepat waktu" di sini.
+     * BUSINESS RULE (2026-08-10, revisi KEDUA F-47 -- GABUNGAN/AND): "tepat
+     * waktu" WAJIB memenuhi DUA syarat SEKALIGUS -- (a) tenggat: submit/approve
+     * TIDAK lewat original_due_date??due_date, DAN (b) efisiensi: actual_minutes
+     * <= estimated_minutes. Salah SATU dilanggar = telat. Revisi PERTAMA hari
+     * ini sempat murni actual/estimasi (due_date diabaikan total) -- Boss balik
+     * putusan setelah sadar skenario nyata: submit 2 menit lewat due_date tapi
+     * actual masih di bawah estimasi TETAP HARUS telat (bukti kasus: estimasi
+     * 10 menit, due_date 12:25, mulai 12:23, submit 12:27 -- actual 4 menit
+     * <=10 tapi lewat due_date 2 menit -> WAJIB telat).
      *
-     * estimated_minutes DIPAKAI APA ADANYA (nilai SEKARANG, BUKAN "versi asli
-     * sebelum perpanjangan") — Boss SADAR & TERIMA celah: perpanjangan yang
-     * disetujui admin (DeadlineExtensionObserver) ikut menaikkan estimated_minutes
-     * (lihat header file itu), jadi member SECARA TEKNIS bisa "melonggarkan"
-     * ambang telat lewat alur perpanjangan yang sama dipakai due_date. Ini
-     * keputusan SADAR (bukan celah lolos tak disadari), lihat CATATAN
-     * 2026-08-10 di 04-FINDING-REGISTRY.md kalau Boss sudah mencatatnya.
+     * Syarat (a) — REUSE definisi F-47 lama (sempat dicabut, sekarang aktif
+     * lagi): tenggat ASLI = original_due_date KALAU task pernah diperpanjang,
+     * else due_date (coalesce WAJIB, task normal tak boleh dibandingkan ke
+     * null). Basis waktu = submitted_at (submit PERTAMA member, keputusan Boss
+     * 2026-08-07) — approved_at HANYA fallback untuk task lama pra-migrasi
+     * kolom submitted_at, supaya member tak dihukum karena admin lambat approve.
+     *
+     * Syarat (b) — estimated_minutes DIPAKAI APA ADANYA (nilai SEKARANG, ikut
+     * naik kalau ada perpanjangan disetujui, F-166) — Boss SADAR & TERIMA celah
+     * ini (lihat CATATAN 2026-08-10 04-FINDING-REGISTRY.md).
      *
      * RISIKO: pemanggil WAJIB pastikan actual_minutes SUDAH terisi (di memori
-     * ATAU DB) sebelum panggil method ini -- kalau masih null (task belum
-     * pernah masuk is_completed), perbandingan ini TIDAK BERMAKNA. Lihat
+     * ATAU DB) SEBELUM panggil method ini -- kalau masih null (task belum
+     * pernah masuk is_completed), perbandingan (b) TIDAK BERMAKNA. Lihat
      * TaskTransitionService::approve() — actual_minutes WAJIB di-assign ke
-     * attribute SEBELUM strategy KPI dipanggil (pola sama approved_at),
-     * TaskObserver::saving() baru menghitungnya belakangan di update() yang
-     * sama, jadi kalau tidak di-assign duluan, kpi_score bisa beku dengan
-     * actual_minutes null/salah.
+     * attribute SEBELUM strategy KPI dipanggil (pola sama approved_at).
+     * Pemanggil JUGA wajib pastikan submitted_at ATAU approved_at terisi --
+     * kalau keduanya null, lessThanOrEqualTo() meledak (call method di null).
      */
     public function isOnTime(): bool
     {
-        return $this->actual_minutes <= $this->estimated_minutes;
+        $originalDeadline = $this->original_due_date ?? $this->due_date;
+        $lateBasis = $this->submitted_at ?? $this->approved_at;
+
+        $meetsDeadline = $lateBasis->lessThanOrEqualTo($originalDeadline);
+        $meetsEstimate = $this->actual_minutes <= $this->estimated_minutes;
+
+        return $meetsDeadline && $meetsEstimate;
     }
 
     /**

@@ -9,8 +9,9 @@
  *               (admin override lewat Setelan, KPI-2). Task tidak-selesai TIDAK
  *               relevan di sini — dipanggil HANYA saat approve (F-28), jadi task
  *               yang sampai ke strategy ini SELALU task disetujui. "On-time"
- *               (revisi 2026-08-10) = actual_minutes<=estimated_minutes (EFISIENSI
- *               jam kerja) — due_date TIDAK LAGI relevan sama sekali di sini.
+ *               (revisi KEDUA 2026-08-10) = GABUNGAN due_date (F-47) DAN
+ *               actual_minutes<=estimated_minutes (EFISIENSI) -- keduanya WAJIB
+ *               terpenuhi, lihat header lengkap Task::isOnTime().
  * DIPANGGIL   : KpiStrategyRegistry::resolve('simple_timeliness')
  * MEMANGGIL   : Task::isOnTime() (F-109 — REUSE, bukan penentu on-time kedua),
  *               Task::organization (baca config poin)

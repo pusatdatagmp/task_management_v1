@@ -331,9 +331,12 @@ class TaskTransitionService
      * kpi_enabled=false -> kpi_score tetap null (fitur "tinggal disable").
      * $task->approved_at DAN $task->actual_minutes di-assign KE ATTRIBUTE dulu
      * (bukan cuma array update()) SEBELUM strategy dipanggil — Task::isOnTime()
-     * (F-109, revisi 2026-08-10: actual_minutes vs estimated_minutes) BUTUH
-     * actual_minutes SUDAH terisi saat strategy membacanya, bukan masih null
-     * (TaskObserver::saving() baru menghitungnya belakangan di update() ini).
+     * (F-109, revisi KEDUA 2026-08-10: GABUNGAN due_date DAN actual_minutes vs
+     * estimated_minutes) BUTUH KEDUANYA sudah terisi saat strategy membacanya
+     * (approved_at utk basis fallback due_date, actual_minutes utk basis
+     * estimasi) — TaskObserver::saving() baru menghitung actual_minutes
+     * belakangan di update() ini, jadi kalau tidak di-assign duluan, kpi_score
+     * bisa beku salah.
      */
     public function approve(Task $task, User $admin, int $qualityRating): void
     {
