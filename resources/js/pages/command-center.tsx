@@ -233,9 +233,9 @@ const HEATMAP_LEVEL_LABEL: Record<'aman' | 'tengah' | 'overload', string> = {
 };
 
 const HEATMAP_LEVEL_CLASS: Record<'aman' | 'tengah' | 'overload', string> = {
-    aman: 'bg-gray-100 text-gray-900 dark:bg-gray-800 dark:text-gray-200',
-    tengah: 'bg-green-500 text-green-900 dark:bg-green-950 dark:text-green-200',
-    overload: 'bg-red-100 text-red-900 dark:bg-red-950 dark:text-red-200',
+    aman: 'bg-gray-200 text-gray-900 dark:bg-gray-800 dark:text-gray-200',
+    tengah: 'bg-green-300 text-green-900 dark:bg-green-950 dark:text-green-200',
+    overload: 'bg-red-300 text-red-900 dark:bg-red-950 dark:text-red-200',
 };
 
 const STATUS_BADGE: Record<string, { label: string; className: string }> = {
