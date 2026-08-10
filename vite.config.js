@@ -20,7 +20,7 @@ export default defineConfig({
     //     host: '0.0.0.0', // Izinkan semua IP akses Vite
     //     cors: true,     // Mengaktifkan Header CORS
     //     hmr: {
-    //         host: '192.168.1.22', // Sesuaikan dengan IP laptop kamu
+    //         host: '192.168.1.17', // Sesuaikan dengan IP laptop kamu
     //     },
     // },
     esbuild: {
