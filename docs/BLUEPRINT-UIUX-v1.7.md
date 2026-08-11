@@ -332,3 +332,32 @@ DateWindow/Quota] -> [HolidayShift target_date] -> [GENERATE + salin checklist F
   migrasi template lama -> time_based + interval dari recurrence lama.
 
 ### 13.7 Rencana: AE-1 skema -> AE-2 pipeline -> AE-2b form konfigurasi -> AE-3 Opsi B+notif+CUTOVER -> AE-4 (opsional) UI riwayat.
+
+---
+
+## §14. SISTEM KPI (v1.4) — pluggable, config-driven, toggleable (F-166..F-168)
+
+Skor kinerja per-task, dirancang agar versi sekarang & pengembangan tinggal ditukar lewat setting/disable.
+
+### 14.1 Arsitektur (F-166) — pola sama Automation Engine (F-158)
+`KpiScoringStrategy { score(task): int }`, didaftar per-key. Consumer (leaderboard, tampilan task)
+baca field `kpi_score` — tak peduli strategy mana. Dua saklar setting org-level:
+- `kpi_strategy` — pilih logika (`simple` → `weighted` dst). Ganti versi = ganti setting.
+- `kpi_enabled` — master on/off seluruh fitur KPI. "Tinggal disable."
+
+### 14.2 SimpleTimelinessStrategy (sekarang)
+- ontime = 5 · telat = 3 · tidak selesai = 0 — **default config**, admin override di Setelan (org-level).
+- ontime vs telat pakai `original_due_date` (F-47).
+
+### 14.3 Guardrail (F-167)
+- 🔴 Skor DIBEKUKAN saat approve (F-39) — ubah nilai poin TIDAK retroaktif (adil, anti-Goodhart).
+- Management-only (F-134) · provisional (F-2, kalibrasi v1.5 = tukar strategy) · NOL rupiah (F-4).
+
+### 14.4 Leaderboard (F-168, DIREVISI)
+- **Point = Σ pts TETAP** (throughput). `kpi_score` = **KOLOM TERPISAH** (indikator ketepatan-waktu, Σ per-task 5/3),
+  sejajar on-time%/rating/rejection sebagai konteks. **F-62 dipertahankan penuh** — timeliness transparan, tak dibaked ke Point.
+- `points` + `quality_rating` tetap (WeightedStrategy masa depan: pts×rating×timeliness).
+- Task tidak-selesai = konteks (F-62); versi ketat (strategy nanti) hitung semua due, notdone=0.
+
+### 14.5 Rencana: KPI-1 (schema kpi_score + config + SimpleTimelinessStrategy + freeze at approve) →
+KPI-2 (integrasi leaderboard Σkpi_score + Setelan UI config poin + master toggle + tampil skor di task).

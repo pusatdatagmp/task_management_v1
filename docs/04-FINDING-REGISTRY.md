@@ -85,7 +85,7 @@
 | **F-61** | `last_generated_date` = idempotency guard | 🟢 | BF §3 |
 | **F-62** | Jumlah extension per user = metrik KPI v1.5 | 🟢 | BF §4 |
 | **F-63** | **Multi-assignee: realisasi & poin dibagi atau digandakan?** | 🟡 **sebelum v0.8** | BF §12 |
-| **F-64** | Finding baru mulai dari F-165 | 🟢 | CLAUDE §2 |
+| **F-64** | Finding baru mulai dari F-169 | 🟢 | CLAUDE §2 |
 | **F-65** | **Laravel 12 bug-fix berakhir ±Agu 2026** — keputusan Boss tetap L12. Upgrade ke L13 wajib dijadwalkan | 🟡 **AKTIF** | Tutorial §0 |
 | **F-66** | **Segmen menyeberang perubahan `work_schedules`** → v0.5 pakai config aktif saat `started_at`. Resolusi per-hari → v0.8 | 🟢 | H2 §C2 |
 | **F-67** | **Guard FULLTEXT harus EXCLUDE sqlite, bukan INCLUDE mysql** — driver `mariadb` bikin search mati diam-diam | 🟢 | H2 §B1 |
@@ -186,6 +186,10 @@
 | **F-162** | 🔵 **DITUTUP (AE-3 cutover 5176563)** — `tasks:generate-recurring` dicabut dari scheduler; `automation:run` satu-satunya generator (verified schedule:list + Schedule::events introspeksi). Command lama utuh @deprecated (rollback). Nol double-gen | 🔵 **selesai** | v1.3 AE |
 | **F-163** | 🔵 **DRIFT anchor hari-tetap pasca miss-run:** template weekly/monthly dimigrasi ke `time_based` (interval bergulir dari last_generated). Setelah miss-run, catch-up set last_generated=hari-eval → anchor hari-tetap (mis. tiap Senin/tgl-1) BERGESER. Akar: hari-tetap seharusnya `calendar_anchored`, bukan time_based. DB dev kosong (belum menggigit). SELESAI (AE-2b 0fefe75) — migrasi korektif idempotent, weekly/monthly→calendar_anchored (bukti angka), daily tetap, pilihan manual Boss tak tertimpa | 🔵 **selesai** | v1.3 AE |
 | **F-164** | 🔵 **CalendarAnchored day_of_month>28 = SKIP bulan pendek** (E4, mis. tgl 31 di Feb → skip total), BUKAN clamp akhir-bulan (F-101 lama). Untuk semantik "akhir bulan"/"tgl 31", perlu opsi CLAMP. SELESAI (AE-2b) — CalendarAnchored clamp akhir-bulan (tgl31 Feb→28, bukti [28]); E4 diperbarui F-78 | 🔵 **selesai** | v1.3 AE |
+| **F-165** | 🟡 **workload_top5 dihitung backend (F-96/F-118) tapi TIDAK dirender frontend** command-center.tsx — beda dari Beban Tim (F-52) yang tampil. Screenshot lama menunjukkan widget "Workload Top-5" PERNAH tampil → kemungkinan REGRESI (drop saat rework UI). Data backend tetap dihitung. KEPUTUSAN Boss: re-add widget (fix regresi, rekomendasi) atau hapus komputasi (redundan) | 🟡 **TERBUKA** | v1.2 |
+| **F-166** | **SISTEM KPI — pluggable + config + master toggle** (pola F-158). `KpiScoringStrategy` interface, didaftar per-key. Sekarang: `SimpleTimelinessStrategy` (ontime=5/telat=3/notdone=0, config org-level default + admin override di Setelan). Nanti: WeightedStrategy dll = tambah class+daftar. Saklar: `kpi_strategy` (pilih logika) + `kpi_enabled` (master on/off). Consumer baca field `kpi_score` — ganti strategy/disable NOL dampak. Ganti versi = ganti setting, bukan kode | 🟢 | v1.4 KPI |
+| **F-167** | **KPI guardrail:** skor DIBEKUKAN saat approve (F-39, ubah poin tak retroaktif) · ontime vs telat pakai `original_due_date` (F-47, perpanjangan tak palsukan ontime) · management-only (F-134) · provisional (F-2, kalibrasi v1.5 = tukar strategy) · NOL rupiah (F-4) | 🟢 | v1.4 KPI |
+| **F-168** | **`kpi_score` = KOLOM TERPISAH di leaderboard, BUKAN ganti Σpts** (DIREVISI Boss setelah laporan KPI ungkap pemisahan F-62 disengaja). **Σpts TETAP Point** (throughput). kpi_score = indikator ketepatan-waktu (Σ per-task 5/3), tampil sejajar on-time%/rating/rejection sbg konteks — F-62 DIPERTAHANKAN PENUH (timeliness transparan, tak dibaked ke Point). `points`+`quality_rating` tetap (WeightedStrategy nanti). notdone=0 = konteks (F-62), versi ketat nanti | 🟢 | v1.4 KPI |
 
 ---
 
@@ -1200,3 +1204,39 @@ NEXT: verifikasi item 19 → lalu H8 (Meetings) → H9.
 ## CATATAN — 2026-08-05 — Boss lompat ke H9 (H8 Meetings ditunda)
 
 Boss: "langsung H9 saja". **H8 Meetings DITUNDA/skip** (migration+model ADA sejak 25 Jul, controller/UI belum — bisa disusun kapan saja kalau Boss mau). H9 = FINALISASI: stabilkan working-tree (commit tertunda + resolusi 1 known-fail query 42≠41), regresi penuh, konsistensi lintas-fitur (F-94/F-109), sinkron docs, kompilasi checklist verifikasi F-97 jadi satu pass. 🔴 H9 TAK menutup F-97 (butuh mata Boss) — hanya menyiapkannya rapi.
+
+---
+
+## CATATAN — 2026-08-05 — v1.2 H9 (finalisasi) lulus 🎯 — SUITE HIJAU
+
+**LULUS.** 435 pass, 0 fail (known-fail lama tuntas). 3 commit terpisah (99c7c1c kerja UI Boss + F-156/157, b50f993 docs sync, 270b2a4 H9). Working tree bersih, 22 commit lokal siap push (BELUM push — tunggu Boss).
+
+**Root-cause query 41→42:** BUKAN N+1 — cacat fixture (actingAs() dipanggil setelah 3 task ditulis → user_id NULL → eager-load di-skip; batch berikut terisi → query muncul). Fix: pindah actingAs() ke awal (F-78, bukan naikkan angka). Query sah, test-nya yang salah hitung.
+
+**F-94/F-109 konsisten** (satu sumber, grep nol duplikat). **F-97** checklist terkonsolidasi 19 item (TAK diklaim tuntas).
+
+**F-165:** workload_top5 dihitung tak dirender (kemungkinan regresi). Keputusan Boss.
+
+🎯 **v1.2 PRAKTIS TUNTAS & HIJAU.** Sisa: verifikasi F-97 (mata Boss) + keputusan push + F-166 + opsional H8/AE-4.
+
+---
+
+## CATATAN — 2026-08-05 — desain SISTEM KPI (v1.4) dikunci
+
+Boss: fitur KPI indikator sederhana (ontime=5/telat=3/notdone=0, default+admin override), dibangun EXTENSIBLE agar versi nanti tinggal disable/ganti setting. Boss konfirmasi: (1) pluggable+config+toggle (F-166), (2) bekukan saat approve (F-167), (3) kpi_score ganti Σ pts di leaderboard (F-168).
+
+Pola sama Automation Engine (F-158) & tema/branding (config-driven). Not-done: versi sederhana konteks-saja, versi ketat strategy nanti.
+
+Rencana: KPI-1 (schema kpi_score + config + SimpleTimelinessStrategy + freeze at approve) → KPI-2 (integrasi leaderboard ganti Σpts + Setelan UI config + master toggle + tampil skor task). Feature v1.4.
+
+---
+
+## CATATAN — 2026-08-09 — rekonsiliasi laporan KPI + revisi F-168; KPI-1 mulai
+
+Laporan KPI Claude Code (9 Agu) AKURAT soal state: formula FINAL ditunda v1.5 (F-2/F-58), 6 metrik terkumpul sejak Hari-1 (F-37: ditolak/estimasi-aktual/points/quality_rating/lama-status/geser-due), leaderboard Point=Σpts + on-time%/rating/rejection TERPISAH (F-62), F-39 freeze, F-4 no-money. (Bagian roadmap laporan agak basi: DS-3 & H9 sudah selesai; laporan klaim leaderboard browser-verified padahal F-97 masih pending di tracking kita.)
+
+**BUKAN kontradiksi:** simple-KPI-Boss = indikator SEMENTARA provisional (F-2 dihormati), v1.5 = formula terkalibrasi (tukar strategy). Data fondasi SUDAH ADA → KPI-1 ringan. original_due_date (F-47) sudah dipakai on-time%.
+
+**F-168 DIREVISI:** kpi_score = kolom terpisah (bukan ganti Σpts); F-62 dipertahankan penuh. Boss pilih ini setelah paham pemisahan timeliness disengaja.
+
+**Boss: LANJUT bangun KPI-1 sekarang** (schema kpi_score + config + SimpleTimelinessStrategy + freeze at approve).
