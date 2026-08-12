@@ -8,8 +8,11 @@
  *               JSON) jadi kalimat Indonesia manusiawi (v1.0 H4, F-106) — SATU
  *               sumber label, dipakai log global (ActivityLogController) DAN
  *               timeline per-task (TaskController::show()) supaya tidak ada dua
- *               peta label yang bisa drift (pola F-72/F-76).
- * DIPANGGIL   : ActivityLogController::index(), TaskController::show()
+ *               peta label yang bisa drift (pola F-72/F-76). F-169 (audit Boss
+ *               2026-08-12): tambah case WorkSchedule -- "Log Perubahan" di
+ *               halaman Pengaturan > Jam Kerja reuse presenter yang sama.
+ * DIPANGGIL   : ActivityLogController::index(), TaskController::show(),
+ *               WorkScheduleController::index()
  * MEMANGGIL   : TaskStatus, User (batch lookup, F-85 — lihat RISIKO)
  * DATA MASUK  : Collection<ActivityLog> — WAJIB sudah eager-load relasi 'user' dan
  *               'subject' (+ nested 'subject.task' untuk Attachment/DeadlineExtension)
@@ -121,6 +124,21 @@ class ActivityLogPresenter
             'Project:unassigned' => "{$actor} melepas ".$this->userName($old['user_id'] ?? null)." dari member project \"{$this->projectName($log)}\".",
             'Project:deleted' => "{$actor} menghapus project #{$log->subject_id}.",
 
+            // F-169: WorkSchedule 'created' DIPAKAI untuk tiap "Edit" juga (F-40 --
+            // edit = INSERT versi baru, bukan update baris lama), jadi $old di sini
+            // isinya versi SEBELUMNYA (diisi WorkScheduleObserver::created()), bukan
+            // "tidak ada data lama". Kalau $old kosong (baris pertama org ini, mis.
+            // seeder Hari-1), tampilkan sebagai pengaturan awal, bukan delta.
+            'WorkSchedule:created' => $old
+                ? "{$actor} mengubah jam kerja: {$this->workScheduleDiff($old, $new)}."
+                : "{$actor} membuat jendela jam kerja awal ({$this->workScheduleSummary($new)}).",
+            // 'updated' cuma muncul lewat jalur legacy update()/archive() versi
+            // FUTURE (backend dipertahankan, UI utama tidak pakai lagi) -- getChanges()
+            // cuma bawa field yang BENAR-BENAR berubah, archive() cuma is_archived.
+            'WorkSchedule:updated' => array_key_exists('is_archived', $new)
+                ? "{$actor} mengarsipkan versi jam kerja terjadwal (mulai {$this->workScheduleDate($log)})."
+                : "{$actor} mengubah versi jam kerja terjadwal: {$this->workScheduleDiff($old, $new)}.",
+
             'Attachment:attachment_uploaded' => "{$actor} mengunggah lampiran \"".($new['file_name'] ?? '?').'" ('.
                 ($new['type'] ?? '?').") ke task \"{$this->attachmentTaskTitle($log)}\".",
             'Attachment:deleted' => "{$actor} menghapus lampiran #{$log->subject_id}.",
@@ -171,6 +189,65 @@ class ActivityLogPresenter
         }
 
         return $this->userNames->get($id, 'user yang sudah dihapus');
+    }
+
+    /**
+     * KONTRAK: F-169 — kalimat delta jam kerja, cuma sebut field yang BENAR-BENAR
+     * beda antara $old/$new (array partial, mis. dari getChanges() update() legacy,
+     * bisa cuma bawa 1-2 field). Dipakai WorkSchedule:created (delta vs versi
+     * sebelumnya) & WorkSchedule:updated (delta legacy edit versi FUTURE).
+     */
+    private function workScheduleDiff(array $old, array $new): string
+    {
+        $parts = [];
+
+        $oldWindow = isset($old['start_time'], $old['end_time'])
+            ? substr($old['start_time'], 0, 5).'–'.substr($old['end_time'], 0, 5)
+            : null;
+        $newWindow = isset($new['start_time'], $new['end_time'])
+            ? substr($new['start_time'], 0, 5).'–'.substr($new['end_time'], 0, 5)
+            : null;
+        if ($oldWindow !== null && $newWindow !== null && $oldWindow !== $newWindow) {
+            $parts[] = "jam {$oldWindow} → {$newWindow}";
+        }
+
+        if (array_key_exists('daily_capacity_minutes', $old) && array_key_exists('daily_capacity_minutes', $new)
+            && $old['daily_capacity_minutes'] !== $new['daily_capacity_minutes']) {
+            $parts[] = "kapasitas {$old['daily_capacity_minutes']} → {$new['daily_capacity_minutes']} menit";
+        }
+
+        if (array_key_exists('days_of_week', $old) && array_key_exists('days_of_week', $new)
+            && $old['days_of_week'] !== $new['days_of_week']) {
+            $parts[] = 'hari kerja '.$this->formatWorkDays($old['days_of_week']).' → '.$this->formatWorkDays($new['days_of_week']);
+        }
+
+        return $parts === [] ? 'pengaturan diperbarui' : implode(', ', $parts);
+    }
+
+    /**
+     * KONTRAK: F-169 — ringkasan 1 versi jam kerja lengkap (dipakai saat TIDAK ada
+     * versi sebelumnya untuk dibandingkan, mis. baris pertama organisasi).
+     */
+    private function workScheduleSummary(array $props): string
+    {
+        $days = $this->formatWorkDays($props['days_of_week'] ?? []);
+        $start = substr($props['start_time'] ?? '', 0, 5);
+        $end = substr($props['end_time'] ?? '', 0, 5);
+        $capacity = $props['daily_capacity_minutes'] ?? '?';
+
+        return "{$days}, {$start}–{$end}, {$capacity} menit/hari";
+    }
+
+    private function formatWorkDays(array $days): string
+    {
+        $labels = [1 => 'Sen', 2 => 'Sel', 3 => 'Rab', 4 => 'Kam', 5 => 'Jum', 6 => 'Sab', 7 => 'Min'];
+
+        return collect($days)->map(fn ($d) => $labels[$d] ?? $d)->implode(',');
+    }
+
+    private function workScheduleDate(ActivityLog $log): string
+    {
+        return $log->subject?->effective_from?->format('d M Y') ?? '?';
     }
 
     /**

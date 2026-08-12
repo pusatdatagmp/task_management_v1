@@ -1,6 +1,7 @@
 <?php
 
 use App\Http\Middleware\HandleInertiaRequests;
+use App\Http\Middleware\PreventBackHistoryCache;
 use Illuminate\Foundation\Application;
 use Illuminate\Foundation\Configuration\Exceptions;
 use Illuminate\Foundation\Configuration\Middleware;
@@ -24,6 +25,10 @@ return Application::configure(basePath: dirname(__DIR__))
         $middleware->web(append: [
             HandleInertiaRequests::class,
             AddLinkHeadersForPreloadedAssets::class,
+            // BUG FIX (permintaan Boss): tombol Back browser setelah logout
+            // menampilkan halaman ter-autentikasi lama dari bfcache tanpa
+            // request ulang -- lihat header klasifikasi PreventBackHistoryCache.
+            PreventBackHistoryCache::class,
         ]);
 
         // F-90/RBAC §D4: alias 'admin' (EnsureUserIsAdmin) DIHAPUS — semua route

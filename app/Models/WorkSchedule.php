@@ -21,6 +21,10 @@
  *               (model tetap pasif, nol validasi tanggal di sini).
  *               F-72 — serializeDate() DIPINDAH ke trait SerializesDatesInAppTimezone
  *               (dipasang di semua 14 model bisnis), bukan override lokal di sini lagi.
+ *               F-169 — #[ObservedBy(WorkScheduleObserver::class)] DITAMBAHKAN (audit
+ *               Boss 2026-08-12): sebelumnya model ini NOL Observer, tiap create/
+ *               update lolos tanpa jejak di activity_logs (celah F-51). Sumber "Log
+ *               Perubahan" di halaman Pengaturan > Jam Kerja.
  * ==========================================================
  */
 
@@ -28,11 +32,14 @@ namespace App\Models;
 
 use App\Models\Concerns\BelongsToOrganization;
 use App\Models\Concerns\SerializesDatesInAppTimezone;
+use App\Observers\WorkScheduleObserver;
 use Carbon\Carbon;
+use Illuminate\Database\Eloquent\Attributes\ObservedBy;
 use Illuminate\Database\Eloquent\Factories\HasFactory;
 use Illuminate\Database\Eloquent\Model;
 use Illuminate\Database\Eloquent\Relations\BelongsTo;
 
+#[ObservedBy(WorkScheduleObserver::class)]
 class WorkSchedule extends Model
 {
     use BelongsToOrganization, HasFactory, SerializesDatesInAppTimezone;

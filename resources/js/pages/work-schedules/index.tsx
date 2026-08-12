@@ -1,25 +1,25 @@
 // ==========================================================
 // MODUL       : work-schedules/index
 // KLASIFIKASI : UI
-// TUJUAN      : Pengaturan > Jam Kerja — riwayat versi (F-40) + form tambah versi
-//               baru. Permintaan Boss (2026-08-10, audit F-40): edit + arsip
-//               manual SEKARANG ada, TAPI HANYA untuk versi FUTURE (effective_from
-//               > hari ini, belum pernah aktif, nol dampak KPI) — versi yang
-//               SUDAH PERNAH aktif (Aktif sekarang / Arsip historis) TETAP
-//               terkunci permanen sesuai F-40 asli, tombol Edit/Arsipkan
-//               SENGAJA tidak dirender untuk baris itu (guard ganda — server
-//               juga menolak, WorkScheduleController::update()/archive()).
+// TUJUAN      : Pengaturan > Jam Kerja — audit Boss 2026-08-12 (F-169): 1 kartu
+//               "Jam Kerja Saat Ini" (bukan tabel riwayat semua versi) + tombol
+//               Edit + "Log Perubahan" di bawahnya. F-40 TETAP dihormati penuh:
+//               Edit TIDAK update baris aktif (dilarang), tapi POST ke
+//               work-schedules.quick-edit -> INSERT versi baru effective_from
+//               HARI INI di server (WorkScheduleController::quickEdit()). Fitur
+//               penjadwalan versi masa depan (tanggal custom/arsip/"Jadikan Aktif
+//               Sekarang") SENGAJA dilepas dari UI ini atas keputusan Boss --
+//               backend (store/update/archive/activateNow) tetap utuh, reversible.
 // DIPANGGIL   : WorkScheduleController::index()
-// MEMANGGIL   : route('work-schedules.store'/'update'/'archive')
-// DATA MASUK  : schedules[] (riwayat, urut effective_from desc, is_archived),
-//               activeId (versi aktif)
-// DATA KELUAR : POST/PUT/PATCH form -> WorkScheduleController
-// RISIKO      : F-70 — effective_from di form TIDAK punya date picker yang izinkan
-//               tanggal lampau; validasi keras tetap di server (FormRequest), ini cuma UX.
-//               SUMBER edit: klik "Edit" memuat data baris itu ke form YANG SAMA
-//               (bukan form terpisah) lalu ganti mode ke PUT — "Batal edit"
-//               WAJIB reset ke mode tambah, atau form nyangkut di mode edit
-//               baris yang sudah tidak relevan.
+// MEMANGGIL   : route('work-schedules.quick-edit')
+// DATA MASUK  : current (versi WorkSchedule aktif sekarang, null kalau org belum
+//               pernah diatur), logs (feed activity_logs subject WorkSchedule,
+//               sudah diterjemahkan ActivityLogPresenter di server)
+// DATA KELUAR : POST form -> WorkScheduleController::quickEdit()
+// RISIKO      : SUMBER guard "sudah diubah hari ini" -- server (quickEdit()) yang
+//               menolak edit ke-2 di hari yang sama (F-40, satu effective_from per
+//               hari), pesan errornya dirender lewat errors.daily_capacity_minutes
+//               (lihat komentar controller) supaya muncul di form, BUKAN toast generik.
 // ==========================================================
 
 import HeadingSmall from '@/components/heading-small';
@@ -31,9 +31,8 @@ import { Checkbox } from '@/components/ui/checkbox';
 import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
 import AppLayout from '@/layouts/app-layout';
-import { confirmAction } from '@/lib/swal';
 import { type BreadcrumbItem } from '@/types';
-import { Head, router, useForm } from '@inertiajs/react';
+import { Head, useForm } from '@inertiajs/react';
 import { FormEventHandler, useState } from 'react';
 
 interface WorkScheduleRow {
@@ -44,7 +43,14 @@ interface WorkScheduleRow {
     end_time: string;
     daily_capacity_minutes: number;
     creator: { id: number; name: string } | null;
-    is_archived: boolean;
+}
+
+interface LogEntry {
+    id: number;
+    actor: string;
+    event_label: string;
+    message: string;
+    created_at: string;
 }
 
 const DAY_LABELS: { value: number; label: string }[] = [
@@ -63,24 +69,15 @@ function formatDays(days: number[]): string {
         .join(', ');
 }
 
-// SUMBER: effective_from dikirim backend sebagai ISO datetime lengkap (F-69 —
-// serializeDate() WorkSchedule menjaga offset lokal, lihat app/Models/WorkSchedule.php),
-// tabel ini cuma perlu bagian tanggalnya.
-function formatDate(isoDateTime: string): string {
-    return isoDateTime.slice(0, 10);
-}
-
-// SUMBER: format HH:MM:SS dari DB (kolom time MySQL) -> HH:MM buat tampilan.
+// SUMBER: format HH:MM:SS dari DB (kolom time MySQL) -> HH:MM buat tampilan/form.
 function formatTime(time: string): string {
     return time.slice(0, 5);
 }
 
-// SUMBER: "future" = effective_from > HARI INI (bukan >=) -- versi yang
-// effective_from-nya PERSIS hari ini SUDAH dianggap aktif oleh
-// WorkSchedule::active() (pakai <=), jadi harus ikut TERKUNCI di frontend
-// juga, konsisten dengan guard server (WorkScheduleController::update()/archive()).
-function isFutureVersion(isoDateTime: string): boolean {
-    return formatDate(isoDateTime) > new Date().toISOString().slice(0, 10);
+// SUMBER: effective_from dikirim backend sebagai ISO datetime (F-69, trait
+// SerializesDatesInAppTimezone) -- kartu ini cuma perlu bagian tanggalnya.
+function formatDate(isoDateTime: string): string {
+    return isoDateTime.slice(0, 10);
 }
 
 const breadcrumbs: BreadcrumbItem[] = [{ title: 'Pengaturan Jam Kerja', href: '/pengaturan/jam-kerja' }];
@@ -90,73 +87,45 @@ type FormShape = {
     start_time: string;
     end_time: string;
     daily_capacity_minutes: number;
-    effective_from: string;
 };
 
-const BLANK_FORM: FormShape = {
-    days_of_week: [1, 2, 3, 4, 5],
-    start_time: '08:00',
-    end_time: '17:00',
-    daily_capacity_minutes: 480,
-    effective_from: new Date().toISOString().slice(0, 10),
-};
+function toFormShape(current: WorkScheduleRow | null): FormShape {
+    if (!current) {
+        return { days_of_week: [1, 2, 3, 4, 5], start_time: '08:00', end_time: '17:00', daily_capacity_minutes: 480 };
+    }
 
-export default function WorkSchedulesIndex({ schedules, activeId }: { schedules: WorkScheduleRow[]; activeId: number | null }) {
-    const { data, setData, post, put, processing, errors, reset, clearErrors } = useForm<FormShape>(BLANK_FORM);
+    return {
+        days_of_week: current.days_of_week,
+        start_time: formatTime(current.start_time),
+        end_time: formatTime(current.end_time),
+        daily_capacity_minutes: current.daily_capacity_minutes,
+    };
+}
 
-    // SUMBER: null = mode "Tambah Versi Baru" (POST). Terisi = mode "Edit Versi"
-    // (PUT ke baris ini) -- state LOKAL terpisah dari `data` (pola sama
-    // targetProject di tasks/all.tsx), supaya form tunggal bisa dipakai dua mode
-    // tanpa duplikasi markup.
-    const [editingId, setEditingId] = useState<number | null>(null);
+export default function WorkSchedulesIndex({ current, logs }: { current: WorkScheduleRow | null; logs: LogEntry[] }) {
+    const { data, setData, post, processing, errors, reset } = useForm<FormShape>(toFormShape(current));
 
-    const startEdit = (schedule: WorkScheduleRow) => {
-        setEditingId(schedule.id);
-        clearErrors();
-        setData({
-            days_of_week: schedule.days_of_week,
-            start_time: formatTime(schedule.start_time),
-            end_time: formatTime(schedule.end_time),
-            daily_capacity_minutes: schedule.daily_capacity_minutes,
-            effective_from: formatDate(schedule.effective_from),
-        });
+    // SUMBER: kartu ringkas cuma 2 mode -- lihat (read-only) atau edit (form).
+    // Beda dari halaman lama yang punya form terpisah + tabel riwayat.
+    const [isEditing, setIsEditing] = useState(false);
+
+    const startEdit = () => {
+        setData(toFormShape(current));
+        setIsEditing(true);
     };
 
     const cancelEdit = () => {
-        setEditingId(null);
-        clearErrors();
         reset();
-        setData(BLANK_FORM);
+        setData(toFormShape(current));
+        setIsEditing(false);
     };
 
     const submit: FormEventHandler = (e) => {
         e.preventDefault();
 
-        if (editingId) {
-            put(route('work-schedules.update', editingId), {
-                onSuccess: () => {
-                    setEditingId(null);
-                    setData(BLANK_FORM);
-                },
-            });
-        } else {
-            post(route('work-schedules.store'), {
-                onSuccess: () => reset('effective_from'),
-            });
-        }
-    };
-
-    const archive = async (schedule: WorkScheduleRow) => {
-        if (!(await confirmAction(`Arsipkan versi Jam Kerja mulai ${formatDate(schedule.effective_from)}? Versi ini belum pernah aktif, jadi aman dibatalkan.`))) return;
-        router.patch(route('work-schedules.archive', schedule.id), {}, { preserveScroll: true });
-    };
-
-    // Permintaan Boss (2026-08-10): "pilih mana yang aktif" tanpa urus tanggal --
-    // SALIN isi baris ini ke versi baru berlaku HARI INI (F-40 tetap INSERT,
-    // baris sumber di riwayat TIDAK disentuh/dihapus).
-    const activateNow = async (schedule: WorkScheduleRow) => {
-        if (!(await confirmAction(`Jadikan setelan ini ("${formatDays(schedule.days_of_week)}", ${formatTime(schedule.start_time)}–${formatTime(schedule.end_time)}) aktif mulai hari ini?`))) return;
-        router.post(route('work-schedules.activate-now', schedule.id), {}, { preserveScroll: true });
+        post(route('work-schedules.quick-edit'), {
+            onSuccess: () => setIsEditing(false),
+        });
     };
 
     const toggleDay = (value: number, checked: boolean) => {
@@ -170,156 +139,133 @@ export default function WorkSchedulesIndex({ schedules, activeId }: { schedules:
             <div className="flex flex-col gap-6 p-4">
                 <Card>
                     <CardHeader>
-                        <CardTitle>{editingId ? 'Edit Versi Jam Kerja' : 'Tambah Versi Jam Kerja'}</CardTitle>
+                        <CardTitle>{isEditing ? 'Edit Jam Kerja' : 'Jam Kerja Saat Ini'}</CardTitle>
                     </CardHeader>
                     <CardContent>
-                        <form onSubmit={submit} className="space-y-6">
-                            <div className="grid gap-2">
-                                <Label>Hari kerja</Label>
-                                <div className="flex flex-wrap gap-4">
-                                    {DAY_LABELS.map((day) => (
-                                        <label key={day.value} className="flex items-center gap-2 text-sm">
-                                            <Checkbox
-                                                checked={data.days_of_week.includes(day.value)}
-                                                onCheckedChange={(checked) => toggleDay(day.value, checked === true)}
-                                            />
-                                            {day.label}
-                                        </label>
-                                    ))}
-                                </div>
-                                <InputError message={errors.days_of_week} />
-                            </div>
-
-                            <div className="grid grid-cols-1 gap-4 sm:grid-cols-3">
-                                <div className="grid gap-2">
-                                    <Label htmlFor="start_time">Jam mulai</Label>
-                                    <Input
-                                        id="start_time"
-                                        type="time"
-                                        value={data.start_time}
-                                        onChange={(e) => setData('start_time', e.target.value)}
-                                    />
-                                    <InputError message={errors.start_time} />
-                                </div>
+                        {isEditing ? (
+                            <form onSubmit={submit} className="space-y-6">
+                                {/* SUMBER: F-40 -- edit TIDAK menimpa data lama, ini INSERT versi
+                                    baru berlaku HARI INI. Boss WAJIB tahu ini bukan "timpa" biasa. */}
+                                <p className="rounded-md bg-muted p-3 text-sm text-muted-foreground">
+                                    Perubahan berlaku efektif <strong>hari ini</strong>. Pengaturan sebelumnya tetap tersimpan di Log Perubahan di
+                                    bawah, tidak hilang.
+                                </p>
 
                                 <div className="grid gap-2">
-                                    <Label htmlFor="end_time">Jam selesai</Label>
-                                    <Input id="end_time" type="time" value={data.end_time} onChange={(e) => setData('end_time', e.target.value)} />
-                                    <InputError message={errors.end_time} />
+                                    <Label>Hari kerja</Label>
+                                    <div className="flex flex-wrap gap-4">
+                                        {DAY_LABELS.map((day) => (
+                                            <label key={day.value} className="flex items-center gap-2 text-sm">
+                                                <Checkbox
+                                                    checked={data.days_of_week.includes(day.value)}
+                                                    onCheckedChange={(checked) => toggleDay(day.value, checked === true)}
+                                                />
+                                                {day.label}
+                                            </label>
+                                        ))}
+                                    </div>
+                                    <InputError message={errors.days_of_week} />
                                 </div>
 
-                                <div className="grid gap-2">
-                                    <Label htmlFor="daily_capacity_minutes">Kapasitas (menit/hari)</Label>
-                                    <Input
-                                        id="daily_capacity_minutes"
-                                        type="number"
-                                        min={1}
-                                        value={data.daily_capacity_minutes}
-                                        onChange={(e) => setData('daily_capacity_minutes', Number(e.target.value))}
-                                    />
-                                    <InputError message={errors.daily_capacity_minutes} />
+                                <div className="grid grid-cols-1 gap-4 sm:grid-cols-3">
+                                    <div className="grid gap-2">
+                                        <Label htmlFor="start_time">Jam mulai</Label>
+                                        <Input
+                                            id="start_time"
+                                            type="time"
+                                            value={data.start_time}
+                                            onChange={(e) => setData('start_time', e.target.value)}
+                                        />
+                                        <InputError message={errors.start_time} />
+                                    </div>
+
+                                    <div className="grid gap-2">
+                                        <Label htmlFor="end_time">Jam selesai</Label>
+                                        <Input id="end_time" type="time" value={data.end_time} onChange={(e) => setData('end_time', e.target.value)} />
+                                        <InputError message={errors.end_time} />
+                                    </div>
+
+                                    <div className="grid gap-2">
+                                        <Label htmlFor="daily_capacity_minutes">Kapasitas (menit/hari)</Label>
+                                        <Input
+                                            id="daily_capacity_minutes"
+                                            type="number"
+                                            min={1}
+                                            value={data.daily_capacity_minutes}
+                                            onChange={(e) => setData('daily_capacity_minutes', Number(e.target.value))}
+                                        />
+                                        {/* SUMBER: guard "sudah diubah hari ini" (WorkScheduleController::
+                                            quickEdit()) dikirim lewat error field ini -- lihat header modul. */}
+                                        <InputError message={errors.daily_capacity_minutes} />
+                                    </div>
                                 </div>
-                            </div>
 
-                            <div className="grid gap-2 sm:max-w-xs">
-                                <Label htmlFor="effective_from">Berlaku mulai</Label>
-                                <Input
-                                    id="effective_from"
-                                    type="date"
-                                    value={data.effective_from}
-                                    onChange={(e) => setData('effective_from', e.target.value)}
-                                />
-                                <InputError message={errors.effective_from} />
-                            </div>
-
-                            <div className="flex items-center gap-2">
-                                <Button disabled={processing}>{editingId ? 'Simpan Perubahan' : 'Simpan sebagai versi baru'}</Button>
-                                {editingId && (
+                                <div className="flex items-center gap-2">
+                                    <Button disabled={processing}>Simpan Perubahan</Button>
                                     <Button type="button" variant="outline" onClick={cancelEdit}>
-                                        Batal edit
+                                        Batal
                                     </Button>
-                                )}
+                                </div>
+                            </form>
+                        ) : current ? (
+                            <div className="space-y-4">
+                                <div className="grid grid-cols-1 gap-4 text-sm sm:grid-cols-2">
+                                    <div>
+                                        <div className="text-muted-foreground">Hari kerja</div>
+                                        <div className="font-medium">{formatDays(current.days_of_week)}</div>
+                                    </div>
+                                    <div>
+                                        <div className="text-muted-foreground">Jam</div>
+                                        <div className="font-medium">
+                                            {formatTime(current.start_time)}–{formatTime(current.end_time)}
+                                        </div>
+                                    </div>
+                                    <div>
+                                        <div className="text-muted-foreground">Kapasitas</div>
+                                        <div className="font-medium">{current.daily_capacity_minutes} menit/hari</div>
+                                    </div>
+                                    <div>
+                                        <div className="text-muted-foreground">Berlaku sejak</div>
+                                        <div className="font-medium">
+                                            {formatDate(current.effective_from)} · diatur oleh {current.creator?.name ?? '-'}
+                                        </div>
+                                    </div>
+                                </div>
+                                <Button type="button" size="sm" onClick={startEdit}>
+                                    Edit
+                                </Button>
                             </div>
-                        </form>
+                        ) : (
+                            <div className="space-y-4">
+                                <p className="text-sm text-muted-foreground">Jam kerja organisasi belum diatur.</p>
+                                <Button type="button" size="sm" onClick={startEdit}>
+                                    Atur Jam Kerja
+                                </Button>
+                            </div>
+                        )}
                     </CardContent>
                 </Card>
 
                 <Card>
                     <CardHeader>
-                        <HeadingSmall
-                            title="Riwayat Versi"
-                            description="Versi yang sudah pernah aktif tidak bisa diedit/dihapus — arsip permanen (F-40). Versi terjadwal (belum aktif) boleh diedit/diarsipkan."
-                        />
+                        <HeadingSmall title="Log Perubahan" description="Riwayat setiap kali jam kerja dibuat/diubah, siapa, dan kapan." />
                     </CardHeader>
                     <CardContent>
-                        <div className="overflow-x-auto">
-                            <table className="w-full text-left text-sm">
-                                <thead>
-                                    <tr className="border-b text-muted-foreground">
-                                        <th className="py-2 pr-4">Berlaku mulai</th>
-                                        <th className="py-2 pr-4">Hari kerja</th>
-                                        <th className="py-2 pr-4">Jam</th>
-                                        <th className="py-2 pr-4">Kapasitas</th>
-                                        <th className="py-2 pr-4">Dibuat oleh</th>
-                                        <th className="py-2 pr-4">Status</th>
-                                        <th className="py-2 pr-4">Aksi</th>
-                                    </tr>
-                                </thead>
-                                <tbody>
-                                    {schedules.map((schedule) => {
-                                        // SUMBER: cuma versi FUTURE (belum pernah aktif) DAN belum
-                                        // diarsipkan yang boleh diedit/diarsipkan -- pola sama guard
-                                        // server (WorkScheduleController::update()/archive()).
-                                        const editable = !schedule.is_archived && isFutureVersion(schedule.effective_from);
-
-                                        return (
-                                            <tr key={schedule.id} className="border-b last:border-0">
-                                                <td className="py-2 pr-4">{formatDate(schedule.effective_from)}</td>
-                                                <td className="py-2 pr-4">{formatDays(schedule.days_of_week)}</td>
-                                                <td className="py-2 pr-4">
-                                                    {formatTime(schedule.start_time)}–{formatTime(schedule.end_time)}
-                                                </td>
-                                                <td className="py-2 pr-4">{schedule.daily_capacity_minutes} menit</td>
-                                                <td className="py-2 pr-4">{schedule.creator?.name ?? '-'}</td>
-                                                <td className="py-2 pr-4">
-                                                    {schedule.id === activeId ? (
-                                                        <Badge>Aktif</Badge>
-                                                    ) : schedule.is_archived ? (
-                                                        <Badge variant="outline">Dibatalkan</Badge>
-                                                    ) : editable ? (
-                                                        <Badge variant="secondary">Terjadwal</Badge>
-                                                    ) : (
-                                                        <Badge variant="secondary">Arsip</Badge>
-                                                    )}
-                                                </td>
-                                                <td className="py-2 pr-4">
-                                                    <div className="flex gap-2">
-                                                        {editable && (
-                                                            <>
-                                                                <Button type="button" variant="outline" size="sm" onClick={() => startEdit(schedule)}>
-                                                                    Edit
-                                                                </Button>
-                                                                <Button type="button" variant="destructive" size="sm" onClick={() => archive(schedule)}>
-                                                                    Arsipkan
-                                                                </Button>
-                                                            </>
-                                                        )}
-                                                        {/* SUMBER: tombol "pilih aktif" (permintaan Boss) -- tampil di SEMUA
-                                                            baris KECUALI yang sudah aktif sekarang (redundan) dan yang
-                                                            dibatalkan (data sengaja tak dipakai, hindari kebingungan). */}
-                                                        {schedule.id !== activeId && !schedule.is_archived && (
-                                                            <Button type="button" variant="secondary" size="sm" onClick={() => activateNow(schedule)}>
-                                                                Jadikan Aktif Sekarang
-                                                            </Button>
-                                                        )}
-                                                    </div>
-                                                </td>
-                                            </tr>
-                                        );
-                                    })}
-                                </tbody>
-                            </table>
-                        </div>
+                        {logs.length === 0 ? (
+                            <p className="text-sm text-muted-foreground">Belum ada perubahan tercatat.</p>
+                        ) : (
+                            <ul className="divide-y">
+                                {logs.map((log) => (
+                                    <li key={log.id} className="flex flex-col gap-1 py-3 first:pt-0 last:pb-0">
+                                        <div className="flex items-center gap-2 text-sm">
+                                            <Badge variant="secondary">{log.event_label}</Badge>
+                                            <span className="text-muted-foreground">{formatDate(log.created_at)}</span>
+                                        </div>
+                                        <p className="text-sm">{log.message}</p>
+                                    </li>
+                                ))}
+                            </ul>
+                        )}
                     </CardContent>
                 </Card>
             </div>

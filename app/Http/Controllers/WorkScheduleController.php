@@ -9,12 +9,19 @@
  *               2026-08-10, audit F-40 -- lihat RISIKO) + activateNow() (Boss
  *               mau "pilih mana yang aktif" TANPA urus tanggal -- diselesaikan
  *               TETAP dalam batas F-40: SALIN ke baris baru effective_from hari
- *               ini, bukan toggle flag "aktif" lintas tanggal).
+ *               ini, bukan toggle flag "aktif" lintas tanggal) + quickEdit() (audit
+ *               Boss 2026-08-12, F-169: UI disederhanakan jadi 1 kartu "Jam Kerja
+ *               Saat Ini" + tombol Edit -- Edit SELALU bikin versi baru efektif
+ *               HARI INI, F-40 tetap INSERT, bukan timpa baris aktif). store()/
+ *               update()/archive()/activateNow() DIPERTAHANKAN utuh di backend
+ *               (route tetap ada) walau UI utama tidak lagi memakainya -- keputusan
+ *               Boss supaya reversible, bukan dihapus.
  * DIPANGGIL   : routes/admin.php
  * MEMANGGIL   : WorkSchedule (INSERT untuk versi baru; UPDATE HANYA utk versi
- *               yang belum pernah aktif)
+ *               yang belum pernah aktif), ActivityLog + ActivityLogPresenter
+ *               (feed "Log Perubahan" di index(), F-169)
  * DATA MASUK  : Form tambah/edit versi jam kerja, admin only
- * DATA KELUAR : Inertia page 'work-schedules/index' dengan riwayat versi
+ * DATA KELUAR : Inertia page 'work-schedules/index' dengan versi AKTIF + log perubahan
  * RISIKO      : SUMBER : F-40 — versi yang SUDAH PERNAH aktif (effective_from <=
  *               hari ini, ikut menentukan actual_minutes/KPI task yang SUDAH
  *               dibekukan) TETAP TERKUNCI PERMANEN, TIDAK BOLEH di-update/arsip
@@ -28,9 +35,12 @@
 
 namespace App\Http\Controllers;
 
+use App\Http\Requests\WorkSchedule\QuickEditWorkScheduleRequest;
 use App\Http\Requests\WorkSchedule\StoreWorkScheduleRequest;
 use App\Http\Requests\WorkSchedule\UpdateWorkScheduleRequest;
+use App\Models\ActivityLog;
 use App\Models\WorkSchedule;
+use App\Support\ActivityLogPresenter;
 use Illuminate\Http\RedirectResponse;
 use Illuminate\Http\Request;
 use Illuminate\Validation\ValidationException;
@@ -40,21 +50,68 @@ use Inertia\Response;
 class WorkScheduleController extends Controller
 {
     /**
-     * KONTRAK: daftar RIWAYAT semua versi (F-40), urut effective_from desc, dengan
-     * penanda versi mana yang aktif sekarang (WorkSchedule::active(), F-66).
+     * KONTRAK: 1 kartu versi AKTIF sekarang (WorkSchedule::active(), F-66) + feed
+     * "Log Perubahan" (activity_logs subject WorkSchedule, F-169) -- REVISI
+     * 2026-08-12 (audit Boss): sebelumnya kirim SELURUH riwayat versi ke tabel,
+     * sekarang cuma versi aktif (riwayat versi tetap ada di DB & di route
+     * store/update/archive/activateNow, cuma tidak lagi ditampilkan di sini).
      */
     public function index(Request $request): Response
     {
         // SUMBER: query otomatis ter-scope organization_id via OrganizationScope
         // (F-15) — tidak perlu where() manual di sini.
-        $schedules = WorkSchedule::with('creator')->orderByDesc('effective_from')->get();
-
         $activeId = WorkSchedule::active($request->user()->organization_id)?->id;
+        $current = $activeId ? WorkSchedule::with('creator')->find($activeId) : null;
+
+        // SUMBER: F-85 -- with(['user','subject']) SEBELUM get(), ActivityLogPresenter
+        // dibuat SEKALI dari collection yang sudah di-load (pola sama
+        // ActivityLogController::index()), bukan query per baris.
+        $logs = ActivityLog::query()
+            ->where('subject_type', WorkSchedule::class)
+            ->with(['user:id,name', 'subject'])
+            ->latest('created_at')
+            ->limit(30)
+            ->get();
+
+        $presenter = new ActivityLogPresenter($logs);
 
         return Inertia::render('work-schedules/index', [
-            'schedules' => $schedules,
-            'activeId' => $activeId,
+            'current' => $current,
+            'logs' => $logs->map(fn (ActivityLog $log) => [
+                'id' => $log->id,
+                'actor' => $log->user?->name ?? 'Sistem',
+                'event_label' => ActivityLogPresenter::eventLabel($log->event),
+                'message' => $presenter->describe($log),
+                'created_at' => $log->created_at,
+            ])->values(),
         ]);
+    }
+
+    /**
+     * KONTRAK: "Edit" di kartu Jam Kerja Saat Ini (audit Boss 2026-08-12, F-169).
+     * BUKAN update baris aktif (dilarang F-40) -- INSERT versi baru effective_from
+     * HARI INI, isi field baru dari form. GUARD: kalau sudah ada versi utk hari
+     * ini (mis. Boss sudah edit sekali hari ini), tolak dengan pesan jelas --
+     * pola sama activateNow() (lihat komentar di sana), TANPA jalur ini
+     * effective_from hari ini bisa dobel/unique constraint DB pecah mentah.
+     */
+    public function quickEdit(QuickEditWorkScheduleRequest $request): RedirectResponse
+    {
+        $today = now()->toDateString();
+
+        if (WorkSchedule::where('effective_from', $today)->exists()) {
+            throw ValidationException::withMessages([
+                'daily_capacity_minutes' => 'Jam kerja sudah diubah hari ini — tunggu besok untuk mengubah lagi (F-40, mencegah jam kerja hari yang sama tertimpa dua kali).',
+            ]);
+        }
+
+        WorkSchedule::create([
+            ...$request->validated(),
+            'effective_from' => $today,
+            'created_by' => $request->user()->id,
+        ]);
+
+        return to_route('work-schedules.index');
     }
 
     /**

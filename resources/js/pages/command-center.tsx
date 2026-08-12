@@ -43,6 +43,7 @@ import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import { Dialog, DialogContent, DialogHeader, DialogTitle } from '@/components/ui/dialog';
+import { Skeleton } from '@/components/ui/skeleton';
 import { formatLiveMinutes } from '@/hooks/use-live-counter';
 import { classifyWorkload } from '@/lib/dashboard-status';
 import { formatJamPair, shiftMonth } from '@/lib/command-center-format';
@@ -418,6 +419,28 @@ function UserOnlyFilter({ userId, users, onChange }: { userId: number | null; us
     );
 }
 
+// Permintaan Boss: loading screen profesional (skeleton, bukan spinner/dim) --
+// SATU kerangka baris tabel dipakai ulang di SEMUA tabel widget (Team Work Load,
+// modalnya, Status Project, Top-10 Task, modal Workload Tim per-tanggal) supaya
+// bentuknya konsisten & nol duplikasi markup per tabel. `rows`/`cols` disesuaikan
+// jumlah baris/kolom tabel asli tiap widget supaya tinggi kerangka mendekati
+// tinggi konten asli (nol "lompat" layout pas data masuk).
+function TableSkeletonRows({ rows, cols }: { rows: number; cols: number }) {
+    return (
+        <>
+            {Array.from({ length: rows }).map((_, r) => (
+                <tr key={r} className="border-b last:border-0">
+                    {Array.from({ length: cols }).map((_, c) => (
+                        <td key={c} className="p-3">
+                            <Skeleton className="h-4 w-full max-w-32" />
+                        </td>
+                    ))}
+                </tr>
+            ))}
+        </>
+    );
+}
+
 export default function CommandCenter({
     restricted_to_self: restrictedToSelf,
     summary_cards: cards,
@@ -677,7 +700,11 @@ export default function CommandCenter({
                             <Clock className="h-4 w-4 text-muted-foreground" />
                         </CardHeader>
                         <CardContent className="p-4 pt-0 text-2xl font-semibold">
-                            {formatJamPair(cards.beban_harian.used_minutes, cards.beban_harian.capacity_minutes)}
+                            {navigating ? (
+                                <Skeleton className="h-7 w-24" />
+                            ) : (
+                                formatJamPair(cards.beban_harian.used_minutes, cards.beban_harian.capacity_minutes)
+                            )}
                         </CardContent>
                     </Card>
                     <Card>
@@ -685,35 +712,45 @@ export default function CommandCenter({
                             <CardTitle className="text-sm font-medium text-muted-foreground">{scopeLabel('To Do')}</CardTitle>
                             <ListTodo className="h-4 w-4 text-muted-foreground" />
                         </CardHeader>
-                        <CardContent className="p-4 pt-0 text-2xl font-semibold">{cards.todo}</CardContent>
+                        <CardContent className="p-4 pt-0 text-2xl font-semibold">
+                            {navigating ? <Skeleton className="h-7 w-10" /> : cards.todo}
+                        </CardContent>
                     </Card>
                     <Card>
                         <CardHeader className="flex flex-row items-center justify-between space-y-0 p-4 pb-2">
                             <CardTitle className="text-sm font-medium text-muted-foreground">{scopeLabel('In Progress')}</CardTitle>
                             <PlayCircle className="h-4 w-4 text-muted-foreground" />
                         </CardHeader>
-                        <CardContent className="p-4 pt-0 text-2xl font-semibold">{cards.in_progress}</CardContent>
+                        <CardContent className="p-4 pt-0 text-2xl font-semibold">
+                            {navigating ? <Skeleton className="h-7 w-10" /> : cards.in_progress}
+                        </CardContent>
                     </Card>
                     <Card>
                         <CardHeader className="flex flex-row items-center justify-between space-y-0 p-4 pb-2">
                             <CardTitle className="text-sm font-medium text-muted-foreground">{scopeLabel('Review')}</CardTitle>
                             <Eye className="h-4 w-4 text-muted-foreground" />
                         </CardHeader>
-                        <CardContent className="p-4 pt-0 text-2xl font-semibold">{cards.review}</CardContent>
+                        <CardContent className="p-4 pt-0 text-2xl font-semibold">
+                            {navigating ? <Skeleton className="h-7 w-10" /> : cards.review}
+                        </CardContent>
                     </Card>
                     <Card>
                         <CardHeader className="flex flex-row items-center justify-between space-y-0 p-4 pb-2">
                             <CardTitle className="text-sm font-medium text-muted-foreground">{scopeLabel('Selesai')}</CardTitle>
                             <CheckCircle2 className="h-4 w-4 text-muted-foreground" />
                         </CardHeader>
-                        <CardContent className="p-4 pt-0 text-2xl font-semibold">{cards.selesai}</CardContent>
+                        <CardContent className="p-4 pt-0 text-2xl font-semibold">
+                            {navigating ? <Skeleton className="h-7 w-10" /> : cards.selesai}
+                        </CardContent>
                     </Card>
                     <Card>
                         <CardHeader className="flex flex-row items-center justify-between space-y-0 p-4 pb-2">
                             <CardTitle className="text-sm font-medium text-muted-foreground">{scopeLabel('Overdue')}</CardTitle>
                             <AlertTriangle className="h-4 w-4 text-muted-foreground" />
                         </CardHeader>
-                        <CardContent className="p-4 pt-0 text-2xl font-semibold">{cards.overdue}</CardContent>
+                        <CardContent className="p-4 pt-0 text-2xl font-semibold">
+                            {navigating ? <Skeleton className="h-7 w-10" /> : cards.overdue}
+                        </CardContent>
                     </Card>
                 </div>
 
@@ -737,7 +774,16 @@ export default function CommandCenter({
                             />
                         </CardHeader>
                         <CardContent>
-                            {donutChart.total === 0 ? (
+                            {navigating ? (
+                                <div className="flex items-center gap-4">
+                                    <Skeleton className="h-28 w-28 shrink-0 rounded-full" />
+                                    <div className="flex flex-col gap-2">
+                                        {Array.from({ length: 5 }).map((_, i) => (
+                                            <Skeleton key={i} className="h-3 w-32" />
+                                        ))}
+                                    </div>
+                                </div>
+                            ) : donutChart.total === 0 ? (
                                 <p className="text-sm text-muted-foreground">Belum ada task untuk ditandai prioritas.</p>
                             ) : (
                                 <div className="flex items-center gap-4">
@@ -779,7 +825,16 @@ export default function CommandCenter({
                             />
                         </CardHeader>
                         <CardContent>
-                            {progressTotal === 0 ? (
+                            {navigating ? (
+                                <div className="flex flex-col gap-3">
+                                    {Array.from({ length: 4 }).map((_, i) => (
+                                        <div key={i} className="flex flex-col gap-1">
+                                            <Skeleton className="h-3 w-16" />
+                                            <Skeleton className="h-2 w-full rounded-full" />
+                                        </div>
+                                    ))}
+                                </div>
+                            ) : progressTotal === 0 ? (
                                 <p className="text-sm text-muted-foreground">Belum ada task.</p>
                             ) : (
                                 <div className="flex flex-col gap-2">
@@ -833,7 +888,16 @@ export default function CommandCenter({
                             />
                         </CardHeader>
                         <CardContent>
-                            {categories.length === 0 ? (
+                            {navigating ? (
+                                <div className="flex flex-col gap-3">
+                                    {Array.from({ length: 4 }).map((_, i) => (
+                                        <div key={i} className="flex items-center justify-between gap-3">
+                                            <Skeleton className="h-4 w-40" />
+                                            <Skeleton className="h-5 w-8 rounded-full" />
+                                        </div>
+                                    ))}
+                                </div>
+                            ) : categories.length === 0 ? (
                                 <p className="text-sm text-muted-foreground">Belum ada tugas berulang.</p>
                             ) : (
                                 <ul className="flex flex-col gap-2 text-sm">
@@ -895,28 +959,36 @@ export default function CommandCenter({
                                     </tr>
                                 </thead>
                                 <tbody>
-                                    {sortedTeamTop5.map((row) => {
-                                        const status = classifyWorkload(row.beban, row.kapasitas);
-                                        const badge = STATUS_BADGE[status];
+                                    {navigating ? (
+                                        <TableSkeletonRows rows={5} cols={4} />
+                                    ) : (
+                                        <>
+                                            {sortedTeamTop5.map((row) => {
+                                                const status = classifyWorkload(row.beban, row.kapasitas);
+                                                const badge = STATUS_BADGE[status];
 
-                                        return (
-                                            <tr key={row.id} className="border-b last:border-0 align-top">
-                                                <td className="p-3 font-medium">{row.name}</td>
-                                                <td className="p-3">{formatLiveMinutes(row.aktif)}</td>
-                                                <td className="p-3">
-                                                    {formatLiveMinutes(row.beban)} (idle {formatLiveMinutes(row.idle_plan)})
-                                                </td>
-                                                <td className="p-3">{badge.label && <Badge className={badge.className}>{badge.label}</Badge>}</td>
-                                            </tr>
-                                        );
-                                    })}
+                                                return (
+                                                    <tr key={row.id} className="border-b last:border-0 align-top">
+                                                        <td className="p-3 font-medium">{row.name}</td>
+                                                        <td className="p-3">{formatLiveMinutes(row.aktif)}</td>
+                                                        <td className="p-3">
+                                                            {formatLiveMinutes(row.beban)} (idle {formatLiveMinutes(row.idle_plan)})
+                                                        </td>
+                                                        <td className="p-3">
+                                                            {badge.label && <Badge className={badge.className}>{badge.label}</Badge>}
+                                                        </td>
+                                                    </tr>
+                                                );
+                                            })}
 
-                                    {sortedTeamTop5.length === 0 && (
-                                        <tr>
-                                            <td colSpan={4} className="p-6 text-center text-muted-foreground">
-                                                Tidak ada user aktif untuk ditampilkan.
-                                            </td>
-                                        </tr>
+                                            {sortedTeamTop5.length === 0 && (
+                                                <tr>
+                                                    <td colSpan={4} className="p-6 text-center text-muted-foreground">
+                                                        Tidak ada user aktif untuk ditampilkan.
+                                                    </td>
+                                                </tr>
+                                            )}
+                                        </>
                                     )}
                                 </tbody>
                             </table>
@@ -985,28 +1057,36 @@ export default function CommandCenter({
                                         </tr>
                                     </thead>
                                     <tbody>
-                                        {sortedTeamAll.map((row) => {
-                                            const status = classifyWorkload(row.beban, row.kapasitas);
-                                            const badge = STATUS_BADGE[status];
+                                        {navigating ? (
+                                            <TableSkeletonRows rows={6} cols={4} />
+                                        ) : (
+                                            <>
+                                                {sortedTeamAll.map((row) => {
+                                                    const status = classifyWorkload(row.beban, row.kapasitas);
+                                                    const badge = STATUS_BADGE[status];
 
-                                            return (
-                                                <tr key={row.id} className="border-b last:border-0 align-top">
-                                                    <td className="p-3 font-medium">{row.name}</td>
-                                                    <td className="p-3">{formatLiveMinutes(row.aktif)}</td>
-                                                    <td className="p-3">
-                                                        {formatLiveMinutes(row.beban)} (idle {formatLiveMinutes(row.idle_plan)})
-                                                    </td>
-                                                    <td className="p-3">{badge.label && <Badge className={badge.className}>{badge.label}</Badge>}</td>
-                                                </tr>
-                                            );
-                                        })}
+                                                    return (
+                                                        <tr key={row.id} className="border-b last:border-0 align-top">
+                                                            <td className="p-3 font-medium">{row.name}</td>
+                                                            <td className="p-3">{formatLiveMinutes(row.aktif)}</td>
+                                                            <td className="p-3">
+                                                                {formatLiveMinutes(row.beban)} (idle {formatLiveMinutes(row.idle_plan)})
+                                                            </td>
+                                                            <td className="p-3">
+                                                                {badge.label && <Badge className={badge.className}>{badge.label}</Badge>}
+                                                            </td>
+                                                        </tr>
+                                                    );
+                                                })}
 
-                                        {sortedTeamAll.length === 0 && (
-                                            <tr>
-                                                <td colSpan={4} className="p-6 text-center text-muted-foreground">
-                                                    Tidak ada user aktif untuk ditampilkan.
-                                                </td>
-                                            </tr>
+                                                {sortedTeamAll.length === 0 && (
+                                                    <tr>
+                                                        <td colSpan={4} className="p-6 text-center text-muted-foreground">
+                                                            Tidak ada user aktif untuk ditampilkan.
+                                                        </td>
+                                                    </tr>
+                                                )}
+                                            </>
                                         )}
                                     </tbody>
                                 </table>
@@ -1058,31 +1138,39 @@ export default function CommandCenter({
                                     </tr>
                                 </thead>
                                 <tbody>
-                                    {sortedStatusProjects.map((row) => (
-                                        <tr key={row.id} className="border-b last:border-0">
-                                            <td className="p-3 font-medium">{row.name}</td>
-                                            <td className="p-3">{row.task_total}</td>
-                                            <td className="p-3">{row.todo}</td>
-                                            <td className="p-3">{row.progress}</td>
-                                            <td className="p-3">{row.review}</td>
-                                            <td className="p-3">{row.selesai}</td>
-                                            <td className="p-3">
-                                                {row.overdue > 0 ? (
-                                                    <Badge className="border-transparent bg-red-600 text-white hover:bg-red-600">{row.overdue}</Badge>
-                                                ) : (
-                                                    <span className="text-muted-foreground">0</span>
-                                                )}
-                                            </td>
-                                            <td className="p-3">{row.due_date ? new Date(row.due_date).toLocaleDateString('id-ID') : '-'}</td>
-                                        </tr>
-                                    ))}
+                                    {navigating ? (
+                                        <TableSkeletonRows rows={5} cols={8} />
+                                    ) : (
+                                        <>
+                                            {sortedStatusProjects.map((row) => (
+                                                <tr key={row.id} className="border-b last:border-0">
+                                                    <td className="p-3 font-medium">{row.name}</td>
+                                                    <td className="p-3">{row.task_total}</td>
+                                                    <td className="p-3">{row.todo}</td>
+                                                    <td className="p-3">{row.progress}</td>
+                                                    <td className="p-3">{row.review}</td>
+                                                    <td className="p-3">{row.selesai}</td>
+                                                    <td className="p-3">
+                                                        {row.overdue > 0 ? (
+                                                            <Badge className="border-transparent bg-red-600 text-white hover:bg-red-600">
+                                                                {row.overdue}
+                                                            </Badge>
+                                                        ) : (
+                                                            <span className="text-muted-foreground">0</span>
+                                                        )}
+                                                    </td>
+                                                    <td className="p-3">{row.due_date ? new Date(row.due_date).toLocaleDateString('id-ID') : '-'}</td>
+                                                </tr>
+                                            ))}
 
-                                    {sortedStatusProjects.length === 0 && (
-                                        <tr>
-                                            <td colSpan={8} className="p-6 text-center text-muted-foreground">
-                                                Belum ada proyek aktif.
-                                            </td>
-                                        </tr>
+                                            {sortedStatusProjects.length === 0 && (
+                                                <tr>
+                                                    <td colSpan={8} className="p-6 text-center text-muted-foreground">
+                                                        Belum ada proyek aktif.
+                                                    </td>
+                                                </tr>
+                                            )}
+                                        </>
                                     )}
                                 </tbody>
                             </table>
@@ -1116,12 +1204,20 @@ export default function CommandCenter({
                                 ))}
                             </div>
 
-                            {/* Grid Kalender */}
+                            {/* Grid Kalender -- A10: navigasi bulan/filter user me-reload heatmap.days
+                                lewat props (Inertia visit penuh), makanya di-skeleton saat `navigating`
+                                (bukan `dayWorkloadLoading`, itu punya modal detail hari terpisah). 35 sel
+                                (5 baris x 7 kolom) MENDEKATI jumlah hari rata-rata sebulan -- MURNI
+                                perkiraan visual, bukan angka presisi (leadingBlank ikut dihitung ulang
+                                begitu heatmap.days baru datang). */}
                             <div className="grid grid-cols-7 gap-1">
-                                {Array.from({ length: leadingBlank }).map((_, i) => (
+                                {navigating
+                                    ? Array.from({ length: 35 }).map((_, i) => <Skeleton key={i} className="aspect-square rounded-lg" />)
+                                    : null}
+                                {!navigating && Array.from({ length: leadingBlank }).map((_, i) => (
                                     <div key={`blank-${i}`} />
                                 ))}
-                                {heatmap.days.map((day) => {
+                                {!navigating && heatmap.days.map((day) => {
                                     // F-131: hari LEWAT (level null) -- NETRAL, abu-abu
                                     const cellClass = day.level ? HEATMAP_LEVEL_CLASS[day.level] : 'bg-muted text-muted-foreground';
 
@@ -1220,7 +1316,13 @@ export default function CommandCenter({
                                     <div className="flex flex-col gap-2">
                                         <p className="font-medium">Workload Tim</p>
                                         {dayWorkloadLoading ? (
-                                            <p className="text-muted-foreground">Memuat...</p>
+                                            <div className="overflow-x-auto rounded-md border">
+                                                <table className="w-full text-left text-sm">
+                                                    <tbody>
+                                                        <TableSkeletonRows rows={4} cols={4} />
+                                                    </tbody>
+                                                </table>
+                                            </div>
                                         ) : dayWorkload && dayWorkload.rows.length > 0 ? (
                                             <div className="overflow-x-auto rounded-md border">
                                                 <table className="w-full text-left text-sm">
@@ -1336,7 +1438,16 @@ export default function CommandCenter({
                             />
                         </CardHeader>
                         <CardContent>
-                            {recentActivity.length === 0 ? (
+                            {navigating ? (
+                                <div className="flex flex-col gap-2">
+                                    {Array.from({ length: 5 }).map((_, i) => (
+                                        <div key={i} className="flex items-center justify-between gap-2 border-b pb-2 last:border-0">
+                                            <Skeleton className="h-4 w-48" />
+                                            <Skeleton className="h-3 w-24 shrink-0" />
+                                        </div>
+                                    ))}
+                                </div>
+                            ) : recentActivity.length === 0 ? (
                                 <p className="text-sm text-muted-foreground">Belum ada aktivitas.</p>
                             ) : (
                                 <ul className="flex flex-col gap-2 text-sm">
@@ -1376,7 +1487,15 @@ export default function CommandCenter({
                             />
                         </CardHeader>
                         <CardContent>
-                            {topTasks.length === 0 ? (
+                            {navigating ? (
+                                <div className="overflow-x-auto">
+                                    <table className="w-full text-left text-sm">
+                                        <tbody>
+                                            <TableSkeletonRows rows={8} cols={6} />
+                                        </tbody>
+                                    </table>
+                                </div>
+                            ) : topTasks.length === 0 ? (
                                 <p className="text-sm text-muted-foreground">Tidak ada task aktif.</p>
                             ) : (
                                 <div className="overflow-x-auto">

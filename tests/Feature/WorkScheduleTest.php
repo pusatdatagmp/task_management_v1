@@ -10,6 +10,10 @@
  *               manual sekarang ada TAPI cuma utk versi FUTURE (belum pernah
  *               aktif) — versi yang sudah pernah/sedang aktif TETAP terkunci
  *               permanen, ditest eksplisit (guard tidak boleh bolong).
+ *               REVISI 2026-08-12 (audit Boss, F-169): quickEdit() (kartu "Jam
+ *               Kerja Saat Ini", Edit = INSERT versi baru efektif HARI INI) +
+ *               WorkScheduleObserver (activity_logs, celah F-51 yang ditemukan
+ *               saat audit ini — sebelumnya NOL log utk create/update/archive).
  * DIPANGGIL   : php artisan test (Pest)
  * MEMANGGIL   : WorkScheduleController, WorkSchedule
  * DATA MASUK  : -
@@ -20,6 +24,7 @@
  * ==========================================================
  */
 
+use App\Models\ActivityLog;
 use App\Models\User;
 use App\Models\WorkSchedule;
 
@@ -361,4 +366,163 @@ test('member cannot edit or archive work schedule versions', function () {
     ])->assertForbidden();
 
     $this->actingAs($member)->patch(route('work-schedules.archive', $future))->assertForbidden();
+});
+
+// =============================================================================
+// quickEdit() -- kartu "Jam Kerja Saat Ini" (audit Boss 2026-08-12, F-169).
+// Edit = INSERT versi baru efektif HARI INI, effective_from TIDAK dikirim
+// client sama sekali (dipaksa server).
+// =============================================================================
+
+test('quick-edit creates a new version effective today, never updates the old row', function () {
+    $admin = User::factory()->admin()->create();
+    $old = WorkSchedule::create([
+        'organization_id' => $admin->organization_id,
+        'effective_from' => now()->subMonth()->toDateString(),
+        'days_of_week' => [1, 2, 3, 4, 5],
+        'start_time' => '08:00',
+        'end_time' => '17:00',
+        'daily_capacity_minutes' => 480,
+        'created_by' => $admin->id,
+    ]);
+    $countBefore = WorkSchedule::count();
+
+    $response = $this->actingAs($admin)->post(route('work-schedules.quick-edit'), [
+        'days_of_week' => [1, 2, 3, 4, 5],
+        'start_time' => '08:00',
+        'end_time' => '17:30',
+        'daily_capacity_minutes' => 480,
+    ]);
+
+    $response->assertRedirect(route('work-schedules.index'));
+    expect(WorkSchedule::count())->toBe($countBefore + 1); // INSERT, bukan UPDATE.
+
+    $old->refresh();
+    expect($old->end_time)->toBe('17:00:00'); // Baris lama TAK TERSENTUH (F-40).
+
+    $newRow = WorkSchedule::where('effective_from', now()->toDateString())->firstOrFail();
+    expect($newRow->end_time)->toBe('17:30:00')
+        ->and(WorkSchedule::active($admin->organization_id)->id)->toBe($newRow->id);
+});
+
+test('quick-edit twice in the same day fails with a clear error, no second row', function () {
+    $admin = User::factory()->admin()->create();
+    WorkSchedule::create([
+        'organization_id' => $admin->organization_id,
+        'effective_from' => now()->toDateString(),
+        'days_of_week' => [1, 2, 3, 4, 5],
+        'start_time' => '08:00',
+        'end_time' => '17:00',
+        'daily_capacity_minutes' => 480,
+        'created_by' => $admin->id,
+    ]);
+    $countBefore = WorkSchedule::count();
+
+    $response = $this->actingAs($admin)->post(route('work-schedules.quick-edit'), [
+        'days_of_week' => [1, 2, 3, 4, 5],
+        'start_time' => '09:00',
+        'end_time' => '18:00',
+        'daily_capacity_minutes' => 480,
+    ]);
+
+    $response->assertSessionHasErrors('daily_capacity_minutes');
+    expect(WorkSchedule::count())->toBe($countBefore);
+});
+
+test('quick-edit rejects capacity exceeding the window (F-42), same rule as store()', function () {
+    $admin = User::factory()->admin()->create();
+
+    $response = $this->actingAs($admin)->post(route('work-schedules.quick-edit'), [
+        'days_of_week' => [1, 2, 3, 4, 5],
+        'start_time' => '08:00',
+        'end_time' => '09:00',
+        'daily_capacity_minutes' => 120,
+    ]);
+
+    $response->assertSessionHasErrors('daily_capacity_minutes');
+    expect(WorkSchedule::count())->toBe(0);
+});
+
+test('member cannot quick-edit work schedule', function () {
+    $admin = User::factory()->admin()->create();
+    $member = User::factory()->create(['organization_id' => $admin->organization_id]);
+
+    $this->actingAs($member)->post(route('work-schedules.quick-edit'), [
+        'days_of_week' => [1, 2, 3, 4, 5], 'start_time' => '08:00', 'end_time' => '17:00', 'daily_capacity_minutes' => 480,
+    ])->assertForbidden();
+});
+
+// =============================================================================
+// WorkScheduleObserver -- activity_logs (audit Boss 2026-08-12, F-169/F-51).
+// =============================================================================
+
+test('creating a work schedule version logs to activity_logs with a diff against the previous version', function () {
+    $admin = User::factory()->admin()->create();
+    WorkSchedule::create([
+        'organization_id' => $admin->organization_id,
+        'effective_from' => now()->subMonth()->toDateString(),
+        'days_of_week' => [1, 2, 3, 4, 5],
+        'start_time' => '08:00',
+        'end_time' => '17:00',
+        'daily_capacity_minutes' => 480,
+        'created_by' => $admin->id,
+    ]);
+
+    $this->actingAs($admin)->post(route('work-schedules.quick-edit'), [
+        'days_of_week' => [1, 2, 3, 4, 5],
+        'start_time' => '08:00',
+        'end_time' => '17:30',
+        'daily_capacity_minutes' => 480,
+    ]);
+
+    $newRow = WorkSchedule::where('effective_from', now()->toDateString())->firstOrFail();
+    $log = ActivityLog::where('subject_type', WorkSchedule::class)->where('subject_id', $newRow->id)->firstOrFail();
+
+    // SUMBER: 'old' datang dari query ulang ke DB (MySQL TIME -> 'HH:MM:SS'),
+    // 'new' dari attribute in-memory model yang BARU dibuat (belum re-fetch,
+    // masih format input 'H:i' apa adanya) -- asimetri ini TIDAK berdampak ke
+    // tampilan (ActivityLogPresenter::workScheduleDiff() substr 5 karakter di
+    // kedua sisi), murni cara Eloquent create() bekerja tanpa cast pada kolom time.
+    expect($log->event)->toBe('created')
+        ->and($log->user_id)->toBe($admin->id)
+        ->and($log->properties['old']['end_time'])->toBe('17:00:00')
+        ->and($log->properties['new']['end_time'])->toBe('17:30');
+});
+
+test('archiving a future version logs an updated event', function () {
+    $admin = User::factory()->admin()->create();
+    $future = WorkSchedule::create([
+        'organization_id' => $admin->organization_id,
+        'effective_from' => now()->addWeek()->toDateString(),
+        'days_of_week' => [1, 2, 3, 4, 5],
+        'start_time' => '08:00',
+        'end_time' => '17:00',
+        'daily_capacity_minutes' => 480,
+        'created_by' => $admin->id,
+    ]);
+
+    $this->actingAs($admin)->patch(route('work-schedules.archive', $future));
+
+    $log = ActivityLog::where('subject_type', WorkSchedule::class)->where('subject_id', $future->id)->where('event', 'updated')->firstOrFail();
+    expect($log->properties['new']['is_archived'])->toBeTrue();
+});
+
+test('index page exposes only the active version as "current", not the full history', function () {
+    $admin = User::factory()->admin()->create();
+    $active = WorkSchedule::create([
+        'organization_id' => $admin->organization_id,
+        'effective_from' => now()->subMonth()->toDateString(),
+        'days_of_week' => [1, 2, 3, 4, 5],
+        'start_time' => '08:00',
+        'end_time' => '17:00',
+        'daily_capacity_minutes' => 480,
+        'created_by' => $admin->id,
+    ]);
+
+    $response = $this->actingAs($admin)->get(route('work-schedules.index'));
+
+    $response->assertInertia(fn ($page) => $page->component('work-schedules/index')
+        ->where('current.id', $active->id)
+        ->has('logs')
+    );
 });

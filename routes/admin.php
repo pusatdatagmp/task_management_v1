@@ -29,9 +29,15 @@ use Illuminate\Support\Facades\Route;
 Route::middleware(['auth', 'can:workschedule.manage'])->group(function () {
     Route::get('pengaturan/jam-kerja', [WorkScheduleController::class, 'index'])->name('work-schedules.index');
     Route::post('pengaturan/jam-kerja', [WorkScheduleController::class, 'store'])->name('work-schedules.store');
+    // Audit Boss (2026-08-12, F-169) -- "Edit" di kartu Jam Kerja Saat Ini, UI
+    // utama sekarang. Static path 'quick-edit' WAJIB terdaftar sebelum
+    // '{workSchedule}' di bawah, pola sama 'create'/'flags' di grup lain file
+    // ini -- kalau tidak, kata "quick-edit" bisa ketangkap sbg {workSchedule}.
+    Route::post('pengaturan/jam-kerja/quick-edit', [WorkScheduleController::class, 'quickEdit'])->name('work-schedules.quick-edit');
     // Permintaan Boss (2026-08-10, audit F-40) -- edit/arsip TERBATAS versi
     // FUTURE (guard di controller, bukan di sini). Pola nama route sama
-    // projects.archive ('{resource}/{id}/archive', PATCH).
+    // projects.archive ('{resource}/{id}/archive', PATCH). DIPERTAHANKAN di
+    // backend (audit 2026-08-12) walau UI utama tidak lagi memakainya.
     Route::put('pengaturan/jam-kerja/{workSchedule}', [WorkScheduleController::class, 'update'])->name('work-schedules.update');
     Route::patch('pengaturan/jam-kerja/{workSchedule}/archive', [WorkScheduleController::class, 'archive'])->name('work-schedules.archive');
     // Permintaan Boss (2026-08-10) -- "pilih mana yang aktif" TANPA urus
