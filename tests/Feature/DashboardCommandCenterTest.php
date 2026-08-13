@@ -235,6 +235,39 @@ test('kategori tugas berulang: daftar PER TEMPLATE (nama+jadwal+jumlah ALL-TIME)
         ->and($categories)->toHaveCount(3);
 });
 
+test('kategori tugas berulang: dibatasi TOP-5 by total DESC, biar layout widget tidak melar (revisi 2026-08-13)', function () {
+    $admin = User::factory()->admin()->create();
+    $member = User::factory()->create(['organization_id' => $admin->organization_id]);
+    $project = createCcProject($admin, [$member->id]);
+    $todo = TaskStatus::where('project_id', $project->id)->where('position', 0)->firstOrFail();
+    $anchor = ccAnchor();
+    seedCcSchedule($admin, $anchor);
+    $this->travelTo($anchor);
+
+    // 7 template AKTIF, jumlah task ALL-TIME beda-beda (7..1) -- WAJIB cuma
+    // 5 TERBESAR yang tampil di widget, sisanya (total 2 & 1) TIDAK ikut.
+    $templates = [];
+    foreach (range(7, 1, -1) as $total) {
+        $template = createCcTemplate($project, $admin, $total, 'day');
+        for ($i = 0; $i < $total; $i++) {
+            createCcTask($project, $todo, $admin, [$member->id], 60, $anchor->copy()->addDays(5 + $i), null, 'daily', $template->id);
+        }
+        $templates[$total] = $template;
+    }
+
+    $response = $this->actingAs($admin)->getJson(route('dashboard.command-center'));
+
+    $response->assertOk();
+    $categories = collect($response->json('task_categories'));
+
+    expect($categories)->toHaveCount(5)
+        ->and($categories->pluck('total')->all())->toBe([7, 6, 5, 4, 3]);
+
+    $shownIds = $categories->pluck('id')->all();
+    expect($shownIds)->not->toContain($templates[2]->id)
+        ->and($shownIds)->not->toContain($templates[1]->id);
+});
+
 test('kategori tugas berulang: viewer TERBATAS TIDAK lihat template ber-jumlah-0 (privasi, beda dari admin) (revisi 2026-08-07)', function () {
     $admin = User::factory()->admin()->create();
     $viewer = ccRestrictedViewer($admin);

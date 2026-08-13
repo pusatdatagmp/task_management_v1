@@ -503,6 +503,11 @@ class DashboardController extends Controller
      *      tak tampil, warisan pola grouping lama). Boss klarifikasi: SEMUA
      *      template AKTIF wajib tampil, walau jumlah 0 (belum pernah
      *      di-generate `automation:run`).
+     *   4) revisi 2026-08-13 (Boss): dibatasi TOP-5 (by total DESC) biar layout
+     *      widget tidak melar kalau template makin banyak -- pola SAMA
+     *      workload_top5/statusProjects() (sortByDesc()->take(5)). Sisanya
+     *      tetap bisa dilihat lewat tombol "Show More" -> task-templates.all
+     *      (link sudah ada duluan di frontend, TIDAK disentuh).
      * Makanya param $from/$to DICABUT (beda dari widget periode lain) --
      * "jumlah" di sini sengaja bukan angka ter-filter tanggal.
      *
@@ -539,6 +544,7 @@ class DashboardController extends Controller
                 'total' => (int) $template->total,
             ])
             ->sortByDesc('total')
+            ->take(5)
             ->values()
             ->all();
     }
