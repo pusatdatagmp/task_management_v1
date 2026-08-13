@@ -31,6 +31,8 @@ return Application::configure(basePath: dirname(__DIR__))
             PreventBackHistoryCache::class,
         ]);
 
+        $middleware->trustProxies(at: '*');
+
         // F-90/RBAC §D4: alias 'admin' (EnsureUserIsAdmin) DIHAPUS — semua route
         // admin-only sudah pindah ke middleware bawaan Laravel `can:xxx`
         // (routes/admin.php), digerbangi Gate::before -> User::hasPermission()
