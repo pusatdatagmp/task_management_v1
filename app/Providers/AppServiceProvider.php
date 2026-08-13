@@ -7,6 +7,7 @@ use Illuminate\Database\Eloquent\Model;
 use Illuminate\Support\Carbon;
 use Illuminate\Support\Facades\Gate;
 use Illuminate\Support\ServiceProvider;
+use Illuminate\Support\Facades\URL;
 
 class AppServiceProvider extends ServiceProvider
 {
@@ -23,6 +24,9 @@ class AppServiceProvider extends ServiceProvider
      */
     public function boot(): void
     {
+        //Paksa semua URL/Route Laravel menggunakan protokol HTTPS
+        URL::forceScheme('https');
+
         // BUSINESS RULE: F-69 — Carbon secara default SELALU mengonversi ke UTC
         // (suffix "Z") saat serialize ke JSON, APAPUN nilai config('app.timezone').
         // Tanpa override ini, tiap tanggal/datetime yang dikirim ke frontend via

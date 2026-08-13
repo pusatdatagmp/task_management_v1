@@ -31,7 +31,7 @@ class DatabaseSeeder extends Seeder
         ]);
 
         // 4. Buat Akun Members (9 Member)
-        collect(range(1, 9))->each(function (int $i) use ($organization, $roles) {
+        collect(range(1, 2))->each(function (int $i) use ($organization, $roles) {
             User::create([
                 'organization_id' => $organization->id,
                 'name' => "Member {$i}",
