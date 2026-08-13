@@ -304,6 +304,49 @@ test('heatmap = beban F-118, angka IDENTIK DashboardService::forUsers, hari lewa
     expect($futureEntry['beban'])->toBe($expectedFuture);
 });
 
+test('heatmap: task OVERDUE tidak lagi menempel PENUH ke SETIAP hari termasuk bulan depan (F-170, audit Boss 2026-08-13)', function () {
+    $admin = User::factory()->admin()->create();
+    $member = User::factory()->create(['organization_id' => $admin->organization_id]);
+    $project = createCcProject($admin, [$member->id]);
+    $todo = TaskStatus::where('project_id', $project->id)->where('position', 0)->firstOrFail();
+
+    $anchor = ccAnchor(); // Senin 2026-08-03
+    seedCcSchedule($admin, $anchor);
+    $this->travelTo($anchor);
+
+    // Task OVERDUE: due_date jauh SEBELUM anchor, 500 menit, 1 assignee. SEBELUM
+    // fix F-170, dailyLoadTotals() menempel beban PENUH task ini ULANG di SETIAP
+    // tanggal yang dicek -- termasuk seluruh hari bulan depan (September), walau
+    // task ini sama sekali tidak "milik" bulan depan (bug yang dilaporkan Boss).
+    createCcTask($project, $todo, $admin, [$member->id], 500, Carbon::create(2026, 7, 1, 17, 0, 0));
+
+    // Bulan SEKARANG (Agustus): HARI INI (anchor) tetap WAJIB menanggung beban
+    // PENUH task overdue ini -- task itu memang belum selesai, wajar membebani
+    // hari ini (F-96a A3, TIDAK berubah oleh fix).
+    $augustResponse = $this->actingAs($admin)->getJson(route('dashboard.command-center', ['month' => '2026-08']));
+    $augustResponse->assertOk();
+    $augustDays = collect($augustResponse->json('heatmap.days'));
+    $todayEntry = $augustDays->firstWhere('date', '2026-08-03');
+    expect($todayEntry['beban'])->toBe(500);
+
+    // Tanggal LAIN di bulan Agustus (bukan hari ini) TIDAK BOLEH lagi menanggung
+    // task overdue yang sama -- ini bagian dari F-170, dulu numpuk di SEMUA tanggal.
+    $otherAugustEntry = $augustDays->firstWhere('date', '2026-08-04');
+    expect($otherAugustEntry['beban'])->toBe(0)->and($otherAugustEntry['level'])->toBe('aman');
+
+    // Bulan DEPAN (September): sama sekali tidak ada task nyata di bulan itu, jadi
+    // WAJIB bersih (beban 0, level 'aman') di SEMUA hari -- ini persis skenario
+    // yang dilaporkan Boss: kalender bulan depan kelihatan overload walau kosong.
+    $septResponse = $this->actingAs($admin)->getJson(route('dashboard.command-center', ['month' => '2026-09']));
+    $septResponse->assertOk();
+    $septDays = collect($septResponse->json('heatmap.days'));
+
+    foreach ($septDays as $day) {
+        expect($day['beban'])->toBe(0);
+        expect($day['level'])->toBe('aman');
+    }
+});
+
 test('hari Minggu OTOMATIS ikon libur + label "Hari Minggu", TANPA baris Holiday manual (permintaan Boss 2026-08-10)', function () {
     $admin = User::factory()->admin()->create();
     $anchor = ccAnchor(); // Senin 2026-08-03
@@ -478,7 +521,7 @@ test('summary cards: beban_harian IDENTIK dailyLoadTotals hari ini, kapasitas da
 
     // B2 pattern: SUMBER SAMA -- angka kartu WAJIB identik dailyLoadTotals() (F-118,
     // satu sumber, bukan dihitung ulang), dan kapasitas WAJIB identik kapasitas() (F-40).
-    $expectedUsed = array_sum($service->dailyLoadTotals($activeUsers, collect([$today])));
+    $expectedUsed = array_sum($service->dailyLoadTotals($activeUsers, collect([$today]), $today));
     $expectedCapacity = array_sum($service->kapasitas($activeUsers, $today));
 
     $cards = $response->json('summary_cards');

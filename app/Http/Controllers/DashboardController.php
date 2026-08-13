@@ -396,7 +396,7 @@ class DashboardController extends Controller
         // heatmap (A5) -- dipanggil ULANG di sini (bukan reuse hasil heatmap)
         // karena heatmap menyaring tanggal berdasar ?month= (bisa bulan lain),
         // sedang kartu ini WAJIB selalu "hari ini" apa pun bulan yang sedang dilihat.
-        $usedMinutes = array_sum($service->dailyLoadTotals($users, collect([$today])));
+        $usedMinutes = array_sum($service->dailyLoadTotals($users, collect([$today]), $today));
 
         // Kapasitas: method publik yang sama dipakai forUsers() (F-40 versioned
         // WorkSchedule) -- SATU sumber kapasitas, bukan dihitung ulang.
@@ -594,7 +594,7 @@ class DashboardController extends Controller
             $cursor->addDay();
         }
 
-        $loads = $service->dailyLoadTotals($users, $futureDates);
+        $loads = $service->dailyLoadTotals($users, $futureDates, $today);
         $activeUserCount = $users->count();
         $tengahFloor = 210 * $activeUserCount;
         $overloadFloor = 420 * $activeUserCount;
