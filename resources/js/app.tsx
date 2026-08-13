@@ -4,6 +4,7 @@ import { createInertiaApp } from '@inertiajs/react';
 import { resolvePageComponent } from 'laravel-vite-plugin/inertia-helpers';
 import { createRoot } from 'react-dom/client';
 import { route as routeFn } from 'ziggy-js';
+import { LoadingOverlay } from './components/loading-overlay';
 import { initializeTheme } from './hooks/use-appearance';
 import { applyThemeTokens, type ThemeConfig } from './lib/theme-tokens';
 
@@ -26,7 +27,12 @@ createInertiaApp({
         // CSS default TEMPO di app.css yang berlaku (F-145 fallback aman).
         applyThemeTokens(props.initialPage.props.theme as ThemeConfig | null | undefined);
 
-        root.render(<App {...props} />);
+        root.render(
+            <>
+                <App {...props} />
+                <LoadingOverlay />
+            </>,
+        );
     },
     progress: {
         color: '#4B5563',

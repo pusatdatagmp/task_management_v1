@@ -68,7 +68,12 @@ class DashboardService
         // terpisah seperti sebelum v1.0.1 (masing-masing method query sendiri).
         $organizationId = $users->first()->organization_id;
         $calculator = new BusinessHoursCalculator;
-        $schedules = WorkSchedule::where('organization_id', $organizationId)->get();
+        // F-170 (audit Boss 2026-08-13): is_archived=false WAJIB disamakan dengan
+        // WorkSchedule::active() (app/Models/WorkSchedule.php) -- tanpa filter ini,
+        // versi FUTURE yang sudah diarsipkan admin (F-40) tetap bisa terpilih oleh
+        // resolveScheduleForDay() untuk tanggal-tanggal di masa depan (mis. bulan
+        // depan), bikin days_of_week hari kerja salah.
+        $schedules = WorkSchedule::where('organization_id', $organizationId)->where('is_archived', false)->get();
         $holidays = Holiday::where('organization_id', $organizationId)->get();
 
         $kapasitas = $this->kapasitas($users, $date);
@@ -134,7 +139,12 @@ class DashboardService
 
         $organizationId = $users->first()->organization_id;
         $calculator = new BusinessHoursCalculator;
-        $schedules = WorkSchedule::where('organization_id', $organizationId)->get();
+        // F-170 (audit Boss 2026-08-13): is_archived=false WAJIB disamakan dengan
+        // WorkSchedule::active() (app/Models/WorkSchedule.php) -- tanpa filter ini,
+        // versi FUTURE yang sudah diarsipkan admin (F-40) tetap bisa terpilih oleh
+        // resolveScheduleForDay() untuk tanggal-tanggal di masa depan (mis. bulan
+        // depan), bikin days_of_week hari kerja salah.
+        $schedules = WorkSchedule::where('organization_id', $organizationId)->where('is_archived', false)->get();
         $holidays = Holiday::where('organization_id', $organizationId)->get();
 
         $breakdown = $this->realisasiBreakdown($users, $date, $calculator, $schedules, $holidays);
@@ -286,11 +296,21 @@ class DashboardService
      * dihitung. Method ini tidak tahu konsep "netral"; caller (controller) yang
      * menyaring tanggal SEBELUM memanggil.
      *
+     * F-170 (audit Boss 2026-08-13): task OVERDUE (due_date < $today) dulu numpuk
+     * beban PENUH ke SETIAP $date yang dicek (bukan cuma sekali) — imbasnya kalender
+     * bulan DEPAN ikut kelihatan overload walau tidak ada task nyata di bulan itu,
+     * murni gara-gara task lama yang belum selesai. FIX: beban penuh task overdue
+     * HANYA jatuh ke tanggal REAL "hari ini" ($today) — tanggal lain (termasuk
+     * bulan depan) tidak lagi menanggung task yang sudah lewat tenggat. Spread
+     * normal (belum lewat tenggat) TIDAK berubah.
+     *
      * @param  Collection<int, User>  $users  WAJIB satu organisasi (F-15, sama seperti forUsers()).
      * @param  Collection<int, Carbon>  $dates  tanggal (vantage point beban F-118 per tanggal itu).
+     * @param  Carbon  $today  tanggal REAL saat ini (F-69 WIB) — beda dari $dates saat caller
+     *                         sedang melihat bulan lain; dipakai murni untuk guard F-170 di atas.
      * @return array<string, int> keyed 'Y-m-d' -> total beban SEMUA $users pada tanggal itu (menit)
      */
-    public function dailyLoadTotals(Collection $users, Collection $dates): array
+    public function dailyLoadTotals(Collection $users, Collection $dates, Carbon $today): array
     {
         if ($users->isEmpty() || $dates->isEmpty()) {
             return [];
@@ -298,7 +318,12 @@ class DashboardService
 
         $organizationId = $users->first()->organization_id;
         $calculator = new BusinessHoursCalculator;
-        $schedules = WorkSchedule::where('organization_id', $organizationId)->get();
+        // F-170 (audit Boss 2026-08-13): is_archived=false WAJIB disamakan dengan
+        // WorkSchedule::active() (app/Models/WorkSchedule.php) -- tanpa filter ini,
+        // versi FUTURE yang sudah diarsipkan admin (F-40) tetap bisa terpilih oleh
+        // resolveScheduleForDay() untuk tanggal-tanggal di masa depan (mis. bulan
+        // depan), bikin days_of_week hari kerja salah.
+        $schedules = WorkSchedule::where('organization_id', $organizationId)->where('is_archived', false)->get();
         $holidays = Holiday::where('organization_id', $organizationId)->get();
         $userIds = $users->pluck('id')->all();
 
@@ -316,6 +341,8 @@ class DashboardService
         // task milik user itu DULU per tanggal, baru dibulatkan (lihat komentar KONTRAK).
         $userDateRaw = [];
 
+        $todayKey = $today->copy()->startOfDay();
+
         foreach ($tasks as $task) {
             $assigneeCount = max($task->assignees->count(), 1);
             $perAssigneeTotal = $task->estimated_minutes / $assigneeCount; // F-96 DULU
@@ -327,8 +354,23 @@ class DashboardService
                 }
 
                 foreach ($dates as $date) {
-                    $hariKerja = max(1, $calculator->countBusinessDays($date->copy()->startOfDay(), $dueDate, $schedules, $holidays)); // F-118 BARU
-                    $kontribusiHariItu = $perAssigneeTotal / $hariKerja;
+                    $vantage = $date->copy()->startOfDay();
+
+                    if ($vantage->greaterThan($dueDate)) {
+                        // F-170: tenggat task ini sudah lewat DARI SUDUT PANDANG
+                        // tanggal ini. Beban penuh cuma boleh jatuh kalau tanggal
+                        // ini benar-benar "hari ini" ($today) -- tanggal lain
+                        // (mis. bulan depan) tidak retroaktif menanggung task lama.
+                        $kontribusiHariItu = $vantage->equalTo($todayKey) ? $perAssigneeTotal : 0.0;
+                    } else {
+                        $hariKerja = max(1, $calculator->countBusinessDays($vantage, $dueDate, $schedules, $holidays)); // F-118 BARU
+                        $kontribusiHariItu = $perAssigneeTotal / $hariKerja;
+                    }
+
+                    if ($kontribusiHariItu === 0.0) {
+                        continue;
+                    }
+
                     $key = $date->toDateString();
                     $userDateRaw[$assignee->id][$key] = ($userDateRaw[$assignee->id][$key] ?? 0) + $kontribusiHariItu;
                 }
