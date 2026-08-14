@@ -17,11 +17,15 @@
 //               penuh -- nol round-trip server, konsisten pola tasks/my-tasks.tsx).
 //               Dropdown filter Project TERPISAH dari targetProject (dipakai
 //               tombol "Template Baru") -- beda tujuan, jangan digabung.
+//               F-171 (permintaan Boss): pagination 15/halaman JUGA sisi browser
+//               (slice array, bukan Laravel paginate()) -- konsisten dengan filter
+//               di atas, data sudah termuat penuh, nol round-trip tambahan.
 // ==========================================================
 
 import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
 import AppLayout from '@/layouts/app-layout';
+import { PRIORITY_QUADRANT_COLOR, PRIORITY_QUADRANT_LABEL, type PriorityQuadrant } from '@/lib/priority-quadrant';
 import { type BreadcrumbItem } from '@/types';
 import { Head, Link, router } from '@inertiajs/react';
 import { useState } from 'react';
@@ -37,18 +41,24 @@ interface TemplateRow {
     schedule_label: string;
     estimated_minutes: number;
     points: number;
-    priority: 'low' | 'normal' | 'high' | 'urgent';
+    // F-175: enum lama dipertahankan di DB (legacy), UI pakai priority_quadrant.
+    priority_quadrant: PriorityQuadrant | null;
     is_active: boolean;
     project: ProjectOption;
 }
 
 const breadcrumbs: BreadcrumbItem[] = [{ title: 'Tugas Berulang', href: '/task-templates' }];
 
+// F-171 (permintaan Boss): 15 baris per halaman, tetap SISI BROWSER -- lihat
+// header modul untuk alasan konsistensi dengan filter/search yang sudah ada.
+const PER_PAGE = 15;
+
 export default function AllTaskTemplates({ templates, projects }: { templates: TemplateRow[]; projects: ProjectOption[] }) {
     const [targetProject, setTargetProject] = useState<string>('');
     const [search, setSearch] = useState('');
     const [filterProjectId, setFilterProjectId] = useState<number | ''>('');
     const [statusFilter, setStatusFilter] = useState<'all' | 'active' | 'inactive'>('all');
+    const [page, setPage] = useState(1);
 
     const toggleActive = (template: TemplateRow) => {
         router.patch(route('task-templates.toggle-active', [template.project.id, template.id]), {}, { preserveScroll: true });
@@ -67,7 +77,15 @@ export default function AllTaskTemplates({ templates, projects }: { templates: T
         setSearch('');
         setFilterProjectId('');
         setStatusFilter('all');
+        setPage(1);
     };
+
+    // GUARD: hasil filter berubah (search/filter baru, atau toggle-active menyusutkan
+    // daftar) bisa bikin `page` lama melebihi jumlah halaman baru -- clamp di sini,
+    // BUKAN setPage(1) di tiap onChange filter (lebih rapuh, gampang lupa 1 handler).
+    const totalPages = Math.max(1, Math.ceil(filteredTemplates.length / PER_PAGE));
+    const currentPage = Math.min(page, totalPages);
+    const pagedTemplates = filteredTemplates.slice((currentPage - 1) * PER_PAGE, currentPage * PER_PAGE);
 
     return (
         <AppLayout breadcrumbs={breadcrumbs}>
@@ -100,13 +118,19 @@ export default function AllTaskTemplates({ templates, projects }: { templates: T
                         type="text"
                         placeholder="Cari judul..."
                         value={search}
-                        onChange={(e) => setSearch(e.target.value)}
+                        onChange={(e) => {
+                            setSearch(e.target.value);
+                            setPage(1);
+                        }}
                         className="h-9 w-48 rounded-md border border-input bg-background px-2 text-sm"
                     />
                     <select
                         className="h-9 rounded-md border border-input bg-background px-2 text-sm"
                         value={filterProjectId}
-                        onChange={(e) => setFilterProjectId(e.target.value ? Number(e.target.value) : '')}
+                        onChange={(e) => {
+                            setFilterProjectId(e.target.value ? Number(e.target.value) : '');
+                            setPage(1);
+                        }}
                     >
                         <option value="">Semua Project</option>
                         {projects.map((p) => (
@@ -118,7 +142,10 @@ export default function AllTaskTemplates({ templates, projects }: { templates: T
                     <select
                         className="h-9 rounded-md border border-input bg-background px-2 text-sm"
                         value={statusFilter}
-                        onChange={(e) => setStatusFilter(e.target.value as typeof statusFilter)}
+                        onChange={(e) => {
+                            setStatusFilter(e.target.value as typeof statusFilter);
+                            setPage(1);
+                        }}
                     >
                         <option value="all">Semua Status</option>
                         <option value="active">Aktif</option>
@@ -146,14 +173,28 @@ export default function AllTaskTemplates({ templates, projects }: { templates: T
                             </tr>
                         </thead>
                         <tbody>
-                            {filteredTemplates.map((template) => (
+                            {pagedTemplates.map((template) => (
                                 <tr key={template.id} className="border-b last:border-0">
                                     <td className="p-3">{template.project.name}</td>
                                     <td className="p-3 font-medium">{template.title}</td>
                                     <td className="p-3">{template.schedule_label}</td>
                                     <td className="p-3">{template.estimated_minutes}m</td>
                                     <td className="p-3">{template.points}</td>
-                                    <td className="p-3 capitalize">{template.priority}</td>
+                                    <td className="p-3">
+                                        {template.priority_quadrant ? (
+                                            <Badge
+                                                style={{
+                                                    backgroundColor: PRIORITY_QUADRANT_COLOR[template.priority_quadrant],
+                                                    color: '#fff',
+                                                    borderColor: 'transparent',
+                                                }}
+                                            >
+                                                {PRIORITY_QUADRANT_LABEL[template.priority_quadrant]}
+                                            </Badge>
+                                        ) : (
+                                            <span className="text-xs text-muted-foreground">Belum diklasifikasi</span>
+                                        )}
+                                    </td>
                                     <td className="p-3">
                                         {template.is_active ? <Badge>Aktif</Badge> : <Badge variant="secondary">Nonaktif</Badge>}
                                     </td>
@@ -188,6 +229,34 @@ export default function AllTaskTemplates({ templates, projects }: { templates: T
                         </tbody>
                     </table>
                 </div>
+
+                {filteredTemplates.length > 0 && (
+                    <div className="flex items-center justify-between text-sm text-muted-foreground">
+                        <span>
+                            Halaman {currentPage} dari {totalPages} ({filteredTemplates.length} template)
+                        </span>
+                        <div className="flex gap-2">
+                            <Button
+                                type="button"
+                                variant="outline"
+                                size="sm"
+                                disabled={currentPage <= 1}
+                                onClick={() => setPage(currentPage - 1)}
+                            >
+                                Sebelumnya
+                            </Button>
+                            <Button
+                                type="button"
+                                variant="outline"
+                                size="sm"
+                                disabled={currentPage >= totalPages}
+                                onClick={() => setPage(currentPage + 1)}
+                            >
+                                Berikutnya
+                            </Button>
+                        </div>
+                    </div>
+                )}
             </div>
         </AppLayout>
     );
