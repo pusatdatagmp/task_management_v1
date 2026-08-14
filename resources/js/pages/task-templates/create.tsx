@@ -29,6 +29,7 @@ import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
 import AppLayout from '@/layouts/app-layout';
+import { PRIORITY_QUADRANT_OPTIONS, type PriorityQuadrant } from '@/lib/priority-quadrant';
 import { type BreadcrumbItem } from '@/types';
 import { Head, useForm } from '@inertiajs/react';
 import { FormEventHandler, useState } from 'react';
@@ -91,7 +92,11 @@ export default function TaskTemplateCreate({ project, members }: TaskTemplateCre
     const { data, setData, post, transform, processing, errors } = useForm({
         title: '',
         description: '',
-        priority: 'normal',
+        // F-175: enum `priority` lama TIDAK dikirim dari form ini lagi (disembunyikan
+        // dari UI, pola identik tasks/create.tsx F-126) — kolom DB dipertahankan
+        // (default 'normal' di migration), tidak dihapus. priority_quadrant nullable
+        // — '' = belum diklasifikasi.
+        priority_quadrant: '' as PriorityQuadrant | '',
         estimated_minutes: 60,
         points: 0,
         // Revisi 2026-08-06 item 7: nullable ('' di form = null saat dikirim) --
@@ -205,19 +210,27 @@ export default function TaskTemplateCreate({ project, members }: TaskTemplateCre
                             </div>
 
                             <div className="grid gap-2">
-                                <Label htmlFor="priority">Prioritas</Label>
-                                <Select value={data.priority} onValueChange={(value) => setData('priority', value)}>
-                                    <SelectTrigger id="priority">
+                                {/* F-175: Eisenhower quadrant GANTIKAN enum priority lama di UI —
+                                    pola identik tasks/create.tsx (F-122/F-126). Enum lama tetap
+                                    ada di DB (legacy, tersembunyi), tidak dihapus. */}
+                                <Label htmlFor="priority_quadrant">Prioritas (Eisenhower)</Label>
+                                <Select
+                                    value={data.priority_quadrant || '__none'}
+                                    onValueChange={(value) => setData('priority_quadrant', value === '__none' ? '' : (value as PriorityQuadrant))}
+                                >
+                                    <SelectTrigger id="priority_quadrant">
                                         <SelectValue />
                                     </SelectTrigger>
                                     <SelectContent>
-                                        <SelectItem value="low">Low</SelectItem>
-                                        <SelectItem value="normal">Normal</SelectItem>
-                                        <SelectItem value="high">High</SelectItem>
-                                        <SelectItem value="urgent">Urgent</SelectItem>
+                                        <SelectItem value="__none">Belum diklasifikasi</SelectItem>
+                                        {PRIORITY_QUADRANT_OPTIONS.map((opt) => (
+                                            <SelectItem key={opt.value} value={opt.value}>
+                                                {opt.label}
+                                            </SelectItem>
+                                        ))}
                                     </SelectContent>
                                 </Select>
-                                <InputError message={errors.priority} />
+                                <InputError message={errors.priority_quadrant} />
                             </div>
 
                             <div className="grid gap-4 rounded-md border p-4">

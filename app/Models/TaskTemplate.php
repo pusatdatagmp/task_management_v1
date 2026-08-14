@@ -55,6 +55,10 @@ class TaskTemplate extends Model
         'estimated_minutes',
         'points',
         'priority',
+        // F-175: Eisenhower quadrant (p1-p4), pengganti `priority` enum lama di UI
+        // — pola identik Task::$fillable (F-122/F-126). Disalin GenerateTaskAction
+        // ke tiap instance task supaya tampil benar di halaman Semua Tugas.
+        'priority_quadrant',
         'recurrence_config',
         // Revisi 2026-08-06 item 7: nullable, null = perilaku LAMA (due_date =
         // target_date, sama hari). Terisi = jumlah HARI KERJA dari hari lahir

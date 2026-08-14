@@ -44,6 +44,8 @@ class UpdateTaskTemplateRequest extends FormRequest
             'title' => ['required', 'string', 'max:255'],
             'description' => ['nullable', 'string'],
             'priority' => ['nullable', Rule::in(['low', 'normal', 'high', 'urgent'])],
+            // F-175: lihat StoreTaskTemplateRequest.
+            'priority_quadrant' => ['nullable', Rule::in(['p1', 'p2', 'p3', 'p4'])],
             'estimated_minutes' => ['required', 'integer', 'min:1'],
             'points' => ['required', 'integer', 'min:0'],
             'is_active' => ['nullable', 'boolean'],

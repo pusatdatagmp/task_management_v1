@@ -18,6 +18,7 @@
 import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
 import AppLayout from '@/layouts/app-layout';
+import { PRIORITY_QUADRANT_COLOR, PRIORITY_QUADRANT_LABEL, type PriorityQuadrant } from '@/lib/priority-quadrant';
 import { type BreadcrumbItem } from '@/types';
 import { Head, Link, router } from '@inertiajs/react';
 
@@ -27,7 +28,8 @@ interface TemplateRow {
     schedule_label: string;
     estimated_minutes: number;
     points: number;
-    priority: 'low' | 'normal' | 'high' | 'urgent';
+    // F-175: enum lama dipertahankan di DB (legacy), UI pakai priority_quadrant.
+    priority_quadrant: PriorityQuadrant | null;
     is_active: boolean;
 }
 
@@ -74,7 +76,21 @@ export default function TaskTemplatesIndex({ project, templates }: { project: { 
                                     <td className="p-3">{template.schedule_label}</td>
                                     <td className="p-3">{template.estimated_minutes}m</td>
                                     <td className="p-3">{template.points}</td>
-                                    <td className="p-3 capitalize">{template.priority}</td>
+                                    <td className="p-3">
+                                        {template.priority_quadrant ? (
+                                            <Badge
+                                                style={{
+                                                    backgroundColor: PRIORITY_QUADRANT_COLOR[template.priority_quadrant],
+                                                    color: '#fff',
+                                                    borderColor: 'transparent',
+                                                }}
+                                            >
+                                                {PRIORITY_QUADRANT_LABEL[template.priority_quadrant]}
+                                            </Badge>
+                                        ) : (
+                                            <span className="text-xs text-muted-foreground">Belum diklasifikasi</span>
+                                        )}
+                                    </td>
                                     <td className="p-3">
                                         {template.is_active ? <Badge>Aktif</Badge> : <Badge variant="secondary">Nonaktif</Badge>}
                                     </td>

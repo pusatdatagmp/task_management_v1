@@ -109,6 +109,11 @@ class GenerateTaskAction
                     // muat teks bebas ini.
                     'task_type' => $template->schedule_label,
                     'priority' => $template->priority,
+                    // F-175: salin Eisenhower quadrant template -> instance baru,
+                    // pola identik 'priority' di atas. Tanpa ini, task hasil generate
+                    // selalu priority_quadrant NULL ("Belum diklasifikasi" di Semua
+                    // Tugas) walau template-nya sudah diisi.
+                    'priority_quadrant' => $template->priority_quadrant,
                     'points' => $template->points,
                     'estimated_minutes' => $template->estimated_minutes,
                     'due_date' => $dueDate,
