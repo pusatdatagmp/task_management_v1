@@ -55,6 +55,17 @@ class BoardController extends Controller
 
         $filters = $request->validated();
 
+        // BUG FIX (audit Boss 2026-08-14, F-176): rule 'integer' cuma MENGECEK,
+        // tidak MENGUBAH TIPE -- assignee tetap array string dari query string.
+        // whereIn() di bawah tetap benar (MySQL koersi), TAPI nilai ini juga
+        // di-echo balik ke prop `filters` (return Inertia:: bawah) -- checkbox
+        // board.tsx (`filters.assignee.includes(m.id)`) gagal match string vs
+        // number id asli, checkbox TIDAK PERNAH tampil tercentang walau filter
+        // aktif (setiap klik jatuh ke cabang "tambah", tidak pernah "hapus").
+        // Pola identik TaskController::index()/all() (fix 2026-08-10) -- kelewatan
+        // di sini waktu itu karena BoardController belum ada FilterTaskRequest.
+        $filters['assignee'] = array_map('intval', $filters['assignee'] ?? []);
+
         // F-44: kolom dari data (TaskStatus urut position), bukan nama hardcode.
         $statuses = $project->taskStatuses;
 

@@ -134,10 +134,16 @@ test('assignee filter only returns cards for that assignee, server-side', functi
     $response->assertInertia(fn (AssertableInertia $page) => $page
         ->has('columns.0.cards', 1)
         ->where('columns.0.cards.0.id', $taskA->id)
-        // SUMBER: FilterTaskRequest tidak meng-cast tipe (rule 'integer' cuma
-        // validasi, bukan transformasi) — nilai balik dari query string tetap
-        // string, konsisten dengan perilaku TaskFilterTest.php.
-        ->where('filters.assignee', [(string) $memberA->id]));
+        // BUG FIX (audit Boss 2026-08-14, F-176): rule validasi 'integer' cuma
+        // MENGECEK, tidak MENGUBAH TIPE -- tanpa array_map('intval', ...) di
+        // BoardController, nilai ini tetap string dari query string ("27" bukan
+        // 27), checkbox board.tsx (`filters.assignee.includes(m.id)`, m.id NUMBER
+        // asli) gagal match walau data SUDAH terfilter benar -- checkbox TIDAK
+        // PERNAH tampil tercentang meski filter aktif. Assersi sebelumnya (string)
+        // DIPERBARUI ke integer (F-78) -- pola identik TaskFilterTest.php
+        // (fix 2026-08-10, TaskController::index()/all()), sekarang BENAR-BENAR
+        // konsisten, bukan cuma diklaim konsisten.
+        ->where('filters.assignee.0', fn (mixed $v) => $v === $memberA->id && is_int($v)));
 });
 
 test('a subtask never appears as its own card, only as children_count on the parent (A4)', function () {
