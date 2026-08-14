@@ -60,8 +60,19 @@ class BoardController extends Controller
 
         // A4: HANYA task top-level yang jadi kartu — subtask ditandai children_count
         // di kartu induknya, bukan kartu terpisah.
+        // BUG FIX (audit Boss 2026-08-14, F-172): query ini SEBELUMNYA nol orderBy
+        // sama sekali -- urutan kartu per kolom murni ikut urutan fisik row MySQL,
+        // tidak deterministic (bisa geser sendiri antar reload tanpa user ngapa-ngapain).
+        // BUKAN orderBy('position') -- kolom `tasks.position` ("urutan board v1.0")
+        // TERNYATA tidak pernah ditulis di mana pun (grep app/, nol hit) selalu 0,
+        // drag-drop TIDAK PERNAH mem-persist urutan manual (cuma pindah kolom status).
+        // orderBy('position') di sini jadi fix PALSU (semua baris seri di 0, urutan
+        // tetap acak). created_at desc dipilih sebagai pengganti yang jujur & deterministic
+        // (konsisten tema F-172 lainnya) sampai/kalau Boss minta fitur urutan manual
+        // drag-drop sungguhan (persist position saat drop -- scope terpisah, lebih besar).
         $query = Task::where('project_id', $project->id)
             ->whereNull('parent_task_id')
+            ->orderByDesc('created_at')
             ->with(['taskStatus', 'assignees:id,name'])
             ->withCount('children')
             // Revisi 2026-08-06 item 1 (F-85): alias SAMA PERSIS TaskController::

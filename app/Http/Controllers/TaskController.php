@@ -112,8 +112,11 @@ class TaskController extends Controller
             default => null,
         };
 
-        $sort = $filters['sort'] ?? 'due_date';
-        $direction = $filters['direction'] ?? 'asc';
+        // F-172 (permintaan Boss): default 'paling atas = data terbaru' —
+        // sebelumnya due_date/asc (urgensi). User tetap bisa pilih 'Due date'
+        // manual dari dropdown sort yang sudah ada (SORT_OPTIONS, tasks/index.tsx).
+        $sort = $filters['sort'] ?? 'created_at';
+        $direction = $filters['direction'] ?? 'desc';
 
         if ($sort === 'priority') {
             // SUMBER: enum priority (low/normal/high/urgent) urut ALFABET tidak
@@ -316,10 +319,12 @@ class TaskController extends Controller
     /**
      * BUSINESS RULE: Hari-5 §D — "Task Saya", lintas project, HANYA task yang
      * di-assign ke user login. Dikelompokkan Terlambat/Hari ini/Minggu ini/Nanti
-     * (D2), urut due_date terdekat dulu di dalam & lintas kelompok. Task yang
-     * SUDAH is_completed sengaja dikeluarkan — ini halaman kerja aktif member,
-     * bukan riwayat (D6 juga melarang angka dashboard di sini, konsisten dengan
-     * semangat "cuma yang perlu dikerjakan").
+     * (D2) — pengelompokan ITU TETAP dari due_date (struktural, bukan "sort"
+     * yang dimaksud F-172), tapi urutan DI DALAM tiap kelompok sekarang data
+     * terbaru dulu (F-172, permintaan Boss — sebelumnya due_date terdekat dulu).
+     * Task yang SUDAH is_completed sengaja dikeluarkan — ini halaman kerja aktif
+     * member, bukan riwayat (D6 juga melarang angka dashboard di sini, konsisten
+     * dengan semangat "cuma yang perlu dikerjakan").
      */
     public function myTasks(Request $request): Response
     {
@@ -329,7 +334,7 @@ class TaskController extends Controller
             Task::whereHas('assignees', fn ($q) => $q->whereKey($user->id))
                 ->whereHas('taskStatus', fn ($q) => $q->where('is_completed', false))
                 ->with(['taskStatus', 'assignees:id,name', 'project:id,name', 'project.taskStatuses'])
-                ->orderBy('due_date')
+                ->orderByDesc('created_at')
         )->get();
 
         // F-94/B2: counter live per baris — di-batch SEKALI atas seluruh task
@@ -434,8 +439,10 @@ class TaskController extends Controller
             default => null,
         };
 
-        $sort = $filters['sort'] ?? 'due_date';
-        $direction = $filters['direction'] ?? 'asc';
+        // F-172 (permintaan Boss): default 'paling atas = data terbaru' — lihat
+        // komentar identik di index() untuk alasannya.
+        $sort = $filters['sort'] ?? 'created_at';
+        $direction = $filters['direction'] ?? 'desc';
 
         if ($sort === 'priority_quadrant') {
             // F-139: p1 (bobot 4, paling mendesak) -> p4, sama pola FIELD() dengan

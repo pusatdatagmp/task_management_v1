@@ -180,7 +180,8 @@ export default function AllTasks({ tasks, projects, members, filters }: AllTasks
     const resetFilters = () => {
         router.get(
             route('tasks.all'),
-            { project_id: null, status_flag: [], assignee: [], task_type: [], priority_quadrant: [], due: 'all', sort: 'due_date', direction: 'asc' },
+            // F-172 (permintaan Boss): default 'paling atas = data terbaru'.
+            { project_id: null, status_flag: [], assignee: [], task_type: [], priority_quadrant: [], due: 'all', sort: 'created_at', direction: 'desc' },
             { preserveState: true, preserveScroll: true, replace: true },
         );
     };

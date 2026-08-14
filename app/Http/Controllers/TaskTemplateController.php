@@ -54,7 +54,9 @@ class TaskTemplateController extends Controller
     {
         return Inertia::render('task-templates/index', [
             'project' => $project->only(['id', 'name']),
-            'templates' => $project->taskTemplates()->orderBy('title')->get(),
+            // F-172 (permintaan Boss): default 'paling atas = data terbaru' --
+            // sebelumnya alfabetis judul.
+            'templates' => $project->taskTemplates()->latest()->get(),
         ]);
     }
 
@@ -67,10 +69,9 @@ class TaskTemplateController extends Controller
     public function allProjects(): Response
     {
         return Inertia::render('task-templates/all', [
-            'templates' => TaskTemplate::with('project:id,name')
-                ->orderBy('project_id')
-                ->orderBy('title')
-                ->get(),
+            // F-172 (permintaan Boss): default 'paling atas = data terbaru' --
+            // sebelumnya dikelompokkan per project lalu alfabetis judul.
+            'templates' => TaskTemplate::with('project:id,name')->latest()->get(),
             'projects' => Project::orderBy('name')->get(['id', 'name']),
         ]);
     }

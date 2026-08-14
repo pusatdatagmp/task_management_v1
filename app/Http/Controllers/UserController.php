@@ -48,8 +48,10 @@ class UserController extends Controller
         $organizationId = Auth::user()->organization_id;
 
         return Inertia::render('users/index', [
+            // F-172 (permintaan Boss): default 'paling atas = data terbaru' --
+            // sebelumnya alfabetis nama.
             'users' => User::with('role:id,role_name')
-                ->orderBy('name')
+                ->latest()
                 ->get(['id', 'name', 'email', 'role_id', 'employment_type', 'daily_capacity_minutes', 'is_active']),
             // SUMBER (permintaan Boss): query IDENTIK RoleController::index() --
             // SATU sumber bentuk data untuk kolom "Peran" di halaman gabungan ini.

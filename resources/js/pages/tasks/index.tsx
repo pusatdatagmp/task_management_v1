@@ -122,7 +122,8 @@ export default function TasksIndex({ project, tasks, statuses, members, filters 
     const resetFilters = () => {
         router.get(
             route('tasks.index', project.id),
-            { status: [], assignee: [], priority: [], due: 'all', sort: 'due_date', direction: 'asc' },
+            // F-172 (permintaan Boss): default 'paling atas = data terbaru'.
+            { status: [], assignee: [], priority: [], due: 'all', sort: 'created_at', direction: 'desc' },
             { preserveState: true, preserveScroll: true, replace: true },
         );
     };
