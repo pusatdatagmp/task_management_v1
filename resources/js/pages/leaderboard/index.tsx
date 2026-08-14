@@ -71,7 +71,7 @@ const MEDAL_BORDER = ['border-t-yellow-400', 'border-t-slate-400', 'border-t-amb
 // Top-3/Bottom-3 -- MURNI presentasi dari 1 baris `rows[]` yang SUDAH final dari
 // backend (nol Point/Rating dihitung ulang di sini, F-109). `rank` cuma indeks
 // tampilan (medali/label), BUKAN dipakai untuk urutan (rows[] SUDAH urut Point desc).
-function LeaderCard({ row, rank, variant }: { row: LeaderboardRow; rank: number; variant: 'top' | 'bottom' }) {
+function LeaderCard({ row, rank, variant, kpiEnabled }: { row: LeaderboardRow; rank: number; variant: 'top' | 'bottom'; kpiEnabled: boolean }) {
     const getInitials = useInitials();
     const isTop = variant === 'top';
 
@@ -86,8 +86,21 @@ function LeaderCard({ row, rank, variant }: { row: LeaderboardRow; rank: number;
                 {/* F-62: label NETRAL -- ini rem Goodhart (F-4), bukan papan malu member.
                     "Terbawah N" (bukan "terburuk"/"gagal") -- pola sama task-fixx.html. */}
                 <p className="text-xs text-muted-foreground">{isTop ? `Peringkat ${rank + 1}` : `Terbawah ${rank + 1}`}</p>
+                {/* F-173 (permintaan Boss): kartu sorotan tampilkan NILAI KPI (kpi_total,
+                    F-168), bukan Point lagi -- RANKING tetap dari Point (rows[] sudah urut
+                    Point desc dari server, F-109, TIDAK diubah di sini, cuma angka yang
+                    ditampilkan). Fallback ke Point kalau kpi_enabled=false (F-166 -- org yang
+                    belum aktifkan KPI, kpi_total akan 0 utk semua, tampilkan itu jelas salah). */}
                 <p className={`mt-1 text-2xl font-bold ${isTop ? '' : 'text-rose-600'}`}>
-                    {row.point} <span className="text-sm font-normal text-muted-foreground">pts</span>
+                    {kpiEnabled ? (
+                        <>
+                            {row.kpi_total} <span className="text-sm font-normal text-muted-foreground">KPI</span>
+                        </>
+                    ) : (
+                        <>
+                            {row.point} <span className="text-sm font-normal text-muted-foreground">pts</span>
+                        </>
+                    )}
                 </p>
                 <div className="mt-3 grid w-full grid-cols-3 gap-2 border-t pt-3">
                     <div>
@@ -182,7 +195,7 @@ export default function LeaderboardIndex({ from, to, rows, kpi_enabled }: Leader
                         <p className="text-sm font-semibold">{highlight === 'top' ? '🏆 Top Performer' : '📉 Needs Improvement'}</p>
                         <div className="grid grid-cols-1 gap-4 sm:grid-cols-3">
                             {cardRows.map((row, index) => (
-                                <LeaderCard key={row.id} row={row} rank={index} variant={highlight} />
+                                <LeaderCard key={row.id} row={row} rank={index} variant={highlight} kpiEnabled={kpi_enabled} />
                             ))}
                         </div>
                     </div>
