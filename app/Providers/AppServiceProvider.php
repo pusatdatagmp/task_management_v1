@@ -24,8 +24,18 @@ class AppServiceProvider extends ServiceProvider
      */
     public function boot(): void
     {
-        //Paksa semua URL/Route Laravel menggunakan protokol HTTPS
-        URL::forceScheme('https');
+        // BUSINESS RULE: F-174 — forceScheme('https') HANYA di produksi (di belakang
+        // reverse-proxy yang terminate SSL). Sebelumnya unconditional di semua
+        // environment: di lokal (php artisan serve, HTTP polos tanpa TLS), ini bikin
+        // SEMUA route()/Ziggy URL absolut jadi https:// padahal port dev cuma ngerti
+        // HTTP -> browser gagal TLS handshake -> net::ERR_CONNECTION_CLOSED di semua
+        // fetch yang pakai URL itu (termasuk beacon Boost browser-logs). Dibuktikan
+        // langsung: endpoint yang di-generate literal 'https://127.0.0.1:8000/...'
+        // walau server tidak punya sertifikat sama sekali. Produksi tidak terdampak
+        // — behavior lama tetap sama persis di sana.
+        if ($this->app->isProduction()) {
+            URL::forceScheme('https');
+        }
 
         // BUSINESS RULE: F-69 — Carbon secara default SELALU mengonversi ke UTC
         // (suffix "Z") saat serialize ke JSON, APAPUN nilai config('app.timezone').
