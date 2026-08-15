@@ -16,13 +16,13 @@ export default defineConfig({
         tailwindcss(),
     ],
     // // TAMBAHKAN BAGIAN INI
-    server: {
-        host: '0.0.0.0', // Izinkan semua IP akses Vite
-        cors: true,     // Mengaktifkan Header CORS
-        hmr: {
-            host: '192.168.1.11', // Sesuaikan dengan IP laptop kamu
-        },
-    },
+    // server: {
+    //     host: '0.0.0.0', // Izinkan semua IP akses Vite
+    //     cors: true,     // Mengaktifkan Header CORS
+    //     hmr: {
+    //         host: '192.168.1.17', // Sesuaikan dengan IP laptop kamu
+    //     },
+    // },
     esbuild: {
         jsx: 'automatic',
     },

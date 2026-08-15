@@ -249,7 +249,13 @@ const STATUS_BADGE: Record<string, { label: string; className: string }> = {
 // sort per kolom -- MURNI re-urut baris yang SUDAH dikirim backend (team.rows,
 // F-52), nol angka beban/idle baru dihitung di sini. `status` diturunkan dari
 // classifyWorkload() yang SAMA dipakai badge (bukan derivasi baru).
-type TeamSortKey = 'name' | 'aktif' | 'beban' | 'idle_plan' | 'status';
+// Revisi 2026-08-15 (permintaan Boss): kolom "Kapasitas Sisa" pindah basis dari
+// idle_plan (kapasitas - estimasi rencana) ke idle_real (kapasitas - realisasi
+// AKUMULASI hari itu, dari task_time_segments) -- "Waktu Terpakai" (row.aktif)
+// TETAP sesi yang sedang berjalan, TIDAK ikut berubah. idle_real sudah dihitung
+// & dikirim backend (DashboardService::forUsers()), cuma belum pernah dipakai
+// di sini -- nol rumus baru, murni pindah field mana yang dirender.
+type TeamSortKey = 'name' | 'aktif' | 'beban' | 'idle_real' | 'status';
 function sortTeamRows(rows: TeamRow[], sort: { key: TeamSortKey; dir: 'asc' | 'desc' }): TeamRow[] {
     return [...rows].sort((a, b) => {
         const av = sort.key === 'status' ? classifyWorkload(a.beban, a.kapasitas) : a[sort.key];
@@ -562,8 +568,8 @@ export default function CommandCenter({
     // idle TERBANYAK (seleksi TETAP, dihitung SEKALI dari team.rows) -- sort per
     // kolom cuma re-urut 5 baris hasil seleksi ini (pola SAMA Status Project),
     // BUKAN memilih ulang top-5 lain per kolom.
-    const teamTop5 = [...team.rows].sort((a, b) => b.idle_plan - a.idle_plan).slice(0, 5);
-    const [teamSort, setTeamSort] = useState<{ key: TeamSortKey; dir: 'asc' | 'desc' }>({ key: 'idle_plan', dir: 'desc' });
+    const teamTop5 = [...team.rows].sort((a, b) => b.idle_real - a.idle_real).slice(0, 5);
+    const [teamSort, setTeamSort] = useState<{ key: TeamSortKey; dir: 'asc' | 'desc' }>({ key: 'idle_real', dir: 'desc' });
     const sortedTeamTop5 = sortTeamRows(teamTop5, teamSort);
     const toggleTeamSort = (key: TeamSortKey) => {
         setTeamSort((prev) => (prev.key === key ? { key, dir: prev.dir === 'asc' ? 'desc' : 'asc' } : { key, dir: 'desc' }));
@@ -941,7 +947,7 @@ export default function CommandCenter({
                                             [
                                                 ['name', 'Tim'],
                                                 ['aktif', 'Waktu Terpakai'],
-                                                ['idle_plan', 'Kapasitas Sisa (idle plan)'],
+                                                ['idle_real', 'Kapasitas Sisa'],
                                                 ['status', 'Status'],
                                             ] as [TeamSortKey, string][]
                                         ).map(([key, label]) => (
@@ -972,7 +978,8 @@ export default function CommandCenter({
                                                         <td className="p-3 font-medium">{row.name}</td>
                                                         <td className="p-3">{formatLiveMinutes(row.aktif)}</td>
                                                         <td className="p-3">
-                                                            {formatLiveMinutes(row.beban)} (idle {formatLiveMinutes(row.idle_plan)})
+                                                            {formatLiveMinutes(row.kapasitas - row.idle_real)} (idle{' '}
+                                                            {formatLiveMinutes(row.idle_real)})
                                                         </td>
                                                         <td className="p-3">
                                                             {badge.label && <Badge className={badge.className}>{badge.label}</Badge>}
@@ -1039,7 +1046,7 @@ export default function CommandCenter({
                                                 [
                                                     ['name', 'Tim'],
                                                     ['aktif', 'Waktu Terpakai'],
-                                                    ['idle_plan', 'Kapasitas Sisa (idle plan)'],
+                                                    ['idle_real', 'Kapasitas Sisa'],
                                                     ['status', 'Status'],
                                                 ] as [TeamSortKey, string][]
                                             ).map(([key, label]) => (
@@ -1070,7 +1077,8 @@ export default function CommandCenter({
                                                             <td className="p-3 font-medium">{row.name}</td>
                                                             <td className="p-3">{formatLiveMinutes(row.aktif)}</td>
                                                             <td className="p-3">
-                                                                {formatLiveMinutes(row.beban)} (idle {formatLiveMinutes(row.idle_plan)})
+                                                                {formatLiveMinutes(row.kapasitas - row.idle_real)} (idle{' '}
+                                                                {formatLiveMinutes(row.idle_real)})
                                                             </td>
                                                             <td className="p-3">
                                                                 {badge.label && <Badge className={badge.className}>{badge.label}</Badge>}
@@ -1332,7 +1340,7 @@ export default function CommandCenter({
                                                                 [
                                                                     ['name', 'Tim'],
                                                                     ['aktif', 'Waktu Terpakai'],
-                                                                    ['idle_plan', 'Kapasitas Sisa'],
+                                                                    ['idle_real', 'Kapasitas Sisa'],
                                                                     ['status', 'Status'],
                                                                 ] as [TeamSortKey, string][]
                                                             ).map(([key, label]) => (
@@ -1359,7 +1367,8 @@ export default function CommandCenter({
                                                                     <td className="p-2 font-medium">{row.name}</td>
                                                                     <td className="p-2">{formatLiveMinutes(row.aktif)}</td>
                                                                     <td className="p-2">
-                                                                        {formatLiveMinutes(row.beban)} (idle {formatLiveMinutes(row.idle_plan)})
+                                                                        {formatLiveMinutes(row.kapasitas - row.idle_real)} (idle{' '}
+                                                                        {formatLiveMinutes(row.idle_real)})
                                                                     </td>
                                                                     <td className="p-2">
                                                                         {badge.label && <Badge className={badge.className}>{badge.label}</Badge>}
