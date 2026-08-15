@@ -531,7 +531,7 @@ test('summary cards: 4 status count dari FLAG F-44 + overdue dari due_date<sekar
         ->and(array_keys($cards))->toBe(['beban_harian', 'todo', 'in_progress', 'review', 'selesai', 'overdue']);
 });
 
-test('summary cards: beban_harian IDENTIK dailyLoadTotals hari ini, kapasitas dari kapasitas() (F-118/F-40)', function () {
+test('summary cards: beban_harian TIDAK lagi ikut estimasi rencana (F-118) -- task belum dikerjakan sama sekali = used_minutes 0 (revisi 2026-08-15)', function () {
     $admin = User::factory()->admin()->create();
     $member = User::factory()->create(['organization_id' => $admin->organization_id]);
     $project = createCcProject($admin, [$member->id]);
@@ -541,8 +541,10 @@ test('summary cards: beban_harian IDENTIK dailyLoadTotals hari ini, kapasitas da
     seedCcSchedule($admin, $anchor);
     $this->travelTo($anchor);
 
-    // Sama skenario DashboardBebanSpreadTest/heatmap test: 2400 menit, 1 assignee,
-    // due Jumat 08-07 (5 hari kerja) -> beban hari ini (anchor) = 480.
+    // Task besar (2400 menit, due 5 hari kerja lagi) TAPI nol timeSegments --
+    // dulu (F-118) ini bikin beban_harian.used_minutes=480 (estimasi disebar).
+    // Sekarang kartu ini REALISASI: belum ada satu menit pun benar-benar
+    // dikerjakan -> used_minutes WAJIB 0, walau backlog rencana besar.
     createCcTask($project, $todo, $admin, [$member->id], 2400, Carbon::create(2026, 8, 7, 17, 0, 0));
 
     $response = $this->actingAs($admin)->getJson(route('dashboard.command-center'));
@@ -552,15 +554,52 @@ test('summary cards: beban_harian IDENTIK dailyLoadTotals hari ini, kapasitas da
     $today = $anchor->copy()->startOfDay();
     $service = new DashboardService;
 
-    // B2 pattern: SUMBER SAMA -- angka kartu WAJIB identik dailyLoadTotals() (F-118,
-    // satu sumber, bukan dihitung ulang), dan kapasitas WAJIB identik kapasitas() (F-40).
-    $expectedUsed = array_sum($service->dailyLoadTotals($activeUsers, collect([$today]), $today));
-    $expectedCapacity = array_sum($service->kapasitas($activeUsers, $today));
+    // B2 pattern: SUMBER SAMA -- angka kartu WAJIB identik forUsers() (F-52,
+    // kapasitas - idle_real = realisasi total), bukan dihitung ulang.
+    $rows = $service->forUsers($activeUsers, $today);
+    $expectedUsed = array_sum(array_map(fn (array $r) => $r['kapasitas'] - $r['idle_real'], $rows));
+    $expectedCapacity = array_sum(array_column($rows, 'kapasitas'));
 
     $cards = $response->json('summary_cards');
     expect($cards['beban_harian']['used_minutes'])->toBe($expectedUsed)
-        ->and($cards['beban_harian']['used_minutes'])->toBe(480)
+        ->and($cards['beban_harian']['used_minutes'])->toBe(0)
         ->and($cards['beban_harian']['capacity_minutes'])->toBe($expectedCapacity);
+});
+
+test('summary cards: beban_harian.used_minutes = realisasi BENAR-BENAR dikerjakan (segmen terbuka), IDENTIK kolom Kapasitas Sisa (revisi 2026-08-15 permintaan Boss)', function () {
+    $admin = User::factory()->admin()->create();
+    $member = User::factory()->create(['organization_id' => $admin->organization_id]);
+    $project = createCcProject($admin, [$member->id]);
+    $inProgress = TaskStatus::where('project_id', $project->id)->where('is_work_state', true)->firstOrFail();
+
+    $anchor = ccAnchor(); // Senin 2026-08-03, 09:00
+    seedCcSchedule($admin, $anchor);
+    $this->travelTo($anchor);
+
+    // Estimasi/due SENGAJA jauh (2400 menit, due 5 hari kerja lagi) supaya
+    // kalau beban_harian DIAM-DIAM masih ikut F-118 (regresi), test ini
+    // ketahuan gagal (bakal 480, bukan 50).
+    $task = createCcTask($project, $inProgress, $admin, [$member->id], 2400, Carbon::create(2026, 8, 7, 17, 0, 0));
+    $task->timeSegments()->create([
+        'organization_id' => $admin->organization_id,
+        'user_id' => $member->id,
+        'started_at' => $anchor->copy(),
+    ]);
+
+    $this->travelTo($anchor->copy()->addMinutes(50));
+
+    $response = $this->actingAs($admin)->getJson(route('dashboard.command-center'));
+    $response->assertOk();
+
+    $activeUsers = User::where('is_active', true)->orderBy('name')->get();
+    $today = Carbon::now()->startOfDay();
+    $service = new DashboardService;
+    $rows = $service->forUsers($activeUsers, $today);
+    $expectedUsed = array_sum(array_map(fn (array $r) => $r['kapasitas'] - $r['idle_real'], $rows));
+
+    $cards = $response->json('summary_cards');
+    expect($cards['beban_harian']['used_minutes'])->toBe($expectedUsed)
+        ->and($cards['beban_harian']['used_minutes'])->toBe(50);
 });
 
 test('F-4: nol field rupiah/skor-kinerja di output; prio_score cuma bobot urutan', function () {
@@ -1253,25 +1292,40 @@ test('revisi 2026-08-06 (Boss): summary_cards.beban_harian ANGKANYA beda -- admi
     seedCcSchedule($admin, $anchor);
     $this->travelTo($anchor);
 
-    // $viewer dapat 60 menit, TIAP $other dapat 120 menit -- due HARI INI JUGA
-    // (bukan besok) supaya seluruh menit masuk beban hari ini dalam 1 hari kerja
-    // (F-118 workloadSpread membagi rata estimated_minutes ke SEMUA hari kerja
-    // antara hari-ini..due_date -- due besok = 2 hari kerja = kepotong setengah,
-    // ketahuan lewat kegagalan test ini sebelum fix: actual 210, bukan 420).
-    createCcTask($project, $todo, $admin, [$viewer->id], 60, $anchor->copy()->setTime(17, 0, 0));
+    // Revisi 2026-08-15 (Boss): beban_harian.used_minutes SEKARANG realisasi
+    // (bukan estimasi F-118 lagi) -- $viewer benar-benar kerja 60 menit, TIAP
+    // $other 120 menit (segmen DITUTUP hari ini, F-52), supaya beda admin
+    // (agregat) vs viewer (dirinya sendiri) tetap teruji dengan metrik baru.
+    // Task-nya SENGAJA TETAP status $todo (bukan in_progress) -- realisasiBreakdown()
+    // query task_time_segments LANGSUNG per user_id, nol join ke status task,
+    // jadi assertion 'todo' di bawah (progressDistribution, tak tersentuh
+    // revisi ini) tetap valid apa adanya.
+    $viewerTask = createCcTask($project, $todo, $admin, [$viewer->id], 60, $anchor->copy()->setTime(17, 0, 0));
+    $viewerTask->timeSegments()->create([
+        'organization_id' => $admin->organization_id,
+        'user_id' => $viewer->id,
+        'started_at' => $anchor->copy(),
+        'ended_at' => $anchor->copy()->addMinutes(60),
+    ]);
     foreach ($others as $other) {
-        createCcTask($project, $todo, $admin, [$other->id], 120, $anchor->copy()->setTime(17, 0, 0));
+        $otherTask = createCcTask($project, $todo, $admin, [$other->id], 120, $anchor->copy()->setTime(17, 0, 0));
+        $otherTask->timeSegments()->create([
+            'organization_id' => $admin->organization_id,
+            'user_id' => $other->id,
+            'started_at' => $anchor->copy(),
+            'ended_at' => $anchor->copy()->addMinutes(120),
+        ]);
     }
 
     $adminJson = $this->actingAs($admin)->getJson(route('dashboard.command-center', ['month' => '2026-08']))->json();
     $viewerJson = $this->actingAs($viewer)->getJson(route('dashboard.command-center', ['month' => '2026-08']))->json();
 
     // Admin: agregat SEMUA user aktif di organisasi ini (admin+viewer+3 others =
-    // 5 orang x 480 menit kapasitas = 2400; used = 60+120+120+120 = 420).
+    // 5 orang x 480 menit kapasitas = 2400; used = 60+120+120+120 = 420 REALISASI).
     expect($adminJson['summary_cards']['beban_harian'])->toBe(['used_minutes' => 420, 'capacity_minutes' => 2400])
         ->and($adminJson['summary_cards']['todo'])->toBe(4);
 
-    // Viewer terbatas: CUMA task miliknya sendiri (60 menit) & kapasitas 1 orang (480).
+    // Viewer terbatas: CUMA realisasi miliknya sendiri (60 menit) & kapasitas 1 orang (480).
     expect($viewerJson['summary_cards']['beban_harian'])->toBe(['used_minutes' => 60, 'capacity_minutes' => 480])
         ->and($viewerJson['summary_cards']['todo'])->toBe(1);
 

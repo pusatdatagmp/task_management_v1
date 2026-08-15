@@ -380,11 +380,22 @@ class DashboardController extends Controller
 
     /**
      * KONTRAK: addendum 5 kartu ringkas (blueprint §7.1, kelalaian Fase A yang
-     * ditutup Boss 2026-07-25). SETIAP angka REUSE sumber F-118/F-44 yang SUDAH
-     * ADA — nol rumus KPI baru (F-109/F-4). Anchor SELALU $today (hari ini
-     * absolut, SAMA dengan batas netral heatmap F-131) — BUKAN $date (query
-     * param ?date= dashboard 3-angka lama), supaya kartu tidak ikut bergeser
-     * kalau admin sedang melihat tanggal lain di dashboard lama.
+     * ditutup Boss 2026-07-25). Anchor SELALU $today (hari ini absolut, SAMA
+     * dengan batas netral heatmap F-131) — BUKAN $date (query param ?date=
+     * dashboard 3-angka lama), supaya kartu tidak ikut bergeser kalau admin
+     * sedang melihat tanggal lain di dashboard lama.
+     *
+     * REVISI 2026-08-15 (permintaan Boss): 'beban_harian'.used_minutes DULU beban
+     * RENCANA (F-118, estimasi disebar ke hari kerja) — SEKARANG REALISASI (waktu
+     * BENAR-BENAR terpakai hari ini), SATU SUMBER dengan basis kolom "Kapasitas
+     * Sisa" widget Team Work Load (forUsers() F-52: kapasitas - idle_real =
+     * realisasi total/aktif+closed). Alasan: kartu ini sebelumnya statis terhadap
+     * kerja yang sedang berjalan (timer jalan, angka tidak naik) -- membingungkan,
+     * beban RENCANA & REALISASI memang dua metrik beda (F-4) tapi Boss secara
+     * eksplisit minta kartu ringkas ini jadi REALISASI. dailyLoadTotals() (beban
+     * rencana, F-118) TETAP dipakai APA ADANYA oleh heatmap()/workload_top5 --
+     * widget itu proyeksi hari INI s/d masa depan, realisasi tidak ada artinya
+     * untuk tanggal yang belum tiba, jadi TIDAK ikut direvisi.
      *
      * @param  array<string, int>  $progressDistribution  hasil progressDistribution(), REUSE dari commandCenter() (F-85, nol query dobel).
      * @param  int|null  $userId  revisi 2026-08-06 -- viewer terbatas (project.viewAll) diteruskan ke overdueCount(); null = agregat org penuh (perilaku lama).
@@ -392,15 +403,16 @@ class DashboardController extends Controller
      */
     private function summaryCards(DashboardService $service, Collection $users, Carbon $today, array $progressDistribution, ?int $userId = null): array
     {
-        // F-118 SATU SUMBER: dailyLoadTotals() -- method publik yang sama dipakai
-        // heatmap (A5) -- dipanggil ULANG di sini (bukan reuse hasil heatmap)
-        // karena heatmap menyaring tanggal berdasar ?month= (bisa bulan lain),
-        // sedang kartu ini WAJIB selalu "hari ini" apa pun bulan yang sedang dilihat.
-        $usedMinutes = array_sum($service->dailyLoadTotals($users, collect([$today]), $today));
-
-        // Kapasitas: method publik yang sama dipakai forUsers() (F-40 versioned
-        // WorkSchedule) -- SATU sumber kapasitas, bukan dihitung ulang.
-        $capacityMinutes = array_sum($service->kapasitas($users, $today));
+        // SATU SUMBER: forUsers() (F-52) -- method publik yang sama dipakai
+        // widget Team Work Load/workload_top5, dipanggil ULANG di sini (bukan
+        // reuse hasil widget lain) karena widget lain bisa menyempit ke
+        // $workloadUsers/$workloadDate beda dari $today (lihat commandCenterPayload()).
+        // 'kapasitas - idle_real' = realisasi total (aktif+closed hari ini,
+        // rumus IDENTIK kolom "Kapasitas Sisa" -- lihat command-center.tsx baris
+        // formatLiveMinutes(row.kapasitas - row.idle_real)).
+        $rows = $service->forUsers($users, $today);
+        $usedMinutes = array_sum(array_map(fn (array $r) => $r['kapasitas'] - $r['idle_real'], $rows));
+        $capacityMinutes = array_sum(array_column($rows, 'kapasitas'));
 
         return [
             'beban_harian' => [
