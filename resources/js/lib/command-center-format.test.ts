@@ -1,7 +1,7 @@
 // ==========================================================
 // MODUL       : command-center-format.test
 // KLASIFIKASI : UTIL
-// TUJUAN      : Verifikasi formatJamPair() dan shiftMonth() (B3) — node:test
+// TUJUAN      : Verifikasi formatMenitPair() dan shiftMonth() (B3) — node:test
 //               bawaan (pola dashboard-status.test.ts/use-live-counter H1),
 //               NOL dependency baru.
 // DIPANGGIL   : node --test resources/js/lib/command-center-format.test.ts
@@ -14,18 +14,18 @@
 
 import assert from 'node:assert/strict';
 import { test } from 'node:test';
-import { formatJamPair, shiftMonth } from './command-center-format.ts';
+import { formatMenitPair, shiftMonth } from './command-center-format.ts';
 
-test('formatJamPair: menit genap 60 -> integer tanpa desimal', () => {
-    assert.equal(formatJamPair(480, 480), '8/8 jam');
+test('formatMenitPair: angka mentah apa adanya, satuan menit', () => {
+    assert.equal(formatMenitPair(480, 480), '480/480 menit');
 });
 
-test('formatJamPair: menit tidak genap 60 -> satu desimal', () => {
-    assert.equal(formatJamPair(90, 480), '1.5/8 jam');
+test('formatMenitPair: used < capacity', () => {
+    assert.equal(formatMenitPair(90, 480), '90/480 menit');
 });
 
-test('formatJamPair: X=0 (belum ada beban tercatat)', () => {
-    assert.equal(formatJamPair(0, 480), '0/8 jam');
+test('formatMenitPair: X=0 (belum ada beban tercatat)', () => {
+    assert.equal(formatMenitPair(0, 480), '0/480 menit');
 });
 
 test('shiftMonth: next dalam tahun sama', () => {

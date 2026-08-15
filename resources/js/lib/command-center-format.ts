@@ -2,7 +2,8 @@
 // MODUL       : command-center-format
 // KLASIFIKASI : UTIL
 // TUJUAN      : Fungsi format MURNI tampilan (F-109) untuk halaman Command Center —
-//               konversi menit->jam untuk kartu "Beban Harian" dan navigasi
+//               label satuan menit untuk kartu "Beban Harian" (permintaan Boss
+//               2026-08-15: satuan tunggal menit, jam DICABUT) dan navigasi
 //               bulan prev/next heatmap kalender (F-131). TIDAK menghitung
 //               beban/kapasitas/anomali apa pun — angka mentahnya SELALU dari
 //               commandCenterPayload() backend, di sini cuma diubah representasinya.
@@ -10,22 +11,17 @@
 // MEMANGGIL   : -
 // DATA MASUK  : angka menit (number) dari summary_cards.beban_harian, string
 //               'Y-m' dari heatmap.month
-// DATA KELUAR : label string ("6/8 jam") atau string 'Y-m' bulan lain
+// DATA KELUAR : label string ("360/480 menit") atau string 'Y-m' bulan lain
 // RISIKO      : shiftMonth() SALAH -> tombol prev/next heatmap lompat ke bulan
 //               keliru (mis. Desember -> "2026-13" bukan "2027-01"). Dites
 //               eksplisit di command-center-format.test.ts.
 // ==========================================================
 
-/** SUMBER: 90 menit -> "1.5", 480 menit -> "8" (integer tanpa .0 kosong). */
-function hoursLabel(minutes: number): string {
-    const rounded = Math.round((minutes / 60) * 10) / 10;
-
-    return Number.isInteger(rounded) ? String(rounded) : rounded.toFixed(1);
-}
-
-/** SUMBER: kartu "Beban Harian" blueprint §7.1 — format WAJIB "X/Y jam". */
-export function formatJamPair(usedMinutes: number, capacityMinutes: number): string {
-    return `${hoursLabel(usedMinutes)}/${hoursLabel(capacityMinutes)} jam`;
+/** SUMBER: kartu "Beban Harian" — permintaan Boss 2026-08-15: satuan MENIT
+ *  saja (bukan "X/Y jam" lagi), angka mentah dari backend tidak dibulatkan/
+ *  dikonversi sama sekali di sini. */
+export function formatMenitPair(usedMinutes: number, capacityMinutes: number): string {
+    return `${usedMinutes}/${capacityMinutes} menit`;
 }
 
 /**

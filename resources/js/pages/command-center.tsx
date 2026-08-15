@@ -21,7 +21,7 @@
 // DIPANGGIL   : DashboardController::commandCenterPage() (route 'dashboard/overview',
 //               can:dashboard.view)
 // MEMANGGIL   : formatLiveMinutes/classifyWorkload (REUSE F-52, sama persis
-//               pages/dashboard.tsx — section "Beban Tim"), formatJamPair/shiftMonth
+//               pages/dashboard.tsx — section "Beban Tim"), formatMenitPair/shiftMonth
 //               (lib/command-center-format, F-131)
 // DATA MASUK  : seluruh field commandCenterPayload() (summary_cards, donut_priority,
 //               progress_distribution, task_categories, heatmap, top_tasks,
@@ -46,7 +46,7 @@ import { Dialog, DialogContent, DialogHeader, DialogTitle } from '@/components/u
 import { Skeleton } from '@/components/ui/skeleton';
 import { formatLiveMinutes } from '@/hooks/use-live-counter';
 import { classifyWorkload } from '@/lib/dashboard-status';
-import { formatJamPair, shiftMonth } from '@/lib/command-center-format';
+import { formatMenitPair, shiftMonth } from '@/lib/command-center-format';
 import { PRIORITY_QUADRANT_COLOR } from '@/lib/priority-quadrant';
 import AppLayout from '@/layouts/app-layout';
 import { type BreadcrumbItem, type SharedData } from '@/types';
@@ -709,7 +709,7 @@ export default function CommandCenter({
                             {navigating ? (
                                 <Skeleton className="h-7 w-24" />
                             ) : (
-                                formatJamPair(cards.beban_harian.used_minutes, cards.beban_harian.capacity_minutes)
+                                formatMenitPair(cards.beban_harian.used_minutes, cards.beban_harian.capacity_minutes)
                             )}
                         </CardContent>
                     </Card>
