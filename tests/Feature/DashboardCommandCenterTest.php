@@ -1332,3 +1332,94 @@ test('revisi 2026-08-06 (Boss): summary_cards.beban_harian ANGKANYA beda -- admi
     // GUARD utama: angkanya BENAR-BENAR beda, bukan cuma restricted_to_self flag-nya.
     expect($adminJson['summary_cards']['beban_harian'])->not->toBe($viewerJson['summary_cards']['beban_harian']);
 });
+
+// =============================================================================
+// Widget "Beban per Kategori" (permintaan Boss) -- stacked bar chart per member,
+// 3 kategori DALAM MENIT (longgar/todo/achievement, lihat KONTRAK
+// DashboardController::memberCategoryChart()). PAGE-ONLY (commandCenterPage()),
+// TIDAK ada di endpoint JSON commandCenter() -- sama seperti `team`.
+// =============================================================================
+
+test('member_category_chart: longgar REUSE idle_real team.rows, todo = due_date team.date, achievement = completed_at team.date (menit)', function () {
+    $admin = User::factory()->admin()->create();
+    $member = User::factory()->create(['organization_id' => $admin->organization_id]);
+    $project = createCcProject($admin, [$member->id]);
+    $todo = TaskStatus::where('project_id', $project->id)->where('position', 0)->firstOrFail();
+    $done = TaskStatus::where('project_id', $project->id)->where('is_completed', true)->firstOrFail();
+    $anchor = ccAnchor();
+    seedCcSchedule($admin, $anchor);
+    $this->travelTo($anchor);
+
+    // "To Do" hari ini -- due_date SAMA dengan team.date ($anchor).
+    createCcTask($project, $todo, $admin, [$member->id], 60, $anchor->copy()->setTime(17, 0, 0));
+    // GUARD: due_date BEDA hari -- TIDAK boleh ikut ke-hitung todo_minutes.
+    createCcTask($project, $todo, $admin, [$member->id], 999, $anchor->copy()->addDays(5)->setTime(17, 0, 0));
+
+    // "Achievement" hari ini -- task dibuat TODO dulu, BARU dipindah ke DONE
+    // (memicu TaskObserver::updating() -> completed_at = now() = $anchor, F-21).
+    $achievementTask = createCcTask($project, $todo, $admin, [$member->id], 90, $anchor->copy()->addDays(5)->setTime(17, 0, 0));
+    $achievementTask->update(['task_status_id' => $done->id]);
+
+    // GUARD: task lain SUDAH completed TAPI completed_at BUKAN hari ini (dites
+    // via update time-travel ke tanggal lain) -- tidak boleh ikut achievement_minutes.
+    $oldAchievement = createCcTask($project, $todo, $admin, [$member->id], 500, $anchor->copy()->addDays(5)->setTime(17, 0, 0));
+    $this->travelTo($anchor->copy()->subDay());
+    $oldAchievement->update(['task_status_id' => $done->id]);
+    $this->travelTo($anchor);
+
+    $response = $this->actingAs($admin)->get(route('dashboard.overview'));
+
+    $response->assertOk();
+    $props = $response->viewData('page')['props'];
+    $chart = collect($props['member_category_chart'])->keyBy('id');
+    $teamRow = collect($props['team']['rows'])->keyBy('id')[$member->id];
+
+    expect($chart[$member->id]['name'])->toBe($member->name)
+        // Permintaan Boss (2026-08-21): frontend butuh 'kapasitas' -- basis
+        // persentase ("jatah harian" jadi pembagi), REUSE teamRow['kapasitas'].
+        ->and($chart[$member->id]['kapasitas'])->toBe($teamRow['kapasitas'])
+        ->and($chart[$member->id]['longgar_minutes'])->toBe($teamRow['idle_real'])
+        ->and($chart[$member->id]['todo_minutes'])->toBe(60)
+        ->and($chart[$member->id]['achievement_minutes'])->toBe(90);
+});
+
+test('member_category_chart: estimated_minutes dibagi rata jumlah assignee (F-96a, pola SAMA workloadSpread)', function () {
+    $admin = User::factory()->admin()->create();
+    $memberA = User::factory()->create(['organization_id' => $admin->organization_id]);
+    $memberB = User::factory()->create(['organization_id' => $admin->organization_id]);
+    $project = createCcProject($admin, [$memberA->id, $memberB->id]);
+    $todo = TaskStatus::where('project_id', $project->id)->where('position', 0)->firstOrFail();
+    $anchor = ccAnchor();
+    seedCcSchedule($admin, $anchor);
+    $this->travelTo($anchor);
+
+    // 100 menit, 2 assignee -> 50 menit masing-masing.
+    createCcTask($project, $todo, $admin, [$memberA->id, $memberB->id], 100, $anchor->copy()->setTime(17, 0, 0));
+
+    $response = $this->actingAs($admin)->get(route('dashboard.overview'));
+    $chart = collect($response->viewData('page')['props']['member_category_chart'])->keyBy('id');
+
+    expect($chart[$memberA->id]['todo_minutes'])->toBe(50)
+        ->and($chart[$memberB->id]['todo_minutes'])->toBe(50);
+});
+
+test('member_category_chart: viewer terbatas cuma lihat baris dirinya sendiri, konsisten team.rows', function () {
+    $admin = User::factory()->admin()->create();
+    $viewer = ccRestrictedViewer($admin);
+    $other = User::factory()->create(['organization_id' => $admin->organization_id]);
+    $project = createCcProject($admin, [$viewer->id, $other->id]);
+    $todo = TaskStatus::where('project_id', $project->id)->where('position', 0)->firstOrFail();
+    $anchor = ccAnchor();
+    seedCcSchedule($admin, $anchor);
+    $this->travelTo($anchor);
+
+    createCcTask($project, $todo, $admin, [$viewer->id], 60, $anchor->copy()->setTime(17, 0, 0));
+    createCcTask($project, $todo, $admin, [$other->id], 60, $anchor->copy()->setTime(17, 0, 0));
+
+    $response = $this->actingAs($viewer)->get(route('dashboard.overview'));
+    $chart = $response->viewData('page')['props']['member_category_chart'];
+
+    expect($chart)->toHaveCount(1)
+        ->and($chart[0]['id'])->toBe($viewer->id)
+        ->and($chart[0]['todo_minutes'])->toBe(60);
+});

@@ -34,6 +34,10 @@
  *               `status_projects` — top-5 proyek tak diarsip, COUNTS per FLAG F-44
  *               (statusProjects(), F-85 nol N+1) — SENGAJA counts, BUKAN derivasi
  *               status-label proyek (F-125, di luar scope, tugas halaman Proyek).
+ *               Widget baru `member_category_chart` (permintaan Boss): stacked bar
+ *               chart per member, 3 kategori DALAM MENIT (longgar/todo/achievement,
+ *               lihat KONTRAK memberCategoryChart()) — PAGE-ONLY (commandCenterPage()
+ *               saja, pola SAMA `team`, karena tergantung $teamRows/$teamDate).
  * DIPANGGIL   : routes/admin.php (gated can:dashboard.view)
  * MEMANGGIL   : DashboardService, User, Task, Project, ActivityLog, ActivityLogPresenter
  * DATA MASUK  : query string ?date=Y-m-d (opsional, default hari ini WIB) +
@@ -43,7 +47,8 @@
  * DATA KELUAR : index() -> Inertia props (date, selectedUserId, users[], rows[]).
  *               summary() -> JSON setara, dipertahankan dari H2.
  *               commandCenter() -> JSON widget command-center (lihat DoD H3 Fase A).
- *               commandCenterPage() -> Inertia props SAMA + `team` (Beban Tim, F-52).
+ *               commandCenterPage() -> Inertia props SAMA + `team` (Beban Tim, F-52)
+ *               + `member_category_chart` (Beban per Kategori, lihat atas).
  * RISIKO      : SUMBER F-95 — permission dashboard.view HANYA admin (seeder),
  *               member NOL permission, digerbangi middleware can:dashboard.view
  *               di route, BUKAN dicek manual di sini (F-90). F-4: commandCenter()
@@ -78,6 +83,7 @@ use App\Models\TaskTemplate;
 use App\Models\User;
 use App\Services\DashboardService;
 use App\Support\ActivityLogPresenter;
+use Illuminate\Database\Eloquent\Builder;
 use Illuminate\Http\JsonResponse;
 use Illuminate\Http\Request;
 use Illuminate\Support\Carbon;
@@ -163,6 +169,10 @@ class DashboardController extends Controller
                 'selected_user_id' => $restrictToSelf ? $request->user()->id : ($request->filled('user_id') ? $request->integer('user_id') : null),
                 'rows' => $teamRows,
             ],
+            // Permintaan Boss: widget "Beban per Kategori" (stacked bar chart
+            // per member) -- REUSE $teamRows/$teamDate yang SAMA (nol query
+            // forUsers() dobel), lihat KONTRAK memberCategoryChart().
+            'member_category_chart' => $this->memberCategoryChart($teamRows, $teamDate),
         ]);
     }
 
@@ -559,6 +569,98 @@ class DashboardController extends Controller
             ->take(5)
             ->values()
             ->all();
+    }
+
+    /**
+     * KONTRAK: widget "Beban per Kategori" (permintaan Boss) — stacked bar chart
+     * per member di command-center.tsx, 3 kategori DALAM SATUAN MENIT (dikonfirmasi
+     * Boss, supaya proporsional saat ditumpuk 1 batang) untuk SATU tanggal $date
+     * (SAMA dengan tanggal section "Beban Tim", team.date):
+     *   - longgar_minutes     : REUSE idle_real dari forUsers() lewat $teamRows
+     *                           (F-109, NOL rumus baru — kolom "Kapasitas Sisa").
+     *   - todo_minutes        : Σ estimated_minutes (dibagi rata jumlah assignee,
+     *                           F-96a — pola IDENTIK DashboardService::workloadSpread())
+     *                           task berstatus TODO (flag F-44) yang due_date $date.
+     *   - achievement_minutes : Σ estimated_minutes (dibagi rata assignee, F-96a)
+     *                           task is_completed=true yang completed_at $date
+     *                           (F-21 — tanggal task BENAR-BENAR ditandai selesai,
+     *                           bukan due_date).
+     * $teamRows SUDAH di-scope $restrictToSelf oleh loadRows() (caller) — method
+     * ini cuma menambah 2 query TETAP di atas roster yang sama (F-85, tidak
+     * tumbuh dengan jumlah user). PAGE-ONLY (dipanggil commandCenterPage(),
+     * BUKAN commandCenterPayload()) — pola SAMA `team`, karena tergantung
+     * $teamRows/$date section "Beban Tim" yang juga page-only.
+     *
+     * `kapasitas` DIIKUTSERTAKAN (REUSE $row['kapasitas'] dari forUsers(), F-109
+     * nol query dobel) — permintaan Boss 2026-08-21: frontend menampilkan chart
+     * dalam PERSENTASE, kapasitas ("jatah harian") jadi PEMBAGI (basis 100%)
+     * ketiga kategori. Pembagian itu sendiri MURNI presentasi, dilakukan di
+     * command-center.tsx (F-4 pola sama proporsi donut chart) — di sini TETAP
+     * kirim angka MENIT mentah, bukan persentase (F-38: nol angka turunan
+     * disimpan/dikirim kalau bisa dihitung ulang di titik pakai).
+     *
+     * @param  array<int, array<string, mixed>>  $teamRows  hasil loadRows() — WAJIB baris ber-`id`/`name`/`idle_real`/`kapasitas`.
+     * @return array<int, array{id:int, name:string, kapasitas:int, longgar_minutes:int, todo_minutes:int, achievement_minutes:int}>
+     */
+    private function memberCategoryChart(array $teamRows, Carbon $date): array
+    {
+        if ($teamRows === []) {
+            return [];
+        }
+
+        $userIds = array_column($teamRows, 'id');
+
+        $todoMinutes = $this->assigneeMinutes($userIds, fn ($q) => $q
+            ->whereHas('taskStatus', fn ($s) => $s->where('is_completed', false)->where('is_review', false)->where('is_work_state', false))
+            ->whereDate('due_date', $date));
+
+        $achievementMinutes = $this->assigneeMinutes($userIds, fn ($q) => $q
+            ->whereHas('taskStatus', fn ($s) => $s->where('is_completed', true))
+            ->whereDate('completed_at', $date));
+
+        return array_map(fn (array $row) => [
+            'id' => $row['id'],
+            'name' => $row['name'],
+            'kapasitas' => $row['kapasitas'],
+            'longgar_minutes' => $row['idle_real'],
+            'todo_minutes' => $todoMinutes[$row['id']] ?? 0,
+            'achievement_minutes' => $achievementMinutes[$row['id']] ?? 0,
+        ], $teamRows);
+    }
+
+    /**
+     * KONTRAK: helper SATU query — Σ estimated_minutes task (disaring $scope),
+     * dibagi rata jumlah SELURUH assignee task itu (F-96a, assignee di luar
+     * $userIds tetap ikut membagi porsi, sama seperti DashboardService::
+     * workloadSpread()), keyed by assignee id yang ADA di $userIds.
+     *
+     * @param  array<int, int>  $userIds
+     * @param  \Closure(Builder<Task>): Builder<Task>  $scope
+     * @return array<int, int> keyed by user id -> menit
+     */
+    private function assigneeMinutes(array $userIds, \Closure $scope): array
+    {
+        $tasks = $scope(Task::query())
+            ->whereHas('assignees', fn ($q) => $q->whereIn('users.id', $userIds))
+            ->with('assignees:id')
+            ->get(['id', 'estimated_minutes']);
+
+        $result = [];
+
+        foreach ($tasks as $task) {
+            $assigneeCount = max($task->assignees->count(), 1);
+            $share = (int) round($task->estimated_minutes / $assigneeCount);
+
+            foreach ($task->assignees as $assignee) {
+                if (! in_array($assignee->id, $userIds, true)) {
+                    continue;
+                }
+
+                $result[$assignee->id] = ($result[$assignee->id] ?? 0) + $share;
+            }
+        }
+
+        return $result;
     }
 
     /**

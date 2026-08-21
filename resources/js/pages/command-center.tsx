@@ -14,19 +14,32 @@
 //               query (lihat DashboardController). Preset tanggal (hari ini/minggu
 //               ini/bulan ini/rentang custom) dihitung client-side MURNI presentasi
 //               (bukan angka KPI), dikirim sebagai from/to ke server.
-//               v1.2 DS-4b (§12.5): widget "Status Project" — tabel top-5 proyek
-//               dari status_projects (COUNTS, backend sudah urut task_total DESC).
-//               SORT KLIK-HEADER murni client-side (re-urut 5 baris yang SAMA,
-//               bukan fetch ulang top-5 lain per kolom) — nol angka baru dihitung.
+//               Revisi (permintaan Boss): widget "Kategori Tugas Berulang" &
+//               "Status Project" DIHAPUS dari halaman ini (frontend-only —
+//               backend commandCenterPayload() TETAP mengirim task_categories/
+//               status_projects untuk endpoint JSON commandCenter() yang lain,
+//               field itu cuma sudah tidak didestrukturisasi/dirender di sini).
+//               Revisi (permintaan Boss): widget "Beban per Kategori" ditambah --
+//               stacked bar chart (recharts, via shadcn `ui/chart`) per member,
+//               3 kategori (Jatah Harian/To Do/Selesai, MemberCategoryRow,
+//               DashboardController::memberCategoryChart(), F-109 page-only).
+//               "Selesai" DI SINI = jumlah menit task SELESAI (COUNT/cermin
+//               murni, F-38) -- BUKAN skor KPI/LeaderboardService, F-4 TETAP
+//               berlaku (nol rupiah/skor-kinerja di halaman ini). Revisi
+//               2026-08-21: chart TAMPIL PERSENTASE (bukan menit) -- kapasitas
+//               ("Jatah Harian") jadi basis 100% pembagi ketiga kategori,
+//               dihitung MURNI presentasi di toMemberCategoryChartData() (F-38,
+//               backend TETAP kirim menit mentah, nol persentase disimpan/dikirim).
 // DIPANGGIL   : DashboardController::commandCenterPage() (route 'dashboard/overview',
 //               can:dashboard.view)
 // MEMANGGIL   : formatLiveMinutes/classifyWorkload (REUSE F-52, sama persis
 //               pages/dashboard.tsx — section "Beban Tim"), formatMenitPair/shiftMonth
-//               (lib/command-center-format, F-131)
-// DATA MASUK  : seluruh field commandCenterPayload() (summary_cards, donut_priority,
-//               progress_distribution, task_categories, heatmap, top_tasks,
-//               recent_activity, workload_top5, status_projects, filters,
-//               filter_users) + team {date,rows} (F-52, loadRows())
+//               (lib/command-center-format, F-131), recharts (ChartContainer/BarChart,
+//               components/ui/chart.tsx)
+// DATA MASUK  : field commandCenterPayload() yang DIPAKAI (summary_cards, donut_priority,
+//               progress_distribution, heatmap, top_tasks, recent_activity,
+//               workload_top5, filters, filter_users) + team {date,rows} (F-52,
+//               loadRows()) + member_category_chart (page-only, lihat atas)
 // DATA KELUAR : router.get (navigasi bulan heatmap + filter per-widget, SEMUA
 //               query tercermin di URL, pola sama activity-logs/index.tsx)
 // RISIKO      : SUMBER F-4 — halaman ini CERMIN beban & aktivitas, BUKAN penilaian.
@@ -42,6 +55,7 @@
 import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
+import { ChartContainer, ChartTooltip, ChartTooltipContent, type ChartConfig } from '@/components/ui/chart';
 import { Dialog, DialogContent, DialogHeader, DialogTitle } from '@/components/ui/dialog';
 import { Skeleton } from '@/components/ui/skeleton';
 import { formatLiveMinutes } from '@/hooks/use-live-counter';
@@ -49,10 +63,11 @@ import { classifyWorkload } from '@/lib/dashboard-status';
 import { formatMenitPair, shiftMonth } from '@/lib/command-center-format';
 import { PRIORITY_QUADRANT_COLOR } from '@/lib/priority-quadrant';
 import AppLayout from '@/layouts/app-layout';
-import { type BreadcrumbItem, type SharedData } from '@/types';
-import { Head, Link, router, usePage } from '@inertiajs/react';
+import { type BreadcrumbItem } from '@/types';
+import { Head, Link, router } from '@inertiajs/react';
 import { AlertTriangle, Briefcase, CheckCircle2, ChevronLeft, ChevronRight, Clock, Eye, ListTodo, PlayCircle, Star, X } from 'lucide-react';
 import { useEffect, useState } from 'react';
+import { Bar, BarChart, CartesianGrid, XAxis, YAxis } from 'recharts';
 
 interface SummaryCards {
     beban_harian: { used_minutes: number; capacity_minutes: number };
@@ -116,21 +131,6 @@ interface AnomalyRow {
     actual_minutes: number;
 }
 
-interface StatusProjectRow {
-    id: number;
-    name: string;
-    task_total: number;
-    todo: number;
-    progress: number;
-    // BUG FIX (audit Boss 2026-08-07): kolom baru -- sebelum ini task status
-    // Review tidak masuk todo/progress/selesai manapun, hilang dari breakdown
-    // walau tetap kehitung di task_total. Lihat KONTRAK statusProjects().
-    review: number;
-    selesai: number;
-    overdue: number;
-    due_date: string | null;
-}
-
 interface TeamRow {
     id: number;
     name: string;
@@ -141,6 +141,22 @@ interface TeamRow {
     idle_plan: number;
     idle_real: number;
     anomalies: AnomalyRow[];
+}
+
+// SUMBER: DashboardController::memberCategoryChart() -- 3 kategori DALAM MENIT
+// (mentah, BUKAN persentase -- F-38, dihitung ulang di titik pakai), untuk
+// team.date yang SAMA dengan tabel Team Work Load. longgar_minutes REUSE
+// idle_real (nol rumus baru), todo/achievement = estimated_minutes dibagi
+// rata assignee (F-96a) tugas due_date/completed_at jatuh di tanggal itu.
+// `kapasitas` (permintaan Boss 2026-08-21): basis pembagi PERSENTASE chart --
+// "Jatah Harian" jadi 100%, lihat toMemberCategoryChartPct().
+interface MemberCategoryRow {
+    id: number;
+    name: string;
+    kapasitas: number;
+    longgar_minutes: number;
+    todo_minutes: number;
+    achievement_minutes: number;
 }
 
 // F-109/§12.5: SATU sumber bentuk filter, dikirim balik oleh backend (SELALU 19
@@ -173,23 +189,20 @@ interface FilterUser {
 interface CommandCenterProps {
     date: string;
     // Revisi 2026-08-06: viewer TANPA project.viewAll -- seluruh widget di atas
-    // sudah DIBATASI ke data sendiri di backend (server guard). Flag ini MURNI
-    // dipakai frontend untuk sembunyikan widget yang nol makna buat viewer
-    // terbatas (Status Project -- per-proyek, bukan per-orang, keputusan Boss).
+    // sudah DIBATASI ke data sendiri di backend (server guard). Flag ini juga
+    // dipakai untuk teks penanda cakupan data (scopeLabel) & link "Tugas Saya".
     restricted_to_self: boolean;
     summary_cards: SummaryCards;
     donut_priority: Record<'p1' | 'p2' | 'p3' | 'p4' | 'none', number>;
     progress_distribution: { selesai: number; review: number; progress: number; todo: number };
-    // Revisi 2026-08-07 (permintaan Boss): dulu grouped-by-task_type, sekarang
-    // daftar PER TEMPLATE -- nama, ringkasan jadwal (AE-2b), jumlah task
-    // ALL-TIME (lihat KONTRAK DashboardController::taskCategories()).
-    task_categories: { id: number; title: string; schedule_label: string; total: number }[];
     heatmap: { month: string; days: HeatmapDay[]; active_user_count: number };
     top_tasks: TopTask[];
     recent_activity: ActivityRow[];
     workload_top5: WorkloadRow[];
-    status_projects: StatusProjectRow[];
     team: { date: string; selected_user_id: number | null; rows: TeamRow[] };
+    // Permintaan Boss: widget "Beban per Kategori" (stacked bar chart per
+    // member) -- PAGE-ONLY (pola SAMA `team`, lihat KONTRAK memberCategoryChart()).
+    member_category_chart: MemberCategoryRow[];
     filters: Filters;
     filter_users: FilterUser[];
 }
@@ -244,6 +257,49 @@ const STATUS_BADGE: Record<string, { label: string; className: string }> = {
     'idle-tinggi': { label: 'Idle tinggi', className: 'border-transparent bg-amber-500 text-white hover:bg-amber-500' },
     normal: { label: '', className: '' },
 };
+
+// Permintaan Boss (2026-08-21): widget "Beban per Kategori" -- stacked bar
+// chart per member, DALAM PERSENTASE (bukan menit lagi), "Jatah Harian"
+// (kapasitas) jadi BASIS 100% pembagi ketiga kategori (lihat
+// toMemberCategoryChartData()). Warna: Jatah Harian = grey, To Do = biru,
+// Selesai = lime. Urutan tumpukan (Bar di JSX, BAWAH->ATAS): Selesai, To Do,
+// Jatah Harian -- Jatah Harian SENGAJA di ATAS (mewakili SISA kapasitas yang
+// belum terpakai), pola mockup Boss.
+// Revisi 2026-08-21 (permintaan Boss): shade dipertajam 1 tingkat dari
+// default Tailwind (slate-400->500, blue-500->600, lime-500->600) --
+// background card di app ini PUTIH, shade -500/-400 default kontrasnya
+// terlalu rendah (grey pudar, lime pucat) terhadap putih, jadi batang chart
+// sulit dibedakan dari card-nya sendiri.
+const MEMBER_CATEGORY_CONFIG = {
+    achievement_pct: { label: 'Selesai', color: '#65a30d' }, // lime-600
+    todo_pct: { label: 'To Do', color: '#2563eb' }, // blue-600
+    longgar_pct: { label: 'Jatah Harian', color: '#64748b' }, // slate-500
+} satisfies ChartConfig;
+
+// SUMBER: MemberCategoryRow (menit mentah dari backend) -- persentase MURNI
+// presentasi, dihitung ulang di sini SETIAP render (F-38: nol angka turunan
+// disimpan/dikirim balik dari backend, pola SAMA buildDonutGradient()).
+// `kapasitas` ("Jatah Harian") jadi PEMBAGI -- 0% kalau kapasitas 0 (user
+// tanpa Jam Kerja/override), BUKAN dibagi nol/NaN yang merambat ke chart.
+// Raw menit TETAP disertakan (bukan cuma persentase) supaya tooltip bisa
+// tampilkan keduanya sekaligus, nol fetch/hitung tambahan.
+interface MemberCategoryChartDatum extends MemberCategoryRow {
+    longgar_pct: number;
+    todo_pct: number;
+    achievement_pct: number;
+}
+function toMemberCategoryChartData(rows: MemberCategoryRow[]): MemberCategoryChartDatum[] {
+    return rows.map((row) => {
+        const pct = (minutes: number) => (row.kapasitas > 0 ? Math.round((minutes / row.kapasitas) * 1000) / 10 : 0);
+
+        return {
+            ...row,
+            longgar_pct: pct(row.longgar_minutes),
+            todo_pct: pct(row.todo_minutes),
+            achievement_pct: pct(row.achievement_minutes),
+        };
+    });
+}
 
 // Permintaan Boss: card "Team Work Load" & modal "Detail & filter"-nya BUTUH
 // sort per kolom -- MURNI re-urut baris yang SUDAH dikirim backend (team.rows,
@@ -427,7 +483,7 @@ function UserOnlyFilter({ userId, users, onChange }: { userId: number | null; us
 
 // Permintaan Boss: loading screen profesional (skeleton, bukan spinner/dim) --
 // SATU kerangka baris tabel dipakai ulang di SEMUA tabel widget (Team Work Load,
-// modalnya, Status Project, Top-10 Task, modal Workload Tim per-tanggal) supaya
+// modalnya, Top-10 Task, modal Workload Tim per-tanggal) supaya
 // bentuknya konsisten & nol duplikasi markup per tabel. `rows`/`cols` disesuaikan
 // jumlah baris/kolom tabel asli tiap widget supaya tinggi kerangka mendekati
 // tinggi konten asli (nol "lompat" layout pas data masuk).
@@ -452,26 +508,14 @@ export default function CommandCenter({
     summary_cards: cards,
     donut_priority: donut,
     progress_distribution: progress,
-    task_categories: categories,
     heatmap,
     top_tasks: topTasks,
     recent_activity: recentActivity,
-    status_projects: statusProjects,
     team,
+    member_category_chart: memberCategoryChart,
     filters,
     filter_users: filterUsers,
 }: CommandCenterProps) {
-    // BUG FIX (permintaan Boss 2026-08-07): widget "Kategori Tugas Berulang"
-    // TETAP tampil untuk SEMUA viewer (nol guard restrictedToSelf), tapi
-    // tombol Show More-nya ke route('task-templates.all') digerbangi
-    // can:task.manage (routes/admin.php:79) -- permission BEDA dari
-    // project.viewAll (dasar restrictedToSelf). Viewer dgn dashboard.view
-    // TAPI tanpa task.manage akan 403 ("mati") kalau link selalu aktif --
-    // auth.permissions dicek di sini supaya tombol itu sendiri disembunyikan
-    // utk viewer yang memang tidak akan lolos gate-nya.
-    const { auth } = usePage<SharedData>().props;
-    const canManageTaskTemplates = auth.permissions.includes('task.manage');
-
     // A10: indikator loading ringan saat navigasi bulan heatmap (Inertia visit
     // penuh me-reload seluruh props) -- MURNI UI, tidak menyentuh data.
     const [navigating, setNavigating] = useState(false);
@@ -508,12 +552,9 @@ export default function CommandCenter({
     const scopeLabel = (base: string) => `${base} ${restrictedToSelf ? 'Saya' : 'Sistem'}`;
 
     // §12.5: tombol global Last Week/Last Month/Pilih Tanggal -- broadcast SATU
-    // rentang ke KELIMA widget berbasis periode sekaligus (donut/progress/
-    // kategori/top-10/recent). Heatmap & Workload sengaja TIDAK ikut (lihat
-    // KONTRAK heatmap()/workload_top5 di DashboardController -- alasan F-131/F-118).
-    // Revisi 2026-08-07: 'categories' dicabut dari broadcast rentang global --
-    // widget itu sekarang all-time (nol filter tanggal), lihat komentar widget
-    // "Kategori Tugas Berulang" di bawah.
+    // rentang ke widget berbasis periode sekaligus (donut/progress/top-10/recent).
+    // Heatmap & Workload sengaja TIDAK ikut (lihat KONTRAK heatmap()/workload_top5
+    // di DashboardController -- alasan F-131/F-118).
     const RANGE_PREFIXES = ['donut', 'progress', 'top_tasks', 'activity'] as const;
     const applyGlobalRange = (range: { from: string; to: string }) => {
         const patch: Record<string, string | number | null> = {};
@@ -526,26 +567,6 @@ export default function CommandCenter({
     const [customOpen, setCustomOpen] = useState(false);
     const [customFrom, setCustomFrom] = useState('');
     const [customTo, setCustomTo] = useState('');
-
-    // §12.5: sort widget Status Project MURNI client-side -- backend sudah
-    // kirim top-5 (task_total DESC), klik header cuma re-urut 5 baris yang
-    // SAMA (bukan fetch beda top-5 per kolom, nol query tambahan).
-    type StatusProjectSortKey = 'name' | 'task_total' | 'todo' | 'progress' | 'review' | 'selesai' | 'overdue' | 'due_date';
-    const [statusProjectSort, setStatusProjectSort] = useState<{ key: StatusProjectSortKey; dir: 'asc' | 'desc' }>({
-        key: 'task_total',
-        dir: 'desc',
-    });
-    const sortedStatusProjects = [...statusProjects].sort((a, b) => {
-        const { key, dir } = statusProjectSort;
-        const av = a[key];
-        const bv = b[key];
-        const cmp = av === null ? -1 : bv === null ? 1 : av < bv ? -1 : av > bv ? 1 : 0;
-
-        return dir === 'asc' ? cmp : -cmp;
-    });
-    const toggleStatusProjectSort = (key: StatusProjectSortKey) => {
-        setStatusProjectSort((prev) => (prev.key === key ? { key, dir: prev.dir === 'asc' ? 'desc' : 'asc' } : { key, dir: 'desc' }));
-    };
 
     // Permintaan Boss: tabel Top-10 Task -- sort MURNI client-side (backend
     // sudah kirim 10 baris final, klik header cuma re-urut 10 baris yang SAMA).
@@ -566,14 +587,18 @@ export default function CommandCenter({
 
     // Permintaan Boss: card "Team Work Load" tampil TOP-5 berdasarkan kapasitas
     // idle TERBANYAK (seleksi TETAP, dihitung SEKALI dari team.rows) -- sort per
-    // kolom cuma re-urut 5 baris hasil seleksi ini (pola SAMA Status Project),
-    // BUKAN memilih ulang top-5 lain per kolom.
+    // kolom cuma re-urut 5 baris hasil seleksi ini, BUKAN memilih ulang top-5
+    // lain per kolom.
     const teamTop5 = [...team.rows].sort((a, b) => b.idle_real - a.idle_real).slice(0, 5);
     const [teamSort, setTeamSort] = useState<{ key: TeamSortKey; dir: 'asc' | 'desc' }>({ key: 'idle_real', dir: 'desc' });
     const sortedTeamTop5 = sortTeamRows(teamTop5, teamSort);
     const toggleTeamSort = (key: TeamSortKey) => {
         setTeamSort((prev) => (prev.key === key ? { key, dir: prev.dir === 'asc' ? 'desc' : 'asc' } : { key, dir: 'desc' }));
     };
+
+    // Permintaan Boss (2026-08-21): widget "Beban per Kategori" -- persentase,
+    // BUKAN menit (toMemberCategoryChartData(), MURNI presentasi F-38/F-109).
+    const memberCategoryChartData = toMemberCategoryChartData(memberCategoryChart);
 
     // Permintaan Boss: modal "Detail & filter" -- tabel PENUH (team.rows, bukan
     // top-5), sort state TERPISAH dari card utama supaya tidak saling timpa.
@@ -760,7 +785,7 @@ export default function CommandCenter({
                     </Card>
                 </div>
 
-                <div className="grid grid-cols-1 gap-4 lg:grid-cols-3">
+                <div className="grid grid-cols-1 gap-4 lg:grid-cols-2">
                     {/* A3: Donut prioritas */}
                     <Card>
                         <CardHeader className="flex flex-col gap-2">
@@ -867,72 +892,15 @@ export default function CommandCenter({
                             )}
                         </CardContent>
                     </Card>
-
-                    {/* A5: kategori tugas berulang -- Revisi 2026-08-07 (permintaan Boss,
-                    iterasi ke-2): bukan lagi breakdown per task_type, tapi DAFTAR PER
-                    TEMPLATE (nama, ringkasan jadwal, jumlah task ALL-TIME dari template
-                    itu -- lihat KONTRAK DashboardController::taskCategories()). "Jumlah"
-                    SENGAJA tidak ikut filter periode (dikonfirmasi Boss) -- makanya
-                    UserOnlyFilter (pola SAMA heatmap F-131), bukan RangeUserFilter. */}
-                    <Card>
-                        <CardHeader className="flex flex-col gap-2">
-                            {/* Permintaan Boss: tombol Show More SEJAJAR judul widget -- pola
-                            SAMA widget Status Project (flex-row justify-between), Link ke
-                            halaman listing penuh (BUKAN expand/collapse client-side). */}
-                            <div className="flex flex-row items-center justify-between">
-                                <CardTitle className="text-base">{scopeLabel('Kategori Tugas Berulang')}</CardTitle>
-                                {canManageTaskTemplates && (
-                                    <Button variant="outline" size="sm" asChild>
-                                        <Link href={route('task-templates.all')}>Show More →</Link>
-                                    </Button>
-                                )}
-                            </div>
-                            <UserOnlyFilter
-                                userId={filters.categories_user_id}
-                                users={filterUsers}
-                                onChange={(userId) => applyFilters({ categories_user_id: userId })}
-                            />
-                        </CardHeader>
-                        <CardContent>
-                            {navigating ? (
-                                <div className="flex flex-col gap-3">
-                                    {Array.from({ length: 4 }).map((_, i) => (
-                                        <div key={i} className="flex items-center justify-between gap-3">
-                                            <Skeleton className="h-4 w-40" />
-                                            <Skeleton className="h-5 w-8 rounded-full" />
-                                        </div>
-                                    ))}
-                                </div>
-                            ) : categories.length === 0 ? (
-                                <p className="text-sm text-muted-foreground">Belum ada tugas berulang.</p>
-                            ) : (
-                                <ul className="flex flex-col gap-2 text-sm">
-                                    {categories.map((c) => (
-                                        <li key={c.id} className="flex items-center justify-between gap-3">
-                                            <div className="flex flex-col">
-                                                <span className="font-medium">{c.title}</span>
-                                                <span className="text-xs text-muted-foreground">{c.schedule_label}</span>
-                                            </div>
-                                            <Badge variant="secondary">{c.total}</Badge>
-                                        </li>
-                                    ))}
-                                </ul>
-                            )}
-                        </CardContent>
-                    </Card>
                 </div>
 
-                <div className="grid grid-cols-1 gap-4 lg:grid-cols-2">
+                <div className="grid grid-cols-1 gap-4">
                     {/* F-52/F-121: dashboard 3-angka lama DIPERTAHANKAN sebagai section "Beban
         Tim" -- Permintaan Boss: top-5 idle terbanyak + sort per kolom + modal
         "Detail & filter" (menggantikan Link ke halaman dashboard lama).
-        Perbaikan layout (permintaan Boss): grid ini 2 kolom (lg:grid-cols-2)
-        berisi kartu ini + "Status Project" -- Status Project disembunyikan
-        TOTAL untuk viewer terbatas (restrictedToSelf, lihat komentar di
-        bawah), jadi kartu ini SENDIRIAN di grid dan perlu melebar penuh
-        (lg:col-span-2) supaya tidak nongkrong di setengah lebar dengan ruang
-        kosong di sebelahnya. */}
-                    <Card className={restrictedToSelf ? 'lg:col-span-2' : undefined}>
+        Revisi (hapus widget "Status Project" dari halaman ini): grid ini kini
+        HANYA berisi kartu ini, jadi tanpa lg:grid-cols-2/col-span. */}
+                    <Card>
                         <CardHeader className="flex flex-row items-center justify-between space-y-0">
                             <CardTitle className="text-base">{scopeLabel('Team Work Load')} — {team.date}</CardTitle>
                             <Button type="button" variant="outline" size="sm" onClick={() => setWorkloadModalOpen(true)}>
@@ -1102,90 +1070,81 @@ export default function CommandCenter({
                         </DialogContent>
                     </Dialog>
 
-                    {/* §12.5: widget "Status Project" -- COUNTS top-5 proyek (BUKAN
-        derivasi status-label F-125, itu tugas halaman Proyek nanti).
-        Revisi 2026-08-06: disembunyikan utk viewer terbatas -- widget ini
-        per-PROYEK, nol makna "punya siapa" (keputusan Boss), backend juga
-        sudah kirim array kosong utk viewer ini, cuma disembunyikan total
-        di sini biar tidak nongol kartu kosong tanpa konteks. */}
-                    {!restrictedToSelf && (
-                    <Card>
-                        <CardHeader className="flex flex-row items-center justify-between space-y-0">
-                            <CardTitle className="text-base">Status Project</CardTitle>
-                            <Button variant="outline" size="sm" asChild>
-                                <Link href={route('projects.index')}>Show More →</Link>
-                            </Button>
-                        </CardHeader>
-                        <CardContent className="overflow-x-auto p-0">
-                            <table className="w-full text-left text-sm">
-                                <thead>
-                                    <tr className="border-b bg-muted/50 text-muted-foreground">
-                                        {(
-                                            [
-                                                ['name', 'Proyek'],
-                                                ['task_total', 'Task'],
-                                                ['todo', 'Todo'],
-                                                ['progress', 'Progress'],
-                                                ['review', 'Review'],
-                                                ['selesai', 'Selesai'],
-                                                ['overdue', 'Overdue'],
-                                                ['due_date', 'Deadline'],
-                                            ] as [StatusProjectSortKey, string][]
-                                        ).map(([key, label]) => (
-                                            <th key={key} className="p-3">
-                                                <button
-                                                    type="button"
-                                                    className="flex items-center gap-1 font-medium hover:text-foreground"
-                                                    onClick={() => toggleStatusProjectSort(key)}
-                                                >
-                                                    {label}
-                                                    {statusProjectSort.key === key && <span>{statusProjectSort.dir === 'asc' ? '↑' : '↓'}</span>}
-                                                </button>
-                                            </th>
-                                        ))}
-                                    </tr>
-                                </thead>
-                                <tbody>
-                                    {navigating ? (
-                                        <TableSkeletonRows rows={5} cols={8} />
-                                    ) : (
-                                        <>
-                                            {sortedStatusProjects.map((row) => (
-                                                <tr key={row.id} className="border-b last:border-0">
-                                                    <td className="p-3 font-medium">{row.name}</td>
-                                                    <td className="p-3">{row.task_total}</td>
-                                                    <td className="p-3">{row.todo}</td>
-                                                    <td className="p-3">{row.progress}</td>
-                                                    <td className="p-3">{row.review}</td>
-                                                    <td className="p-3">{row.selesai}</td>
-                                                    <td className="p-3">
-                                                        {row.overdue > 0 ? (
-                                                            <Badge className="border-transparent bg-red-600 text-white hover:bg-red-600">
-                                                                {row.overdue}
-                                                            </Badge>
-                                                        ) : (
-                                                            <span className="text-muted-foreground">0</span>
-                                                        )}
-                                                    </td>
-                                                    <td className="p-3">{row.due_date ? new Date(row.due_date).toLocaleDateString('id-ID') : '-'}</td>
-                                                </tr>
-                                            ))}
+                </div>
 
-                                            {sortedStatusProjects.length === 0 && (
-                                                <tr>
-                                                    <td colSpan={8} className="p-6 text-center text-muted-foreground">
-                                                        Belum ada proyek aktif.
-                                                    </td>
-                                                </tr>
-                                            )}
-                                        </>
-                                    )}
-                                </tbody>
-                            </table>
+                {/* Permintaan Boss (2026-08-21): widget "Beban per Kategori" -- stacked
+        bar chart per member DALAM PERSENTASE, "Jatah Harian" (kapasitas) jadi
+        basis 100% pembagi (toMemberCategoryChartData()). Tanggal SAMA dengan
+        tabel Team Work Load di atas (MemberCategoryRow, F-109 page-only --
+        lihat KONTRAK DashboardController::memberCategoryChart()). */}
+                <div className="grid grid-cols-1 gap-4">
+                    <Card>
+                        <CardHeader>
+                            <CardTitle className="text-base">
+                                {scopeLabel('Beban per Kategori')} — {team.date}
+                            </CardTitle>
+                        </CardHeader>
+                        <CardContent>
+                            {navigating ? (
+                                <Skeleton className="h-64 w-full" />
+                            ) : memberCategoryChartData.length === 0 ? (
+                                <p className="text-sm text-muted-foreground">Tidak ada user aktif untuk ditampilkan.</p>
+                            ) : (
+                                <ChartContainer config={MEMBER_CATEGORY_CONFIG} className="aspect-auto h-64 w-full">
+                                    <BarChart data={memberCategoryChartData} margin={{ left: 4, right: 4 }}>
+                                        <CartesianGrid vertical={false} />
+                                        <XAxis dataKey="name" tickLine={false} axisLine={false} tickMargin={8} />
+                                        <YAxis tickLine={false} axisLine={false} width={48} tickFormatter={(v: number) => `${v}%`} />
+                                        <ChartTooltip
+                                            content={
+                                                <ChartTooltipContent
+                                                    formatter={(value, name, item) => {
+                                                        const key = name as keyof typeof MEMBER_CATEGORY_CONFIG;
+                                                        // SUMBER: item.payload = baris MemberCategoryChartDatum penuh
+                                                        // (data chart) -- dipakai ambil MENIT mentah pasangan key
+                                                        // persentase ini, supaya tooltip tampilkan keduanya sekaligus.
+                                                        const minutesKey = key.replace('_pct', '_minutes') as keyof MemberCategoryChartDatum;
+                                                        const minutes = (item.payload as MemberCategoryChartDatum)[minutesKey] as number;
+
+                                                        return (
+                                                            <div className="flex w-full items-center gap-2">
+                                                                <span
+                                                                    className="h-2.5 w-2.5 shrink-0 rounded-[2px]"
+                                                                    style={{ backgroundColor: MEMBER_CATEGORY_CONFIG[key].color }}
+                                                                />
+                                                                <span className="flex-1 text-muted-foreground">
+                                                                    {MEMBER_CATEGORY_CONFIG[key].label}
+                                                                </span>
+                                                                <span className="font-mono font-medium tabular-nums text-foreground">
+                                                                    {value}% ({formatLiveMinutes(minutes)})
+                                                                </span>
+                                                            </div>
+                                                        );
+                                                    }}
+                                                />
+                                            }
+                                        />
+                                        {/* Urutan tumpukan BAWAH->ATAS: Selesai, To Do, Jatah Harian --
+                                        Jatah Harian di ATAS (sisa kapasitas belum terpakai), pola mockup Boss. */}
+                                        <Bar dataKey="achievement_pct" stackId="beban" fill="var(--color-achievement_pct)" />
+                                        <Bar dataKey="todo_pct" stackId="beban" fill="var(--color-todo_pct)" />
+                                        <Bar dataKey="longgar_pct" stackId="beban" fill="var(--color-longgar_pct)" radius={[4, 4, 0, 0]} />
+                                    </BarChart>
+                                </ChartContainer>
+                            )}
+                            {/* Legend manual (bukan ChartLegend/recharts) -- 3 kategori TETAP
+                            (bukan dari payload dinamis), pola sederhana SAMA legend heatmap
+                            di bawah (span warna + label). */}
+                            <div className="mt-3 flex flex-wrap items-center gap-4 text-xs text-muted-foreground">
+                                {(Object.keys(MEMBER_CATEGORY_CONFIG) as (keyof typeof MEMBER_CATEGORY_CONFIG)[]).map((key) => (
+                                    <div key={key} className="flex items-center gap-1.5">
+                                        <span className="h-2.5 w-2.5 rounded-[2px]" style={{ backgroundColor: MEMBER_CATEGORY_CONFIG[key].color }} />
+                                        <span>{MEMBER_CATEGORY_CONFIG[key].label}</span>
+                                    </div>
+                                ))}
+                            </div>
                         </CardContent>
                     </Card>
-                    )}
-
                 </div>
 
                 <div className="grid grid-cols-1 gap-4 lg:grid-cols-2">
