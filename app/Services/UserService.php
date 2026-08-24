@@ -61,6 +61,9 @@ class UserService
             $user = User::create([
                 'organization_id' => $actor->organization_id,
                 'name' => $userData['name'],
+                // Permintaan Boss (2026-08-22): opsional, fallback ke `name`
+                // kalau kosong (lihat User::displayName()).
+                'nickname' => $userData['nickname'] ?? null,
                 'email' => $userData['email'],
                 'password' => Hash::make($plainPassword),
                 'role_id' => $role->id,

@@ -33,6 +33,14 @@ export function NavMain({ label, items = [] }: { label: string; items: NavItem[]
                                 <Link href={item.url}>
                                     {item.icon && <item.icon />}
                                     <span>{item.title}</span>
+                                    {/* Permintaan Boss (2026-08-22): badge angka gaya icon
+                                        notifikasi (lihat notification-bell.tsx) -- disembunyikan
+                                        kalau 0/undefined, BUKAN tampil "0". */}
+                                    {!!item.badge && (
+                                        <span className="bg-destructive text-destructive-foreground ml-auto flex h-4 min-w-4 items-center justify-center rounded-full px-1 text-[10px] font-medium">
+                                            {item.badge > 99 ? '99+' : item.badge}
+                                        </span>
+                                    )}
                                 </Link>
                             </SidebarMenuButton>
                         </SidebarMenuItem>

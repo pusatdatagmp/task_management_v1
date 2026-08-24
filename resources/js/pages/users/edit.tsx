@@ -28,6 +28,8 @@ import { FormEventHandler } from 'react';
 interface UserData {
     id: number;
     name: string;
+    // Permintaan Boss (2026-08-22): opsional -- null kalau belum diisi.
+    nickname: string | null;
     email: string;
     role_id: number;
     employment_type: string;
@@ -48,6 +50,7 @@ const breadcrumbs: BreadcrumbItem[] = [
 export default function UserEdit({ user, roles }: { user: UserData; roles: RoleOption[] }) {
     const { data, setData, put, processing, errors } = useForm({
         name: user.name,
+        nickname: user.nickname ?? '',
         email: user.email,
         password: '',
         password_confirmation: '',
@@ -76,6 +79,19 @@ export default function UserEdit({ user, roles }: { user: UserData; roles: RoleO
                                 <Label htmlFor="name">Nama</Label>
                                 <Input id="name" value={data.name} onChange={(e) => setData('name', e.target.value)} required />
                                 <InputError message={errors.name} />
+                            </div>
+
+                            <div className="grid gap-2">
+                                {/* Permintaan Boss (2026-08-22): opsional -- kosong = tampilan
+                                    di seluruh aplikasi fallback ke Nama lengkap di atas. */}
+                                <Label htmlFor="nickname">Nama Panggilan (opsional)</Label>
+                                <Input
+                                    id="nickname"
+                                    placeholder="Kosongkan untuk pakai Nama di atas"
+                                    value={data.nickname}
+                                    onChange={(e) => setData('nickname', e.target.value)}
+                                />
+                                <InputError message={errors.nickname} />
                             </div>
 
                             <div className="grid gap-2">

@@ -62,6 +62,7 @@ export default function UserCreate({ roles, permissions }: UserCreateProps) {
 
     const { data, setData, post, transform, processing, errors } = useForm({
         name: '',
+        nickname: '',
         email: '',
         employment_type: 'internal',
         daily_capacity_minutes: '' as number | '',
@@ -130,6 +131,19 @@ export default function UserCreate({ roles, permissions }: UserCreateProps) {
                                 <Label htmlFor="name">Nama</Label>
                                 <Input id="name" value={data.name} onChange={(e) => setData('name', e.target.value)} required />
                                 <InputError message={errors.name} />
+                            </div>
+
+                            <div className="grid gap-2">
+                                {/* Permintaan Boss (2026-08-22): opsional -- kosong = tampilan
+                                    di seluruh aplikasi fallback ke Nama lengkap di atas. */}
+                                <Label htmlFor="nickname">Nama Panggilan (opsional)</Label>
+                                <Input
+                                    id="nickname"
+                                    placeholder="Kosongkan untuk pakai Nama di atas"
+                                    value={data.nickname}
+                                    onChange={(e) => setData('nickname', e.target.value)}
+                                />
+                                <InputError message={errors.nickname} />
                             </div>
 
                             <div className="grid gap-2">

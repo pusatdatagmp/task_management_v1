@@ -42,6 +42,9 @@ class OnboardUserRequest extends FormRequest
 
         return [
             'name' => ['required', 'string', 'max:120'],
+            // Permintaan Boss (2026-08-22): opsional -- kosong = tampilan fallback
+            // ke `name` (User::displayName()), bukan wajib diisi.
+            'nickname' => ['nullable', 'string', 'max:60'],
             'email' => ['required', 'string', 'email', 'max:255', Rule::unique('users', 'email')],
             'employment_type' => ['required', Rule::in(['internal', 'freelance'])],
             'daily_capacity_minutes' => ['nullable', 'integer', 'min:1'],

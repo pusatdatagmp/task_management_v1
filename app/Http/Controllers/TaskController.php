@@ -87,7 +87,7 @@ class TaskController extends Controller
         $filters['assignee'] = array_map('intval', $filters['assignee'] ?? []);
 
         $query = self::withChecklistCounts(
-            $project->tasks()->with(['taskStatus', 'assignees:id,name', 'parent:id,title'])
+            $project->tasks()->with(['taskStatus', 'assignees:id,name,nickname', 'parent:id,title'])
         );
 
         if (! empty($filters['status'])) {
@@ -148,7 +148,7 @@ class TaskController extends Controller
             'project' => $project->only(['id', 'name', 'description']),
             'tasks' => $tasks,
             'statuses' => $project->taskStatuses,
-            'members' => $project->members()->select('users.id', 'users.name')->orderBy('users.name')->get(),
+            'members' => $project->members()->select('users.id', 'users.name', 'users.nickname')->orderBy('users.name')->get(),
             'filters' => [
                 'status' => $filters['status'] ?? [],
                 'assignee' => $filters['assignee'] ?? [],
@@ -190,7 +190,7 @@ class TaskController extends Controller
 
         $task->load([
             'taskStatus',
-            'assignees:id,name',
+            'assignees:id,name,nickname',
             'parent:id,title,task_status_id',
             'parent.taskStatus:id,name,color',
             'children' => fn ($q) => $q->with('taskStatus:id,name,color')->orderBy('title'),
@@ -246,7 +246,7 @@ class TaskController extends Controller
             'statuses' => $project->taskStatuses,
             // v1.0 H3: daftar member project untuk autocomplete @mention (C1 — cuma
             // member yang bisa disebut, daftar ini SEKALIGUS jadi whitelist tampilan).
-            'projectMembers' => $project->members()->select('users.id', 'users.name')->orderBy('users.name')->get(),
+            'projectMembers' => $project->members()->select('users.id', 'users.name', 'users.nickname')->orderBy('users.name')->get(),
             'task' => [
                 ...$task->only([
                     'id', 'title', 'task_type', 'priority', 'priority_quadrant', 'due_date', 'points',
@@ -333,7 +333,7 @@ class TaskController extends Controller
         $tasks = self::withChecklistCounts(
             Task::whereHas('assignees', fn ($q) => $q->whereKey($user->id))
                 ->whereHas('taskStatus', fn ($q) => $q->where('is_completed', false))
-                ->with(['taskStatus', 'assignees:id,name', 'project:id,name', 'project.taskStatuses'])
+                ->with(['taskStatus', 'assignees:id,name,nickname', 'project:id,name', 'project.taskStatuses'])
                 ->orderByDesc('created_at')
         )->get();
 
@@ -391,7 +391,7 @@ class TaskController extends Controller
         // TaskStatusCell per baris (F-45/F-28) bisa bangun dropdown status project
         // MASING-MASING task — pola sama myTasks(), status TIDAK seragam lintas project.
         $query = self::withChecklistCounts(
-            Task::query()->with(['taskStatus', 'assignees:id,name', 'project:id,name', 'project.taskStatuses', 'parent:id,title'])
+            Task::query()->with(['taskStatus', 'assignees:id,name,nickname', 'project:id,name', 'project.taskStatuses', 'parent:id,title'])
         );
 
         if (! empty($filters['project_id'])) {
@@ -489,7 +489,7 @@ class TaskController extends Controller
             // masih muncul sebagai opsi. Baris task lama milik mereka TETAP ada
             // (F-16, dilarang hard delete), tapi dropdown filter ini sekarang
             // cuma tawarkan member AKTIF.
-            'members' => User::where('is_active', true)->orderBy('name')->get(['id', 'name']),
+            'members' => User::where('is_active', true)->orderBy('name')->get(['id', 'name', 'nickname']),
             'filters' => [
                 'project_id' => $filters['project_id'] ?? null,
                 'status_flag' => $filters['status_flag'] ?? [],
@@ -563,11 +563,45 @@ class TaskController extends Controller
         ]);
     }
 
+    /**
+     * KONTRAK: permintaan Boss (2026-08-22) — isi dropdown ikon "Review" header
+     * (review-notice.tsx), pola SAMA search()/NotificationController::index()
+     * (JSON, bukan Inertia::render — dropdown butuh fetch async tanpa navigasi).
+     * Digerbangi DUA permission sekaligus (SAMA seperti HandleInertiaRequests::
+     * share() yang menghitung reviewTasksCount) -- task.approve (satu-satunya
+     * yang bisa approve/reject keluar dari Review) DAN project.viewAll (org-wide,
+     * bukan scoped 1 proyek). F-85: LIMIT 10 (bukan seluruh baris) -- badge bisa
+     * menunjuk angka lebih besar, sisanya diarahkan ke route('tasks.all') via
+     * link "Lihat semua" di footer dropdown. TIDAK ikut kirim total count di
+     * sini (F-85 nol query dobel) -- frontend REUSE SharedData.reviewTasksCount
+     * yang SUDAH ada di setiap halaman (HandleInertiaRequests::share()) untuk
+     * bandingkan "count > tasks.length" -> tampilkan link "Lihat semua" atau tidak.
+     */
+    public function reviewList(Request $request): JsonResponse
+    {
+        abort_unless($request->user()?->can('task.approve') && $request->user()?->can('project.viewAll'), 403);
+
+        $tasks = Task::whereHas('taskStatus', fn ($q) => $q->where('is_completed', false)->where('is_review', true))
+            ->with('project:id,name')
+            ->orderByDesc('updated_at')
+            ->limit(10)
+            ->get(['id', 'title', 'project_id', 'updated_at']);
+
+        return response()->json([
+            'tasks' => $tasks->map(fn (Task $task) => [
+                'id' => $task->id,
+                'project_id' => $task->project_id,
+                'title' => $task->title,
+                'project_name' => $task->project?->name,
+            ]),
+        ]);
+    }
+
     public function create(Project $project): Response
     {
         return Inertia::render('tasks/create', [
             'project' => $project->only(['id', 'name']),
-            'members' => $project->members()->select('users.id', 'users.name')->orderBy('users.name')->get(),
+            'members' => $project->members()->select('users.id', 'users.name', 'users.nickname')->orderBy('users.name')->get(),
         ]);
     }
 
@@ -610,13 +644,13 @@ class TaskController extends Controller
 
     public function edit(Project $project, Task $task): Response
     {
-        $task->load('assignees:id,name');
+        $task->load('assignees:id,name,nickname');
 
         return Inertia::render('tasks/edit', [
             'project' => $project->only(['id', 'name']),
             'task' => $task,
             'assigneeIds' => $task->assignees->pluck('id'),
-            'members' => $project->members()->select('users.id', 'users.name')->orderBy('users.name')->get(),
+            'members' => $project->members()->select('users.id', 'users.name', 'users.nickname')->orderBy('users.name')->get(),
         ]);
     }
 

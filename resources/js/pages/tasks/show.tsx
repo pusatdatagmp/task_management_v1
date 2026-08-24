@@ -42,6 +42,9 @@ import { Head, Link, router, usePage } from '@inertiajs/react';
 interface UserOption {
     id: number;
     name: string;
+    // Permintaan Boss (2026-08-22): nama tampilan (nickname jika diisi, fallback
+    // nama lengkap) -- User::displayName() backend, F-38 nol turunan tersimpan.
+    display_name: string;
 }
 
 interface TaskLink {
@@ -243,7 +246,7 @@ export default function TaskShow({ project, task, statuses, projectMembers }: Ta
                             <CardContent className="grid gap-3 text-sm">
                                 <div className="flex justify-between gap-2">
                                     <span className="text-muted-foreground">Assignee</span>
-                                    <span className="text-right">{task.assignees.map((a) => a.name).join(', ') || '-'}</span>
+                                    <span className="text-right">{task.assignees.map((a) => a.display_name).join(', ') || '-'}</span>
                                 </div>
                                 <div className="flex justify-between gap-2">
                                     <span className="text-muted-foreground">Tipe</span>

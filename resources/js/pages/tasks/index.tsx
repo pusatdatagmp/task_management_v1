@@ -34,6 +34,9 @@ import { Head, Link, router, usePage } from '@inertiajs/react';
 interface UserOption {
     id: number;
     name: string;
+    // Permintaan Boss (2026-08-22): nama tampilan (nickname jika diisi, fallback
+    // nama lengkap) -- User::displayName() backend, F-38 nol turunan tersimpan.
+    display_name: string;
 }
 
 interface TaskRow {
@@ -173,7 +176,7 @@ export default function TasksIndex({ project, tasks, statuses, members, filters 
                                 <div className="mt-1 flex flex-wrap gap-1.5">
                                     {members.map((m) => (
                                         <Badge key={m.id} variant="outline" className='bg-blue-700 text-white'>
-                                            {m.name}
+                                            {m.display_name}
                                         </Badge>
                                     ))}
                                 </div>
@@ -202,7 +205,7 @@ export default function TasksIndex({ project, tasks, statuses, members, filters 
                                     checked={filters.assignee.includes(m.id)}
                                     onChange={() => toggleArrayFilter('assignee', m.id)}
                                 />
-                                {m.name}
+                                {m.display_name}
                             </label>
                         ))}
                         {members.length === 0 && <span className="text-muted-foreground">-</span>}
@@ -320,7 +323,7 @@ export default function TasksIndex({ project, tasks, statuses, members, filters 
                                             <span className="text-xs text-muted-foreground">-</span>
                                         )}
                                     </td>
-                                    <td className="p-3">{task.assignees.map((a) => a.name).join(', ') || '-'}</td>
+                                    <td className="p-3">{task.assignees.map((a) => a.display_name).join(', ') || '-'}</td>
                                     <td className="p-3">{new Date(task.due_date).toLocaleString('id-ID')}</td>
                                     <td className="p-3">{task.points}</td>
                                     <td className="p-3">

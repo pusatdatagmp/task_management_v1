@@ -84,7 +84,7 @@ class BoardController extends Controller
         $query = Task::where('project_id', $project->id)
             ->whereNull('parent_task_id')
             ->orderByDesc('created_at')
-            ->with(['taskStatus', 'assignees:id,name'])
+            ->with(['taskStatus', 'assignees:id,name,nickname'])
             ->withCount('children')
             // Revisi 2026-08-06 item 1 (F-85): alias SAMA PERSIS TaskController::
             // withChecklistCounts() -- beda class, definisi identik sengaja tidak
@@ -154,7 +154,7 @@ class BoardController extends Controller
         return Inertia::render('tasks/board', [
             'project' => $project->only(['id', 'name']),
             'columns' => $columns,
-            'members' => $project->members()->select('users.id', 'users.name')->orderBy('users.name')->get(),
+            'members' => $project->members()->select('users.id', 'users.name', 'users.nickname')->orderBy('users.name')->get(),
             'filters' => [
                 'assignee' => $filters['assignee'] ?? [],
                 'priority' => $filters['priority'] ?? [],

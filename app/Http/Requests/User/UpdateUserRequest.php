@@ -43,6 +43,9 @@ class UpdateUserRequest extends FormRequest
 
         return [
             'name' => ['required', 'string', 'max:120'],
+            // Permintaan Boss (2026-08-22): opsional -- kosong = tampilan fallback
+            // ke `name` (User::displayName()), bukan wajib diisi.
+            'nickname' => ['nullable', 'string', 'max:60'],
             'email' => ['required', 'string', 'email', 'max:255', Rule::unique('users', 'email')->ignore($this->route('user'))],
             'password' => ['nullable', Password::defaults(), 'confirmed'],
             'role_id' => ['required', Rule::exists('roles', 'id')->where('organization_id', $organizationId)],

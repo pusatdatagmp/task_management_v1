@@ -13,6 +13,16 @@
  *                   php artisan db:seed --class=MemberCategoryChartDemoSeeder
  *               Hapus lagi lewat project "Demo Beban per Kategori" (folder
  *               proyek terpisah, gampang dihapus) kalau sudah selesai dicek.
+ *               REVISI 2026-08-22 (permintaan Boss): formula chart diganti
+ *               total (lihat KONTRAK DashboardController::memberCategoryChart())
+ *               -- SATU basis "tugas diberikan" (Σ estimasi tugas due_date=hari
+ *               ini), achievement = SUBSET tugas itu yang sudah selesai, longgar
+ *               = kapasitas - tugas diberikan (di-clamp 0). `createAchievement()`
+ *               disesuaikan: due_date DIPINDAH ke HARI INI (dulu +3 hari, basis
+ *               completed_at F-21 LAMA) -- tanpa ini, task "selesai" demo TIDAK
+ *               ikut ke-hitung `tugas_diberikan` sama sekali (beda populasi
+ *               tanggal), achievement_minutes chart tampil 0 padahal sudah
+ *               diseed (bug yang ditemukan Boss lewat browser).
  * DIPANGGIL   : php artisan db:seed --class=... (manual, Boss)
  * MEMANGGIL   : Organization::first() (single-tenant, F-5), User (is_active),
  *               WorkSchedule::active() (kapasitas & jendela jam kerja),
@@ -22,17 +32,17 @@
  * DATA MASUK  : -
  * DATA KELUAR : 1 project baru ("Demo Beban per Kategori") + task/segment TODO
  *               HARI INI per active user, 4 profil bergantian (lihat PROFILES).
- * RISIKO      : SUMBER -- "longgar" (idle_real, DashboardService::forUsers())
- *               HANYA berkurang kalau task_time_segments TERTUTUP DI DALAM
- *               jendela jam kerja WorkSchedule HARI INI (F-57/BusinessHoursCalculator::
- *               overlapMinutes()) -- kalau HARI INI bukan hari kerja
- *               (days_of_week) atau libur (Holiday), segmen yang diseed di
- *               sini TETAP dibuat tapi overlap-nya 0, jadi kolom "longgar"
- *               tidak berkurang seperti dimaksud (kolom "todo"/"achievement"
- *               TIDAK kena guard ini -- keduanya murni due_date/completed_at
- *               = hari ini, bukan jendela jam kerja). Seeder MENDETEKSI kasus
- *               ini dan cuma MEMPERINGATKAN (bukan abort) -- profil todo/
- *               achievement tetap valid untuk didemokan.
+ * RISIKO      : SUMBER -- profil "realisasi" (createRealisasi(), task_time_segments
+ *               due_date +3 hari) SEJAK REVISI 2026-08-22 TIDAK LAGI mempengaruhi
+ *               kolom "Jatah Harian" widget ini SAMA SEKALI -- longgar sekarang
+ *               murni kapasitas dikurangi tugas due_date HARI INI (lihat TUJUAN),
+ *               bukan lagi idle_real/realisasi jam kerja. Field ini DIPERTAHANKAN
+ *               di PROFILES sebagai data latihan netral (tidak mengganggu chart
+ *               ini), BUKAN dihapus -- di luar scope permintaan Boss saat ini
+ *               (cuma minta perbaikan data "tugas selesai"). "todo"/"achievement"
+ *               SAMA-SAMA murni due_date=hari ini (populasi identik, achievement
+ *               = subset is_completed=true) -- TIDAK ada guard hari-kerja/libur
+ *               yang relevan lagi untuk kolom manapun di widget ini.
  * ==========================================================
  */
 
@@ -124,7 +134,7 @@ class MemberCategoryChartDemoSeeder extends Seeder
             }
 
             if ($profile['achievement'] > 0) {
-                $this->createAchievement($project, $todoStatus, $doneStatus, $organization, $user, $owner, $profile['label'], $profile['achievement']);
+                $this->createAchievement($project, $todoStatus, $doneStatus, $organization, $user, $owner, $profile['label'], $profile['achievement'], $today);
             }
 
             $this->command?->info("- {$user->name}: profil \"{$profile['label']}\" (realisasi={$profile['realisasi']}m, todo={$profile['todo']}m, achievement={$profile['achievement']}m).");
@@ -190,12 +200,17 @@ class MemberCategoryChartDemoSeeder extends Seeder
 
     /**
      * KONTRAK: task dibuat TODO dulu, BARU dipindah ke DONE -- memicu
-     * TaskObserver::updating() (F-21: completed_at = now() = hari ini),
-     * SATU-SATUNYA jalan completed_at terisi benar (create langsung berstatus
-     * DONE TIDAK memicu observer itu, lihat TaskCategoriesTop5DemoSeeder
-     * RISIKO). Sumber "achievement_minutes".
+     * TaskObserver::updating() (F-21: completed_at = now() = hari ini).
+     * Sumber "achievement_minutes" (DashboardController::memberCategoryChart()).
+     *
+     * REVISI 2026-08-22 (permintaan Boss): due_date DIPINDAH ke HARI INI
+     * (dulu +3 hari) -- formula BARU chart ini menghitung achievement sebagai
+     * SUBSET tugas dengan due_date = hari ini yang is_completed=true (BUKAN
+     * lagi completed_at=hari ini). Due_date +3 hari sebelumnya membuat task ini
+     * jatuh DI LUAR populasi "tugas diberikan" hari ini -- achievement_minutes
+     * chart tampil 0 walau task-nya sudah diseed & completed_at-nya benar.
      */
-    private function createAchievement(Project $project, TaskStatus $todoStatus, TaskStatus $doneStatus, Organization $organization, User $user, User $owner, string $label, int $minutes): void
+    private function createAchievement(Project $project, TaskStatus $todoStatus, TaskStatus $doneStatus, Organization $organization, User $user, User $owner, string $label, int $minutes, Carbon $today): void
     {
         $task = Task::create([
             'organization_id' => $organization->id,
@@ -204,7 +219,7 @@ class MemberCategoryChartDemoSeeder extends Seeder
             'title' => "Demo Achievement -- {$label} ({$user->name})",
             'task_type' => 'tentative',
             'estimated_minutes' => $minutes,
-            'due_date' => Carbon::now()->addDays(3),
+            'due_date' => $today->copy()->setTime(17, 0),
             'created_by' => $owner->id,
         ]);
         $task->assignees()->sync([$user->id]);

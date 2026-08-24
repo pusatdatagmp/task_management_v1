@@ -26,7 +26,10 @@ interface ProjectRow {
     id: number;
     name: string;
     description: string | null;
-    owner: { id: number; name: string } | null;
+    // Permintaan Boss (2026-08-22): display_name = nickname (jika diisi) atau
+    // nama lengkap (fallback, User::displayName() backend). `name` TETAP ada,
+    // masih dipakai sort/search (JANGAN dihapus).
+    owner: { id: number; name: string; display_name: string } | null;
 }
 
 const breadcrumbs: BreadcrumbItem[] = [
@@ -121,7 +124,7 @@ export default function ProjectsArchive({ projects }: { projects: ProjectRow[] }
                                         <div className="font-medium">{project.name}</div>
                                         {project.description && <div className="text-muted-foreground">{project.description}</div>}
                                     </td>
-                                    <td className="p-3">{project.owner?.name ?? '-'}</td>
+                                    <td className="p-3">{project.owner?.display_name ?? '-'}</td>
                                     <td className="p-3">
                                         <Badge variant="secondary">Diarsipkan</Badge>
                                     </td>

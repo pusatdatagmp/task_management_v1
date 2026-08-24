@@ -12,6 +12,7 @@
  *               begitu dropdown dibuka, jumlah di-refresh dari endpoint langsung.
  * ==========================================================
  */
+import { Tooltip, TooltipContent, TooltipProvider, TooltipTrigger } from '@/components/ui/tooltip';
 import { router, usePage } from '@inertiajs/react';
 import { Bell } from 'lucide-react';
 import { useEffect, useRef, useState } from 'react';
@@ -121,21 +122,34 @@ export function NotificationBell() {
 
     return (
         <div ref={containerRef} className="relative">
-            <button
-                type="button"
-                onClick={openDropdown}
-                className="relative flex h-9 w-9 items-center justify-center rounded-md hover:bg-accent"
-                aria-label="Notifikasi"
-            >
-                <Bell className="h-5 w-5" />
-                {unreadCount > 0 && (
-                    /* F-143: bg-red-500 hardcode -> token destructive (sudah ada,
-                       setara semantik "urgent") supaya ikut tema, bukan warna tetap. */
-                    <span className="bg-destructive text-destructive-foreground absolute top-1 right-1 flex h-4 min-w-4 items-center justify-center rounded-full px-1 text-[10px] font-medium">
-                        {unreadCount > 99 ? '99+' : unreadCount}
-                    </span>
-                )}
-            </button>
+            {/* Permintaan Boss (2026-08-22): hover tooltip -- pola SAMA ikon
+                header lain (app-header.tsx). TooltipProvider LOKAL di sini
+                (bukan global), konsisten dengan usage TooltipProvider lain di
+                app ini (Radix aman di-nest berkali-kali). */}
+            <TooltipProvider>
+                <Tooltip>
+                    <TooltipTrigger asChild>
+                        <button
+                            type="button"
+                            onClick={openDropdown}
+                            className="relative flex h-9 w-9 items-center justify-center rounded-md hover:bg-accent"
+                            aria-label="Notifikasi"
+                        >
+                            <Bell className="h-5 w-5" />
+                            {unreadCount > 0 && (
+                                /* F-143: bg-red-500 hardcode -> token destructive (sudah ada,
+                                   setara semantik "urgent") supaya ikut tema, bukan warna tetap. */
+                                <span className="bg-destructive text-destructive-foreground absolute top-1 right-1 flex h-4 min-w-4 items-center justify-center rounded-full px-1 text-[10px] font-medium">
+                                    {unreadCount > 99 ? '99+' : unreadCount}
+                                </span>
+                            )}
+                        </button>
+                    </TooltipTrigger>
+                    <TooltipContent>
+                        <p>Notifikasi</p>
+                    </TooltipContent>
+                </Tooltip>
+            </TooltipProvider>
 
             {isOpen && (
                 <div className="absolute top-full right-0 z-50 mt-1 w-80 rounded-md border bg-popover shadow-md">

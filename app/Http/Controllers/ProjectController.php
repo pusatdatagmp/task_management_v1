@@ -85,7 +85,7 @@ class ProjectController extends Controller
     public function create(): Response
     {
         return Inertia::render('projects/create', [
-            'users' => User::where('is_active', true)->orderBy('name')->get(['id', 'name']),
+            'users' => User::where('is_active', true)->orderBy('name')->get(['id', 'name', 'nickname']),
             'owners' => $this->eligibleOwners(),
         ]);
     }
@@ -153,7 +153,7 @@ class ProjectController extends Controller
 
         return Inertia::render('projects/edit', [
             'project' => $project,
-            'users' => User::where('is_active', true)->orderBy('name')->get(['id', 'name']),
+            'users' => User::where('is_active', true)->orderBy('name')->get(['id', 'name', 'nickname']),
             'owners' => $this->eligibleOwners($this->currentOwnerIds($project)),
             'memberIds' => $project->members->pluck('id'),
             'ownerIds' => $this->currentOwnerIds($project),
@@ -209,7 +209,7 @@ class ProjectController extends Controller
             if (! empty($currentOwnerIds)) {
                 $query->orWhereIn('id', $currentOwnerIds);
             }
-        })->orderBy('name')->get(['id', 'name']);
+        })->orderBy('name')->get(['id', 'name', 'nickname']);
     }
 
     /**

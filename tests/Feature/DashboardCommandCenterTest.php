@@ -1340,7 +1340,14 @@ test('revisi 2026-08-06 (Boss): summary_cards.beban_harian ANGKANYA beda -- admi
 // TIDAK ada di endpoint JSON commandCenter() -- sama seperti `team`.
 // =============================================================================
 
-test('member_category_chart: longgar REUSE idle_real team.rows, todo = due_date team.date, achievement = completed_at team.date (menit)', function () {
+// Revisi 2026-08-22 (permintaan Boss): formula lama (longgar REUSE idle_real,
+// achievement berbasis completed_at) numpuk 3 metrik independen yang totalnya
+// bisa melebihi kuota 480 menit/hari tanpa arti apa pun. Test LAMA (asersi
+// longgar_minutes = idle_real, achievement berbasis completed_at) DIGANTI --
+// bukan ditambal -- karena perilaku yang diuji SENGAJA diubah instruksi Boss
+// (F-78: cakupan setara -- guard due_date-scope & guard out-of-scope date
+// TETAP dipertahankan dari test lama, ditambah kasus overload/clamp baru).
+test('member_category_chart: 3 kategori TURUNAN dari basis tugas_diberikan (due_date=team.date), longgar di-clamp 0 kalau overload', function () {
     $admin = User::factory()->admin()->create();
     $member = User::factory()->create(['organization_id' => $admin->organization_id]);
     $project = createCcProject($admin, [$member->id]);
@@ -1350,22 +1357,24 @@ test('member_category_chart: longgar REUSE idle_real team.rows, todo = due_date 
     seedCcSchedule($admin, $anchor);
     $this->travelTo($anchor);
 
-    // "To Do" hari ini -- due_date SAMA dengan team.date ($anchor).
+    // "Tugas diberikan" hari ini -- 3 tugas due_date SAMA dengan team.date
+    // ($anchor), TOTAL 550 menit (60+90+400) -- SENGAJA melebihi kapasitas
+    // 480 supaya longgar_minutes teruji harus di-clamp ke 0, bukan negatif.
     createCcTask($project, $todo, $admin, [$member->id], 60, $anchor->copy()->setTime(17, 0, 0));
-    // GUARD: due_date BEDA hari -- TIDAK boleh ikut ke-hitung todo_minutes.
-    createCcTask($project, $todo, $admin, [$member->id], 999, $anchor->copy()->addDays(5)->setTime(17, 0, 0));
+    $achievementTask = createCcTask($project, $todo, $admin, [$member->id], 90, $anchor->copy()->setTime(17, 0, 0));
+    createCcTask($project, $todo, $admin, [$member->id], 400, $anchor->copy()->setTime(17, 0, 0));
 
-    // "Achievement" hari ini -- task dibuat TODO dulu, BARU dipindah ke DONE
-    // (memicu TaskObserver::updating() -> completed_at = now() = $anchor, F-21).
-    $achievementTask = createCcTask($project, $todo, $admin, [$member->id], 90, $anchor->copy()->addDays(5)->setTime(17, 0, 0));
-    $achievementTask->update(['task_status_id' => $done->id]);
-
-    // GUARD: task lain SUDAH completed TAPI completed_at BUKAN hari ini (dites
-    // via update time-travel ke tanggal lain) -- tidak boleh ikut achievement_minutes.
-    $oldAchievement = createCcTask($project, $todo, $admin, [$member->id], 500, $anchor->copy()->addDays(5)->setTime(17, 0, 0));
+    // GUARD (beda dari perilaku lama F-21): completed_at DIPINDAH ke SEHARI
+    // SEBELUM anchor (via time-travel), TETAP dihitung achievement karena
+    // basisnya SEKARANG due_date populasi tugas_diberikan, BUKAN completed_at.
     $this->travelTo($anchor->copy()->subDay());
-    $oldAchievement->update(['task_status_id' => $done->id]);
+    $achievementTask->update(['task_status_id' => $done->id]);
     $this->travelTo($anchor);
+
+    // GUARD: due_date BEDA hari -- TIDAK boleh ikut ke-hitung tugas_diberikan
+    // sama sekali, walau statusnya sudah selesai.
+    $outOfScope = createCcTask($project, $todo, $admin, [$member->id], 999, $anchor->copy()->addDays(5)->setTime(17, 0, 0));
+    $outOfScope->update(['task_status_id' => $done->id]);
 
     $response = $this->actingAs($admin)->get(route('dashboard.overview'));
 
@@ -1375,12 +1384,10 @@ test('member_category_chart: longgar REUSE idle_real team.rows, todo = due_date 
     $teamRow = collect($props['team']['rows'])->keyBy('id')[$member->id];
 
     expect($chart[$member->id]['name'])->toBe($member->name)
-        // Permintaan Boss (2026-08-21): frontend butuh 'kapasitas' -- basis
-        // persentase ("jatah harian" jadi pembagi), REUSE teamRow['kapasitas'].
         ->and($chart[$member->id]['kapasitas'])->toBe($teamRow['kapasitas'])
-        ->and($chart[$member->id]['longgar_minutes'])->toBe($teamRow['idle_real'])
-        ->and($chart[$member->id]['todo_minutes'])->toBe(60)
-        ->and($chart[$member->id]['achievement_minutes'])->toBe(90);
+        ->and($chart[$member->id]['achievement_minutes'])->toBe(90)
+        ->and($chart[$member->id]['todo_minutes'])->toBe(460) // 550 tugas_diberikan - 90 selesai
+        ->and($chart[$member->id]['longgar_minutes'])->toBe(0); // clamp: kapasitas(480) - 550 = -70 -> 0
 });
 
 test('member_category_chart: estimated_minutes dibagi rata jumlah assignee (F-96a, pola SAMA workloadSpread)', function () {

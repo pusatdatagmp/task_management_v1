@@ -23,6 +23,7 @@ use App\Models\Concerns\BelongsToOrganization;
 use App\Models\Concerns\SerializesDatesInAppTimezone;
 // use Illuminate\Contracts\Auth\MustVerifyEmail;
 use Database\Factories\UserFactory;
+use Illuminate\Database\Eloquent\Casts\Attribute;
 use Illuminate\Database\Eloquent\Factories\HasFactory;
 use Illuminate\Database\Eloquent\Relations\BelongsTo;
 use Illuminate\Database\Eloquent\Relations\BelongsToMany;
@@ -44,6 +45,7 @@ class User extends Authenticatable
     protected $fillable = [
         'organization_id',
         'name',
+        'nickname',
         'email',
         'password',
         'role_id',
@@ -61,6 +63,34 @@ class User extends Authenticatable
         'password',
         'remember_token',
     ];
+
+    /**
+     * @var list<string>
+     */
+    protected $appends = [
+        'display_name',
+    ];
+
+    /**
+     * KONTRAK: permintaan Boss (2026-08-22) — `display_name` SELALU di-append
+     * ke serialisasi (F-38: satu turunan dihitung ulang di titik baca, nol
+     * kolom "nama tampilan" tersimpan terpisah di DB). AMAN dipakai di query
+     * partial-select mana pun (`->get(['id','name'])` dst) — kalau `nickname`
+     * TIDAK ikut di-select, Eloquent kembalikan null utk kolom itu (bukan
+     * exception, preventAccessingMissingAttributes TIDAK diaktifkan di app ini)
+     * sehingga accessor otomatis fallback ke `name`. Rollout BERTAHAP (keputusan
+     * Boss): baru sidebar (auth.user, full model) + assignee/member Tugas &
+     * Proyek yang query-nya SUDAH ditambah 'nickname' eksplisit yang benar-benar
+     * menampilkan nickname — tempat lain TETAP tampil `name` sampai menyusul.
+     *
+     * @return Attribute<string, never>
+     */
+    protected function displayName(): Attribute
+    {
+        return Attribute::make(
+            get: fn () => $this->nickname ?: $this->name,
+        );
+    }
 
     /**
      * Get the attributes that should be cast.

@@ -30,6 +30,10 @@ export interface NavItem {
     // v1.2 DS-2) -- flag ini dipertahankan untuk item masa depan yang mungkin
     // butuh state sama.
     disabled?: boolean;
+    // Permintaan Boss (2026-08-22): badge angka gaya notifikasi (mis. "Tugas
+    // Saya" -> SharedData.myTasksCount) -- undefined/0 = badge disembunyikan
+    // (lihat NavMain), bukan tampil "0".
+    badge?: number;
 }
 
 // F-142 (v1.2 DS-2): custom branding org (BUKAN identitas tenant `organizations.
@@ -52,6 +56,20 @@ export interface SharedData {
     quote: { message: string; author: string };
     auth: Auth;
     unreadNotificationsCount: number;
+    // Permintaan Boss (2026-08-22): badge sidebar "Tugas Saya" -- SATU SUMBER
+    // dengan TaskController::myTasks() (assignee=user login, belum selesai),
+    // dishare GLOBAL (pola sama unreadNotificationsCount) karena sidebar
+    // dirender di setiap halaman (lihat HandleInertiaRequests::share()).
+    myTasksCount: number;
+    // Permintaan Boss (2026-08-22): indikator "Review" header (sebelah bell
+    // notifikasi) -- LIVE COUNT tugas berstatus Review. null = TIDAK berwenang
+    // (sembunyikan total, lihat HandleInertiaRequests::share()); 0 = berwenang
+    // tapi nol tugas Review (TETAP tampil "Review · 0", revisi 2026-08-22).
+    reviewTasksCount: number | null;
+    // Permintaan Boss (2026-08-22): badge sidebar "Perpanjangan" -- SATU SUMBER
+    // dengan DeadlineExtensionController::index() (status='pending'), dishare
+    // GLOBAL (pola sama myTasksCount) karena sidebar dirender di setiap halaman.
+    pendingExtensionsCount: number;
     branding: Branding | null;
     // F-143 (v1.2 DS-3): null = org belum kustom tema -- CSS default TEMPO
     // (app.css) yang berlaku, F-145 fallback aman.
@@ -62,6 +80,10 @@ export interface SharedData {
 export interface User {
     id: number;
     name: string;
+    // Permintaan Boss (2026-08-22): SELALU terisi (User::displayName() backend,
+    // fallback ke `name` kalau nickname kosong) -- komponen tampilan pakai INI,
+    // bukan `name` langsung, supaya nama panggilan otomatis kepakai begitu diisi.
+    display_name: string;
     email: string;
     avatar?: string;
     email_verified_at: string | null;

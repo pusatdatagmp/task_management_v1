@@ -45,6 +45,12 @@ Route::middleware(['auth'])->scopeBindings()->group(function () {
     Route::post('notifications/read-all', [NotificationController::class, 'markAllRead'])->name('notifications.read-all');
     Route::patch('notifications/{notification}/read', [NotificationController::class, 'markRead'])->name('notifications.read');
 
+    // Permintaan Boss (2026-08-22): dropdown ikon "Review" header -- pola SAMA
+    // notifications di atas (JSON, dropdown butuh fetch async). Gate permission
+    // ADA DI DALAM controller (TaskController::reviewList(), F-90 -- dua
+    // permission sekaligus, sama seperti reviewTasksCount di HandleInertiaRequests).
+    Route::get('reviews', [TaskController::class, 'reviewList'])->name('reviews.index');
+
     // Hari-4 §D/E: index task BUKAN admin-only (member lihat task project-nya),
     // updateStatus BUKAN admin-only (E2: member ubah status task sendiri).
     // Create/edit/delete/approve/reject tetap admin-only, lihat routes/admin.php.

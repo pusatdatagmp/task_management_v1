@@ -37,6 +37,9 @@ import { FormEventHandler } from 'react';
 interface UserOption {
     id: number;
     name: string;
+    // Permintaan Boss (2026-08-22): nama tampilan (nickname jika diisi, fallback
+    // nama lengkap) -- User::displayName() backend, F-38 nol turunan tersimpan.
+    display_name: string;
 }
 
 interface ProjectData {
@@ -127,7 +130,7 @@ export default function ProjectEdit({
                                                 checked={data.owner_ids.includes(user.id)}
                                                 onCheckedChange={(checked) => toggleOwner(user.id, checked === true)}
                                             />
-                                            {user.name}
+                                            {user.display_name}
                                         </label>
                                     ))}
                                 </div>
@@ -135,7 +138,7 @@ export default function ProjectEdit({
                                     <div className="flex flex-wrap items-center gap-1.5">
                                         {data.owner_ids.map((id, index) => (
                                             <Badge key={id} variant={index === 0 ? 'default' : 'outline'}>
-                                                {owners.find((o) => o.id === id)?.name}
+                                                {owners.find((o) => o.id === id)?.display_name}
                                                 {index === 0 && ' (Utama)'}
                                             </Badge>
                                         ))}
@@ -153,7 +156,7 @@ export default function ProjectEdit({
                                                 checked={data.members.includes(user.id)}
                                                 onCheckedChange={(checked) => toggleMember(user.id, checked === true)}
                                             />
-                                            {user.name}
+                                            {user.display_name}
                                         </label>
                                     ))}
                                 </div>

@@ -32,7 +32,7 @@ export function AppSidebar() {
     // isAdmin — role custom dengan user.manage tapi bukan workschedule.manage
     // (mis.) akan lihat menu User tapi bukan Jam Kerja. Ini HANYA gating
     // tampilan — penegakan sebenarnya di middleware `can:xxx` server-side.
-    const { auth, branding, version } = usePage<SharedData>().props;
+    const { auth, branding, version, myTasksCount, pendingExtensionsCount } = usePage<SharedData>().props;
     const can = (permission: string) => auth.permissions.includes(permission);
 
     // F-142 (v1.2 DS-2): link sosmed/wa Branding org -- reuse NavFooter (sudah
@@ -69,13 +69,13 @@ export function AppSidebar() {
     // dihapus itu regresi (F-121 ADD-DON'T-DELETE). Dikonfirmasi Boss saat LANJUT.
     const kerjaItems: NavItem[] = [
         { title: 'Proyek', url: '/projects', icon: Folder },
-        { title: 'Tugas Saya', url: '/my-tasks', icon: CheckSquare },
+        { title: 'Tugas Saya', url: '/my-tasks', icon: CheckSquare, badge: myTasksCount },
         // v1.2 H7b (F-140/F-144/F-147): halaman lintas-proyek sudah dibangun —
         // digerbangi permission KONKRET (F-90), sama seperti route-nya di
         // routes/admin.php, BUKAN blanket "admin boleh semua".
         ...(can('project.viewAll') ? [{ title: 'Semua Tugas', url: '/tasks', icon: ListChecks }] : []),
         ...(can('task.manage') ? [{ title: 'Tugas Berulang', url: '/task-templates', icon: Repeat }] : []),
-        ...(can('task.approve') ? [{ title: 'Perpanjangan', url: '/pengaturan/perpanjangan', icon: CalendarClock }] : []),
+        ...(can('task.approve') ? [{ title: 'Perpanjangan', url: '/pengaturan/perpanjangan', icon: CalendarClock, badge: pendingExtensionsCount }] : []),
         // v0.8 H6 (F-50): "ajukan" tersedia admin & member (matriks BF §6), jadi
         // link ini SELALU tampil, tidak digerbangi permission (F-95 — gating
         // assignee, bukan RBAC).
@@ -101,7 +101,7 @@ export function AppSidebar() {
     // F-95: member = nol permission → hanya lihat tugas/proyek/perpanjangan
     // miliknya sendiri (gating assignee/membership di controller, BUKAN RBAC).
     const kerjaSayaItems: NavItem[] = [
-        { title: 'Tugas Saya', url: '/my-tasks', icon: CheckSquare },
+        { title: 'Tugas Saya', url: '/my-tasks', icon: CheckSquare, badge: myTasksCount },
         { title: 'Proyek Saya', url: '/projects', icon: Folder },
         { title: 'Perpanjangan Saya', url: '/my-extensions', icon: Hourglass },
     ];

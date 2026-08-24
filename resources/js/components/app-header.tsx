@@ -163,9 +163,10 @@ export function AppHeader({ breadcrumbs = [] }: AppHeaderProps) {
                             <DropdownMenuTrigger asChild>
                                 <Button variant="ghost" className="size-10 rounded-full p-1">
                                     <Avatar className="size-8 overflow-hidden rounded-full">
-                                        <AvatarImage src={auth.user.avatar} alt={auth.user.name} />
+                                        {/* Permintaan Boss (2026-08-22): nama panggilan (fallback nama lengkap). */}
+                                        <AvatarImage src={auth.user.avatar} alt={auth.user.display_name} />
                                         <AvatarFallback className="rounded-lg bg-neutral-200 text-black dark:bg-neutral-700 dark:text-white">
-                                            {getInitials(auth.user.name)}
+                                            {getInitials(auth.user.display_name)}
                                         </AvatarFallback>
                                     </Avatar>
                                 </Button>

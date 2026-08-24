@@ -42,6 +42,9 @@ import { useState } from 'react';
 interface UserOption {
     id: number;
     name: string;
+    // Permintaan Boss (2026-08-22): nama tampilan (nickname jika diisi, fallback
+    // nama lengkap) -- User::displayName() backend, F-38 nol turunan tersimpan.
+    display_name: string;
 }
 
 interface ProjectOption {
@@ -265,7 +268,7 @@ export default function AllTasks({ tasks, projects, members, filters }: AllTasks
                         {members.map((m) => (
                             <label key={m.id} className="flex items-center gap-2">
                                 <input type="checkbox" checked={filters.assignee.includes(m.id)} onChange={() => toggleAssignee(m.id)} />
-                                {m.name}
+                                {m.display_name}
                             </label>
                         ))}
                     </div>
@@ -449,7 +452,7 @@ export default function AllTasks({ tasks, projects, members, filters }: AllTasks
                                             <span className="text-xs text-muted-foreground">-</span>
                                         )}
                                     </td>
-                                    <td className="p-3">{task.assignees.map((a) => a.name).join(', ') || '-'}</td>
+                                    <td className="p-3">{task.assignees.map((a) => a.display_name).join(', ') || '-'}</td>
                                     <td className="p-3">{new Date(task.due_date).toLocaleString('id-ID')}</td>
                                     <td className="p-3">{task.points}</td>
                                     <td className="p-3">

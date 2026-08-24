@@ -38,6 +38,9 @@ import { FormEventHandler } from 'react';
 interface UserOption {
     id: number;
     name: string;
+    // Permintaan Boss (2026-08-22): nama tampilan (nickname jika diisi, fallback
+    // nama lengkap) -- User::displayName() backend, F-38 nol turunan tersimpan.
+    display_name: string;
 }
 
 interface TaskData {
@@ -220,7 +223,7 @@ export default function TaskEdit({ project, task, assigneeIds, members }: TaskEd
                                                 checked={data.assignees.includes(user.id)}
                                                 onCheckedChange={(checked) => toggleAssignee(user.id, checked === true)}
                                             />
-                                            {user.name}
+                                            {user.display_name}
                                         </label>
                                     ))}
                                     {members.length === 0 && <span className="text-muted-foreground">Project ini belum punya member.</span>}

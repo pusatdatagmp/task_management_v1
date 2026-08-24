@@ -573,18 +573,38 @@ class DashboardController extends Controller
 
     /**
      * KONTRAK: widget "Beban per Kategori" (permintaan Boss) — stacked bar chart
-     * per member di command-center.tsx, 3 kategori DALAM SATUAN MENIT (dikonfirmasi
-     * Boss, supaya proporsional saat ditumpuk 1 batang) untuk SATU tanggal $date
-     * (SAMA dengan tanggal section "Beban Tim", team.date):
-     *   - longgar_minutes     : REUSE idle_real dari forUsers() lewat $teamRows
-     *                           (F-109, NOL rumus baru — kolom "Kapasitas Sisa").
-     *   - todo_minutes        : Σ estimated_minutes (dibagi rata jumlah assignee,
-     *                           F-96a — pola IDENTIK DashboardService::workloadSpread())
-     *                           task berstatus TODO (flag F-44) yang due_date $date.
-     *   - achievement_minutes : Σ estimated_minutes (dibagi rata assignee, F-96a)
-     *                           task is_completed=true yang completed_at $date
-     *                           (F-21 — tanggal task BENAR-BENAR ditandai selesai,
-     *                           bukan due_date).
+     * per member di command-center.tsx, 3 kategori DALAM MENIT untuk SATU
+     * tanggal $date (SAMA dengan tanggal section "Beban Tim", team.date).
+     *
+     * REVISI 2026-08-22 (permintaan Boss): formula lama numpuk 3 metrik yang
+     * SUMBERNYA INDEPENDEN (longgar dari realisasi jam kerja `idle_real`, todo
+     * dari due_date, achievement dari completed_at) -- totalnya bisa MELEBIHI
+     * kuota 480 menit/hari tanpa arti apa pun (dibuktikan data demo: satu
+     * member nunjuk ~650 menit/11 jam gara-gara 3 angka independen ditumpuk).
+     * Boss minta SATU basis tunggal "tugas diberikan" supaya 3 kategori SELALU
+     * proporsional terhadap kuota 480 menit (F-4 -- bukan rumus baru dari nol,
+     * cuma re-turunan dari basis yang sama):
+     *   - tugas_diberikan (variabel lokal, TIDAK dikirim terpisah ke FE) : Σ
+     *     estimated_minutes (dibagi rata assignee, F-96a) SEMUA tugas assigned
+     *     ke member dengan due_date = $date, APA PUN statusnya -- "beban hari
+     *     ini", pola SAMA acuan tanggal Team Work Load.
+     *   - achievement_minutes : SUBSET tugas_diberikan yang is_completed=true
+     *     (F-44) -- turunan LANGSUNG dari populasi due_date yang SAMA (BUKAN
+     *     completed_at=$date lagi -- tugas due hari ini yang kelar lebih awal/
+     *     telat TETAP dihitung selesai di sini; completed_at/F-21 TETAP dipakai
+     *     APA ADANYA oleh widget lain, TIDAK disentuh).
+     *   - todo_minutes : SISA tugas_diberikan yang belum selesai (tugas_diberikan
+     *     - achievement_minutes, F-38 -- nol query ketiga, murni pengurangan
+     *     dari 2 angka yang sudah dihitung; matematis tidak pernah negatif
+     *     karena achievement adalah subset due_date yang sama persis).
+     *   - longgar_minutes : max(0, kapasitas - tugas_diberikan) -- METRIK BARU
+     *     KHUSUS chart ini (page-only), BUKAN idle_real. F-4 tetap berlaku:
+     *     rencana (tugas_diberikan) vs realisasi (idle_real, jam kerja aktual)
+     *     TETAP dua metrik terpisah -- tabel "Team Work Load"/kartu ringkas
+     *     "Beban Harian" TIDAK disentuh, TETAP pakai idle_real/realisasi apa
+     *     adanya. Di-clamp ke 0 supaya TIDAK PERNAH negatif kalau tugas_diberikan
+     *     > kapasitas (member overload) -- permintaan Boss "jangan ada angka
+     *     minus".
      * $teamRows SUDAH di-scope $restrictToSelf oleh loadRows() (caller) — method
      * ini cuma menambah 2 query TETAP di atas roster yang sama (F-85, tidak
      * tumbuh dengan jumlah user). PAGE-ONLY (dipanggil commandCenterPage(),
@@ -592,14 +612,12 @@ class DashboardController extends Controller
      * $teamRows/$date section "Beban Tim" yang juga page-only.
      *
      * `kapasitas` DIIKUTSERTAKAN (REUSE $row['kapasitas'] dari forUsers(), F-109
-     * nol query dobel) — permintaan Boss 2026-08-21: frontend menampilkan chart
-     * dalam PERSENTASE, kapasitas ("jatah harian") jadi PEMBAGI (basis 100%)
-     * ketiga kategori. Pembagian itu sendiri MURNI presentasi, dilakukan di
-     * command-center.tsx (F-4 pola sama proporsi donut chart) — di sini TETAP
-     * kirim angka MENIT mentah, bukan persentase (F-38: nol angka turunan
-     * disimpan/dikirim kalau bisa dihitung ulang di titik pakai).
+     * nol query dobel) — sekarang jadi basis longgar_minutes (lihat atas),
+     * SEBELUMNYA (2026-08-21) basis pembagi persentase FE -- chart sudah
+     * KEMBALI ke menit mentah (revisi Boss 2026-08-22), F-38 tetap: nol angka
+     * turunan disimpan/dikirim kalau bisa dihitung ulang di titik pakai.
      *
-     * @param  array<int, array<string, mixed>>  $teamRows  hasil loadRows() — WAJIB baris ber-`id`/`name`/`idle_real`/`kapasitas`.
+     * @param  array<int, array<string, mixed>>  $teamRows  hasil loadRows() — WAJIB baris ber-`id`/`name`/`kapasitas` (idle_real TIDAK lagi dipakai formula ini).
      * @return array<int, array{id:int, name:string, kapasitas:int, longgar_minutes:int, todo_minutes:int, achievement_minutes:int}>
      */
     private function memberCategoryChart(array $teamRows, Carbon $date): array
@@ -610,22 +628,25 @@ class DashboardController extends Controller
 
         $userIds = array_column($teamRows, 'id');
 
-        $todoMinutes = $this->assigneeMinutes($userIds, fn ($q) => $q
-            ->whereHas('taskStatus', fn ($s) => $s->where('is_completed', false)->where('is_review', false)->where('is_work_state', false))
-            ->whereDate('due_date', $date));
+        $assignedMinutes = $this->assigneeMinutes($userIds, fn ($q) => $q->whereDate('due_date', $date));
 
-        $achievementMinutes = $this->assigneeMinutes($userIds, fn ($q) => $q
-            ->whereHas('taskStatus', fn ($s) => $s->where('is_completed', true))
-            ->whereDate('completed_at', $date));
+        $completedMinutes = $this->assigneeMinutes($userIds, fn ($q) => $q
+            ->whereDate('due_date', $date)
+            ->whereHas('taskStatus', fn ($s) => $s->where('is_completed', true)));
 
-        return array_map(fn (array $row) => [
-            'id' => $row['id'],
-            'name' => $row['name'],
-            'kapasitas' => $row['kapasitas'],
-            'longgar_minutes' => $row['idle_real'],
-            'todo_minutes' => $todoMinutes[$row['id']] ?? 0,
-            'achievement_minutes' => $achievementMinutes[$row['id']] ?? 0,
-        ], $teamRows);
+        return array_map(function (array $row) use ($assignedMinutes, $completedMinutes) {
+            $assigned = $assignedMinutes[$row['id']] ?? 0;
+            $completed = $completedMinutes[$row['id']] ?? 0;
+
+            return [
+                'id' => $row['id'],
+                'name' => $row['name'],
+                'kapasitas' => $row['kapasitas'],
+                'longgar_minutes' => max(0, $row['kapasitas'] - $assigned),
+                'todo_minutes' => $assigned - $completed,
+                'achievement_minutes' => $completed,
+            ];
+        }, $teamRows);
     }
 
     /**

@@ -1,6 +1,7 @@
 import { Breadcrumbs } from '@/components/breadcrumbs';
 import { GlobalSearch } from '@/components/global-search';
 import { NotificationBell } from '@/components/notification-bell';
+import { ReviewNotice } from '@/components/review-notice';
 import { SidebarTrigger } from '@/components/ui/sidebar';
 import { type BreadcrumbItem as BreadcrumbItemType } from '@/types';
 
@@ -17,6 +18,9 @@ export function AppSidebarHeader({ breadcrumbs = [] }: { breadcrumbs?: Breadcrum
 
             <div className="ml-auto flex items-center gap-4">
                 <GlobalSearch />
+                {/* Permintaan Boss (2026-08-22): indikator "Review" -- SEBELAH
+                    (sebelum) bell notifikasi, lihat review-notice.tsx. */}
+                <ReviewNotice />
                 <NotificationBell />
             </div>
         </header>

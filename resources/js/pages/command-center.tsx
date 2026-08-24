@@ -26,10 +26,14 @@
 //               "Selesai" DI SINI = jumlah menit task SELESAI (COUNT/cermin
 //               murni, F-38) -- BUKAN skor KPI/LeaderboardService, F-4 TETAP
 //               berlaku (nol rupiah/skor-kinerja di halaman ini). Revisi
-//               2026-08-21: chart TAMPIL PERSENTASE (bukan menit) -- kapasitas
-//               ("Jatah Harian") jadi basis 100% pembagi ketiga kategori,
-//               dihitung MURNI presentasi di toMemberCategoryChartData() (F-38,
-//               backend TETAP kirim menit mentah, nol persentase disimpan/dikirim).
+//               2026-08-22 (permintaan Boss, REVERT dari persentase 2026-08-21):
+//               chart TAMPIL MENIT MENTAH lagi -- sumbu Y dikunci domain [0, 480]
+//               (480 = jatah harian standar, F-4 bukan rumus baru) supaya SETIAP
+//               widget "Beban per Kategori" bisa dibandingkan apple-to-apple
+//               antar member walau kapasitas per-user beda. Bar "Jatah Harian"
+//               DI-CLAMP ke 0 kalau idle_real negatif (member overload/kerja
+//               melebihi jatah) -- MURNI presentasi (F-38), angka asli tidak
+//               diubah/dikirim ulang ke backend, cuma tidak digambar minus.
 // DIPANGGIL   : DashboardController::commandCenterPage() (route 'dashboard/overview',
 //               can:dashboard.view)
 // MEMANGGIL   : formatLiveMinutes/classifyWorkload (REUSE F-52, sama persis
@@ -57,6 +61,7 @@ import { Button } from '@/components/ui/button';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import { ChartContainer, ChartTooltip, ChartTooltipContent, type ChartConfig } from '@/components/ui/chart';
 import { Dialog, DialogContent, DialogHeader, DialogTitle } from '@/components/ui/dialog';
+import { Separator } from '@/components/ui/separator';
 import { Skeleton } from '@/components/ui/skeleton';
 import { formatLiveMinutes } from '@/hooks/use-live-counter';
 import { classifyWorkload } from '@/lib/dashboard-status';
@@ -67,7 +72,7 @@ import { type BreadcrumbItem } from '@/types';
 import { Head, Link, router } from '@inertiajs/react';
 import { AlertTriangle, Briefcase, CheckCircle2, ChevronLeft, ChevronRight, Clock, Eye, ListTodo, PlayCircle, Star, X } from 'lucide-react';
 import { useEffect, useState } from 'react';
-import { Bar, BarChart, CartesianGrid, XAxis, YAxis } from 'recharts';
+import { Bar, BarChart, CartesianGrid, PolarRadiusAxis, RadialBar, RadialBarChart, XAxis, YAxis } from 'recharts';
 
 interface SummaryCards {
     beban_harian: { used_minutes: number; capacity_minutes: number };
@@ -218,10 +223,10 @@ const PRIORITY_COLOR: Record<'p1' | 'p2' | 'p3' | 'p4' | 'none', string> = {
     none: '#cbd5e1',
 };
 const PRIORITY_LABEL: Record<'p1' | 'p2' | 'p3' | 'p4' | 'none', string> = {
-    p1: 'P1 — Penting & Mendesak',
-    p2: 'P2 — Penting, Tdk Mendesak',
-    p3: 'P3 — Tdk Penting, Mendesak',
-    p4: 'P4 — Tdk Penting & Tdk Mendesak',
+    p1: 'P1',
+    p2: 'P2',
+    p3: 'P3',
+    p4: 'P4',
     none: 'Belum ditandai',
 };
 
@@ -258,48 +263,22 @@ const STATUS_BADGE: Record<string, { label: string; className: string }> = {
     normal: { label: '', className: '' },
 };
 
-// Permintaan Boss (2026-08-21): widget "Beban per Kategori" -- stacked bar
-// chart per member, DALAM PERSENTASE (bukan menit lagi), "Jatah Harian"
-// (kapasitas) jadi BASIS 100% pembagi ketiga kategori (lihat
-// toMemberCategoryChartData()). Warna: Jatah Harian = grey, To Do = biru,
-// Selesai = lime. Urutan tumpukan (Bar di JSX, BAWAH->ATAS): Selesai, To Do,
-// Jatah Harian -- Jatah Harian SENGAJA di ATAS (mewakili SISA kapasitas yang
-// belum terpakai), pola mockup Boss.
+// Permintaan Boss (2026-08-22, REVERT dari persentase 2026-08-21): widget
+// "Beban per Kategori" -- stacked bar chart per member, DALAM MENIT MENTAH
+// (dataKey = field MemberCategoryRow apa adanya, nol turunan). Warna: Jatah
+// Harian = grey, To Do = biru, Selesai = lime. Urutan tumpukan (Bar di JSX,
+// BAWAH->ATAS): Selesai, To Do, Jatah Harian -- Jatah Harian SENGAJA di ATAS
+// (mewakili SISA kapasitas yang belum terpakai), pola mockup Boss.
 // Revisi 2026-08-21 (permintaan Boss): shade dipertajam 1 tingkat dari
 // default Tailwind (slate-400->500, blue-500->600, lime-500->600) --
 // background card di app ini PUTIH, shade -500/-400 default kontrasnya
 // terlalu rendah (grey pudar, lime pucat) terhadap putih, jadi batang chart
 // sulit dibedakan dari card-nya sendiri.
 const MEMBER_CATEGORY_CONFIG = {
-    achievement_pct: { label: 'Selesai', color: '#65a30d' }, // lime-600
-    todo_pct: { label: 'To Do', color: '#2563eb' }, // blue-600
-    longgar_pct: { label: 'Jatah Harian', color: '#64748b' }, // slate-500
+    achievement_minutes: { label: 'Selesai', color: '#65a30d' }, // lime-600
+    todo_minutes: { label: 'To Do', color: '#2563eb' }, // blue-600
+    longgar_minutes: { label: 'Jatah Harian', color: '#76ABAE' }, // slate-500
 } satisfies ChartConfig;
-
-// SUMBER: MemberCategoryRow (menit mentah dari backend) -- persentase MURNI
-// presentasi, dihitung ulang di sini SETIAP render (F-38: nol angka turunan
-// disimpan/dikirim balik dari backend, pola SAMA buildDonutGradient()).
-// `kapasitas` ("Jatah Harian") jadi PEMBAGI -- 0% kalau kapasitas 0 (user
-// tanpa Jam Kerja/override), BUKAN dibagi nol/NaN yang merambat ke chart.
-// Raw menit TETAP disertakan (bukan cuma persentase) supaya tooltip bisa
-// tampilkan keduanya sekaligus, nol fetch/hitung tambahan.
-interface MemberCategoryChartDatum extends MemberCategoryRow {
-    longgar_pct: number;
-    todo_pct: number;
-    achievement_pct: number;
-}
-function toMemberCategoryChartData(rows: MemberCategoryRow[]): MemberCategoryChartDatum[] {
-    return rows.map((row) => {
-        const pct = (minutes: number) => (row.kapasitas > 0 ? Math.round((minutes / row.kapasitas) * 1000) / 10 : 0);
-
-        return {
-            ...row,
-            longgar_pct: pct(row.longgar_minutes),
-            todo_pct: pct(row.todo_minutes),
-            achievement_pct: pct(row.achievement_minutes),
-        };
-    });
-}
 
 // Permintaan Boss: card "Team Work Load" & modal "Detail & filter"-nya BUTUH
 // sort per kolom -- MURNI re-urut baris yang SUDAH dikirim backend (team.rows,
@@ -596,9 +575,53 @@ export default function CommandCenter({
         setTeamSort((prev) => (prev.key === key ? { key, dir: prev.dir === 'asc' ? 'desc' : 'asc' } : { key, dir: 'desc' }));
     };
 
-    // Permintaan Boss (2026-08-21): widget "Beban per Kategori" -- persentase,
-    // BUKAN menit (toMemberCategoryChartData(), MURNI presentasi F-38/F-109).
-    const memberCategoryChartData = toMemberCategoryChartData(memberCategoryChart);
+    // Permintaan Boss (2026-08-22): widget "Beban per Kategori" -- MENIT mentah
+    // apa adanya dari backend (longgar_minutes SUDAH di-clamp non-negatif di
+    // DashboardController::memberCategoryChart(), F-38 -- nol olahan tambahan
+    // di sini, beda dari sebelumnya yang masih clamp ulang di frontend).
+    const memberCategoryChartData = memberCategoryChart;
+
+    // Permintaan Boss (2026-08-22): chart "Beban per Kategori" dipaginasi 10
+    // member per halaman -- widget jadi tidak melebar tak terkendali kalau tim
+    // besar. MURNI potongan tampilan (slice), TIDAK mengubah data/urutan asli
+    // dari backend, dan teamCategoryTotals/teamCategoryRadialData di BAWAH
+    // TETAP pakai memberCategoryChartData PENUH (bukan halaman aktif) -- radial
+    // "Komposisi Beban Tim" harus selalu total SEMUA member, bukan cuma yang
+    // sedang tampil di halaman chart batang.
+    const CHART_PAGE_SIZE = 10;
+    const [chartPage, setChartPage] = useState(0);
+    const chartPageCount = Math.max(1, Math.ceil(memberCategoryChartData.length / CHART_PAGE_SIZE));
+    // GUARD: kalau halaman aktif jadi tidak valid (mis. filter/tanggal ganti,
+    // roster menyusut) -- turun ke halaman terakhir yang masih ada, bukan
+    // diam-diam nge-render array kosong.
+    const safeChartPage = Math.min(chartPage, chartPageCount - 1);
+    const pagedMemberCategoryChartData = memberCategoryChartData.slice(
+        safeChartPage * CHART_PAGE_SIZE,
+        safeChartPage * CHART_PAGE_SIZE + CHART_PAGE_SIZE,
+    );
+
+    // Permintaan Boss (2026-08-22): widget "Prioritas Tugas" ditambah Simple
+    // Radial Bar Chart (recharts) -- 3 kategori SAMA dengan "Beban per Kategori"
+    // di atasnya, DIJUMLAHKAN lintas SELURUH member jadi 1 angka tim per
+    // kategori (F-38 -- nol query baru, murni penjumlahan client-side dari
+    // memberCategoryChartData yang SUDAH difetch). `kapasitas` ikut dijumlah
+    // jadi domain radial (lihat JSX) supaya panjang tiap busur proporsional
+    // terhadap "jatah harian tim" -- pola sama YAxis [0,480] chart batang di
+    // atas, cuma basisnya sekarang per-tim bukan per-orang.
+    const teamCategoryTotals = memberCategoryChartData.reduce(
+        (totals, row) => ({
+            achievement_minutes: totals.achievement_minutes + row.achievement_minutes,
+            todo_minutes: totals.todo_minutes + row.todo_minutes,
+            longgar_minutes: totals.longgar_minutes + row.longgar_minutes,
+            kapasitas: totals.kapasitas + row.kapasitas,
+        }),
+        { achievement_minutes: 0, todo_minutes: 0, longgar_minutes: 0, kapasitas: 0 },
+    );
+    const teamCategoryRadialData = (['achievement_minutes', 'todo_minutes', 'longgar_minutes'] as const).map((key) => ({
+        key,
+        value: teamCategoryTotals[key],
+        fill: MEMBER_CATEGORY_CONFIG[key].color,
+    }));
 
     // Permintaan Boss: modal "Detail & filter" -- tabel PENUH (team.rows, bukan
     // top-5), sort state TERPISAH dari card utama supaya tidak saling timpa.
@@ -785,9 +808,149 @@ export default function CommandCenter({
                     </Card>
                 </div>
 
-                <div className="grid grid-cols-1 gap-4 lg:grid-cols-2">
-                    {/* A3: Donut prioritas */}
+                {/* Permintaan Boss: widget "Beban per Kategori" -- stacked bar
+        chart per member DALAM MENIT (longgar/to do/selesai, MemberCategoryRow,
+        F-109 page-only -- lihat KONTRAK DashboardController::memberCategoryChart()).
+        Tanggal SAMA dengan tabel Team Work Load (section di bawah). Posisi
+        DIPINDAH ke ATAS widget "Prioritas Tugas"/"Distribusi Progress"
+        (permintaan Boss 2026-08-22, murni urutan tampilan -- data/filter TIDAK
+        berubah). */}
+                <div className="grid grid-cols-1 gap-4">
                     <Card>
+                        <CardHeader>
+                            <CardTitle className="text-base">
+                                {scopeLabel('Beban per Kategori')} — {team.date}
+                            </CardTitle>
+                        </CardHeader>
+                        <CardContent>
+                            {navigating ? (
+                                <Skeleton className="h-64 w-full" />
+                            ) : memberCategoryChartData.length === 0 ? (
+                                <p className="text-sm text-muted-foreground">Tidak ada user aktif untuk ditampilkan.</p>
+                            ) : (
+                                <ChartContainer config={MEMBER_CATEGORY_CONFIG} className="aspect-auto h-64 w-full">
+                                    <BarChart data={pagedMemberCategoryChartData} margin={{ left: 4, right: 4 }}>
+                                        {/* Permintaan Boss (2026-08-22): tiap kategori pakai GRADASI warna
+                                        (bukan flat) -- linearGradient vertikal, terang di atas ke warna
+                                        dasar MEMBER_CATEGORY_CONFIG di bawah. id di-prefix "mcat-" supaya
+                                        tidak tabrakan sama elemen SVG lain di halaman ini.
+                                        Revisi 2026-08-22 (permintaan Boss): gradasi "Jatah Harian" (abu)
+                                        DIBUAT LEBIH TRANSPARAN (stopOpacity, GRADASI TETAP ADA) supaya
+                                        secara visual lebih redup/tidak mendominasi dibanding Selesai/To Do
+                                        -- warna hex TIDAK diubah, cuma opacity tiap stop-nya diturunkan. */}
+                                        <defs>
+                                            <linearGradient id="mcat-achievement" x1="0" y1="0" x2="0" y2="1">
+                                                <stop offset="0%" stopColor="#bef264" />
+                                                <stop offset="100%" stopColor="#65a30d" />
+                                            </linearGradient>
+                                            <linearGradient id="mcat-todo" x1="0" y1="0" x2="0" y2="1">
+                                                <stop offset="0%" stopColor="#93c5fd" />
+                                                <stop offset="100%" stopColor="#2563eb" />
+                                            </linearGradient>
+                                            <linearGradient id="mcat-longgar" x1="0" y1="0" x2="0" y2="1">
+                                                <stop offset="0%" stopColor="#cbd5e1" stopOpacity={0.45} />
+                                                <stop offset="100%" stopColor="#64748b" stopOpacity={0.45} />
+                                            </linearGradient>
+                                        </defs>
+                                        <CartesianGrid vertical={false} />
+                                        <XAxis dataKey="name" tickLine={false} axisLine={false} tickMargin={8} />
+                                        {/* SUMBER (permintaan Boss 2026-08-22): domain DIKUNCI [0, 480] --
+                                        480 menit = jatah harian standar (F-4, bukan rumus baru, cuma batas
+                                        tampilan). allowDataOverflow FALSE (default) supaya batang yang
+                                        melebihi 480 (gabungan kategori overload) tetap kelihatan dipotong
+                                        di puncak, bukan mendorong domain naik -- dan `longgar_minutes` sudah
+                                        di-clamp non-negatif di DashboardController::memberCategoryChart()
+                                        (backend) jadi sumbu TIDAK PERNAH turun di bawah 0. */}
+                                        <YAxis
+                                            tickLine={false}
+                                            axisLine={false}
+                                            width={56}
+                                            domain={[0, 480]}
+                                            tickFormatter={(v: number) => formatLiveMinutes(v)}
+                                        />
+                                        <ChartTooltip
+                                            content={
+                                                <ChartTooltipContent
+                                                    formatter={(value, name) => {
+                                                        const key = name as keyof typeof MEMBER_CATEGORY_CONFIG;
+
+                                                        return (
+                                                            <div className="flex w-full items-center gap-2">
+                                                                <span
+                                                                    className="h-2.5 w-2.5 shrink-0 rounded-[2px]"
+                                                                    style={{ backgroundColor: MEMBER_CATEGORY_CONFIG[key].color }}
+                                                                />
+                                                                <span className="flex-1 text-muted-foreground">
+                                                                    {MEMBER_CATEGORY_CONFIG[key].label}
+                                                                </span>
+                                                                <span className="font-mono font-medium tabular-nums text-foreground">
+                                                                    {formatLiveMinutes(value as number)}
+                                                                </span>
+                                                            </div>
+                                                        );
+                                                    }}
+                                                />
+                                            }
+                                        />
+                                        {/* Urutan tumpukan BAWAH->ATAS: Selesai, To Do, Jatah Harian --
+                                        Jatah Harian di ATAS (sisa kapasitas belum terpakai), pola mockup Boss. */}
+                                        <Bar dataKey="achievement_minutes" stackId="beban" fill="url(#mcat-achievement)" />
+                                        <Bar dataKey="todo_minutes" stackId="beban" fill="url(#mcat-todo)" />
+                                        <Bar dataKey="longgar_minutes" stackId="beban" fill="url(#mcat-longgar)" radius={[4, 4, 0, 0]} />
+                                    </BarChart>
+                                </ChartContainer>
+                            )}
+                            {/* Permintaan Boss (2026-08-22): kontrol paginasi -- cuma tampil
+                            kalau member LEBIH dari 1 halaman (CHART_PAGE_SIZE=10). Pola
+                            tombol Prev/Next SAMA navigasi bulan heatmap di bawah (ChevronLeft/
+                            ChevronRight), murni geser slice tampilan, nol fetch/query baru. */}
+                            {!navigating && chartPageCount > 1 && (
+                                <div className="mt-3 flex items-center justify-center gap-3 text-xs text-muted-foreground">
+                                    <Button
+                                        type="button"
+                                        variant="outline"
+                                        size="sm"
+                                        onClick={() => setChartPage((p) => Math.max(0, p - 1))}
+                                        disabled={safeChartPage === 0}
+                                    >
+                                        <ChevronLeft className="h-4 w-4" />
+                                    </Button>
+                                    <span>
+                                        Halaman {safeChartPage + 1} dari {chartPageCount}
+                                    </span>
+                                    <Button
+                                        type="button"
+                                        variant="outline"
+                                        size="sm"
+                                        onClick={() => setChartPage((p) => Math.min(chartPageCount - 1, p + 1))}
+                                        disabled={safeChartPage >= chartPageCount - 1}
+                                    >
+                                        <ChevronRight className="h-4 w-4" />
+                                    </Button>
+                                </div>
+                            )}
+                            {/* Legend manual (bukan ChartLegend/recharts) -- 3 kategori TETAP
+                            (bukan dari payload dinamis), pola sederhana SAMA legend heatmap
+                            di bawah (span warna + label). */}
+                            <div className="mt-3 flex flex-wrap items-center gap-4 text-xs text-muted-foreground">
+                                {(Object.keys(MEMBER_CATEGORY_CONFIG) as (keyof typeof MEMBER_CATEGORY_CONFIG)[]).map((key) => (
+                                    <div key={key} className="flex items-center gap-1.5">
+                                        <span className="h-2.5 w-2.5 rounded-[2px]" style={{ backgroundColor: MEMBER_CATEGORY_CONFIG[key].color }} />
+                                        <span>{MEMBER_CATEGORY_CONFIG[key].label}</span>
+                                    </div>
+                                ))}
+                            </div>
+                        </CardContent>
+                    </Card>
+                </div>
+
+                {/* Revisi 2026-08-22 (permintaan Boss): layout dipecah rasio 2:1 (bukan
+                50/50 lagi) -- "Prioritas Tugas" LEBIH LEBAR (lg:col-span-2) karena
+                sekarang berisi 2 pie chart (donut Prioritas + radial Komposisi Beban
+                Tim), "Distribusi Progress" jadi 1/3 bagian (lg:col-span-1). */}
+                <div className="grid grid-cols-1 gap-4 lg:grid-cols-3">
+                    {/* A3: Donut prioritas */}
+                    <Card className="lg:col-span-2">
                         <CardHeader className="flex flex-col gap-2">
                             <CardTitle className="text-base">{scopeLabel('Prioritas Tugas')}</CardTitle>
                             <RangeUserFilter
@@ -805,40 +968,139 @@ export default function CommandCenter({
                             />
                         </CardHeader>
                         <CardContent>
-                            {navigating ? (
-                                <div className="flex items-center gap-4">
-                                    <Skeleton className="h-28 w-28 shrink-0 rounded-full" />
-                                    <div className="flex flex-col gap-2">
-                                        {Array.from({ length: 5 }).map((_, i) => (
-                                            <Skeleton key={i} className="h-3 w-32" />
-                                        ))}
-                                    </div>
-                                </div>
-                            ) : donutChart.total === 0 ? (
-                                <p className="text-sm text-muted-foreground">Belum ada task untuk ditandai prioritas.</p>
-                            ) : (
-                                <div className="flex items-center gap-4">
-                                    <div className="relative h-28 w-28 shrink-0 rounded-full" style={{ background: donutChart.gradient }}>
-                                        <div className="absolute inset-3 flex items-center justify-center rounded-full bg-card text-sm font-semibold">
-                                            {donutChart.total}
+                            {/* Revisi 2026-08-22 (permintaan Boss "line vertikal jangan patah"):
+                            chart + legend masing-masing SEKARANG SATU KOLOM (donut+legend
+                            Prioritas di kiri, radial+legend Beban Tim di kanan), dengan SATU
+                            <Separator> di tengah yang MEMBENTANG PENUH via CSS Grid stretch
+                            (kolom tengah "auto" TANPA height fixed -- align-items grid default
+                            "stretch" otomatis menyamakan tingginya dengan kolom tertinggi).
+                            SEBELUMNYA ada 2 potongan garis terpisah (Separator h-56 di baris
+                            chart + border-l di baris legend) yang keliatan patah/tidak
+                            menyambung -- sekarang murni SATU elemen garis, nol jahitan. */}
+                            <div className="grid grid-cols-2 gap-10 sm:grid-cols-[1fr_auto_1fr]">
+                                <div className="flex flex-col items-center gap-4 mt-10">
+                                    {navigating ? (
+                                        <Skeleton className="h-60 w-60 shrink-0 rounded-full" />
+                                    ) : donutChart.total === 0 ? (
+                                        <p className="text-sm text-muted-foreground">Belum ada task untuk ditandai prioritas.</p>
+                                    ) : (
+                                        <div className="relative h-40 w-40 shrink-0 rounded-full" style={{ background: donutChart.gradient }}>
+                                            <div className="absolute inset-4 flex items-center justify-center rounded-full bg-card text-base font-semibold">
+                                                {donutChart.total}
+                                            </div>
                                         </div>
-                                    </div>
-                                    <ul className="flex flex-col gap-1 text-xs">
-                                        {(['p1', 'p2', 'p3', 'p4', 'none'] as const).map((key) => (
-                                            <li key={key} className="flex items-center gap-2">
-                                                <span className="h-2.5 w-2.5 rounded-full" style={{ backgroundColor: PRIORITY_COLOR[key] }} />
-                                                <span className="text-muted-foreground">{PRIORITY_LABEL[key]}</span>
-                                                <span className="font-medium">{donut[key]}</span>
-                                            </li>
-                                        ))}
-                                    </ul>
+                                    )}
+
+                                    {navigating ? (
+                                        <div className="flex w-full flex-col gap-2">
+                                            {Array.from({ length: 3 }).map((_, i) => (
+                                                <Skeleton key={i} className="h-3 w-32" />
+                                            ))}
+                                        </div>
+                                    ) : (
+                                        donutChart.total > 0 && (
+                                            <div className="w-full text-xs mt-12">
+                                                <p className="mb-1.5 font-semibold text-foreground">Prioritas</p>
+                                                <ul className="grid grid-cols-2 gap-x-4 gap-y-1.5">
+                                                    {(['p1', 'p2', 'p3', 'p4', 'none'] as const).map((key) => (
+                                                        <li key={key} className="flex items-center gap-1.5">
+                                                            <span className="h-2.5 w-2.5 rounded-full" style={{ backgroundColor: PRIORITY_COLOR[key] }} />
+                                                            <span className="text-muted-foreground">{PRIORITY_LABEL[key]}</span>
+                                                            <span className="font-medium">{donut[key]}</span>
+                                                        </li>
+                                                    ))}
+                                                </ul>
+                                            </div>
+                                        )
+                                    )}
                                 </div>
-                            )}
+
+                                <Separator orientation="vertical" className="hidden sm:block" />
+
+                                <div className="flex flex-col items-center gap-4">
+                                    {/* Permintaan Boss (2026-08-22): Simple Radial Bar Chart (recharts)
+                                    -- ringkasan 3 kategori "Beban per Kategori" DIJUMLAHKAN se-tim
+                                    (bukan per-member seperti chart di atas). Data & warna REUSE
+                                    memberCategoryChartData/MEMBER_CATEGORY_CONFIG (F-109, nol
+                                    fetch/config baru). Ukuran h-56 w-56 -- SENGAJA lebih besar dari
+                                    donut Prioritas (permintaan Boss "perbesar lagi chart beban
+                                    tim"), barSize 16 supaya ketebalan cincin proporsional. */}
+                                    {navigating ? (
+                                        <Skeleton className="h-56 w-56 shrink-0 rounded-full" />
+                                    ) : teamCategoryTotals.kapasitas === 0 ? (
+                                        <p className="text-sm text-muted-foreground">Tidak ada user aktif untuk ditampilkan.</p>
+                                    ) : (
+                                        <ChartContainer config={MEMBER_CATEGORY_CONFIG} className="aspect-square h-60 w-60 shrink-0">
+                                            <RadialBarChart
+                                                data={teamCategoryRadialData}
+                                                innerRadius="30%"
+                                                outerRadius="100%"
+                                                startAngle={90}
+                                                endAngle={-270}
+                                                barSize={16}
+                                                margin={{ top: 0, right: 0, bottom: 0, left: 0 }}
+                                            >
+                                                <PolarRadiusAxis type="number" domain={[0, teamCategoryTotals.kapasitas]} tick={false} axisLine={false} />
+                                                <RadialBar
+                                                    dataKey="value"
+                                                    cornerRadius={4}
+                                                    /* Diubah dari boolean 'background' ke objek warna */
+                                                    background={{ fill: "#f0f" }} // atau warna hex seperti "#ffff" / "rgba(255,255,255,0.1)"
+                                                />
+                                                <ChartTooltip
+                                                    content={
+                                                        <ChartTooltipContent
+                                                            hideLabel
+                                                            formatter={(value, _name, item) => {
+                                                                const row = item.payload as { key: keyof typeof MEMBER_CATEGORY_CONFIG };
+                                                                const cfg = MEMBER_CATEGORY_CONFIG[row.key];
+
+                                                                return (
+                                                                    <div className="flex w-full items-center gap-2">
+                                                                        <span className="h-2.5 w-2.5 shrink-0 rounded-[2px]" style={{ backgroundColor: cfg.color }} />
+                                                                        <span className="flex-1 text-muted-foreground">{cfg.label}</span>
+                                                                        <span className="font-mono font-medium tabular-nums text-foreground">
+                                                                            {formatLiveMinutes(value as number)}
+                                                                        </span>
+                                                                    </div>
+                                                                );
+                                                            }}
+                                                        />
+                                                    }
+                                                />
+                                            </RadialBarChart>
+                                        </ChartContainer>
+                                    )}
+
+                                    {navigating ? (
+                                        <div className="flex w-full flex-col gap-2">
+                                            {Array.from({ length: 3 }).map((_, i) => (
+                                                <Skeleton key={i} className="h-3 w-32" />
+                                            ))}
+                                        </div>
+                                    ) : (
+                                        teamCategoryTotals.kapasitas > 0 && (
+                                            <div className="w-full text-xs">
+                                                <p className="mb-1.5 font-semibold text-foreground">Beban Tim</p>
+                                                <div className="flex flex-wrap gap-x-4 gap-y-1.5">
+                                                    {(Object.keys(MEMBER_CATEGORY_CONFIG) as (keyof typeof MEMBER_CATEGORY_CONFIG)[]).map((key) => (
+                                                        <div key={key} className="flex items-center gap-1.5">
+                                                            <span className="h-2.5 w-2.5 rounded-[2px]" style={{ backgroundColor: MEMBER_CATEGORY_CONFIG[key].color }} />
+                                                            <span className="text-muted-foreground">{MEMBER_CATEGORY_CONFIG[key].label}</span>
+                                                            <span className="font-medium">{formatLiveMinutes(teamCategoryTotals[key])}</span>
+                                                        </div>
+                                                    ))}
+                                                </div>
+                                            </div>
+                                        )
+                                    )}
+                                </div>
+                            </div>
                         </CardContent>
                     </Card>
 
                     {/* A4: distribusi progress */}
-                    <Card>
+                    <Card className="lg:col-span-1">
                         <CardHeader className="flex flex-col gap-2">
                             <CardTitle className="text-base">{scopeLabel('Distribusi Progress')}</CardTitle>
                             <RangeUserFilter
@@ -914,7 +1176,6 @@ export default function CommandCenter({
                                         {(
                                             [
                                                 ['name', 'Tim'],
-                                                ['aktif', 'Waktu Terpakai'],
                                                 ['idle_real', 'Kapasitas Sisa'],
                                                 ['status', 'Status'],
                                             ] as [TeamSortKey, string][]
@@ -934,7 +1195,7 @@ export default function CommandCenter({
                                 </thead>
                                 <tbody>
                                     {navigating ? (
-                                        <TableSkeletonRows rows={5} cols={4} />
+                                        <TableSkeletonRows rows={5} cols={3} />
                                     ) : (
                                         <>
                                             {sortedTeamTop5.map((row) => {
@@ -944,7 +1205,6 @@ export default function CommandCenter({
                                                 return (
                                                     <tr key={row.id} className="border-b last:border-0 align-top">
                                                         <td className="p-3 font-medium">{row.name}</td>
-                                                        <td className="p-3">{formatLiveMinutes(row.aktif)}</td>
                                                         <td className="p-3">
                                                             {formatLiveMinutes(row.kapasitas - row.idle_real)} (idle{' '}
                                                             {formatLiveMinutes(row.idle_real)})
@@ -958,7 +1218,7 @@ export default function CommandCenter({
 
                                             {sortedTeamTop5.length === 0 && (
                                                 <tr>
-                                                    <td colSpan={4} className="p-6 text-center text-muted-foreground">
+                                                    <td colSpan={3} className="p-6 text-center text-muted-foreground">
                                                         Tidak ada user aktif untuk ditampilkan.
                                                     </td>
                                                 </tr>
@@ -1013,7 +1273,6 @@ export default function CommandCenter({
                                             {(
                                                 [
                                                     ['name', 'Tim'],
-                                                    ['aktif', 'Waktu Terpakai'],
                                                     ['idle_real', 'Kapasitas Sisa'],
                                                     ['status', 'Status'],
                                                 ] as [TeamSortKey, string][]
@@ -1033,7 +1292,7 @@ export default function CommandCenter({
                                     </thead>
                                     <tbody>
                                         {navigating ? (
-                                            <TableSkeletonRows rows={6} cols={4} />
+                                            <TableSkeletonRows rows={6} cols={3} />
                                         ) : (
                                             <>
                                                 {sortedTeamAll.map((row) => {
@@ -1043,7 +1302,6 @@ export default function CommandCenter({
                                                     return (
                                                         <tr key={row.id} className="border-b last:border-0 align-top">
                                                             <td className="p-3 font-medium">{row.name}</td>
-                                                            <td className="p-3">{formatLiveMinutes(row.aktif)}</td>
                                                             <td className="p-3">
                                                                 {formatLiveMinutes(row.kapasitas - row.idle_real)} (idle{' '}
                                                                 {formatLiveMinutes(row.idle_real)})
@@ -1057,7 +1315,7 @@ export default function CommandCenter({
 
                                                 {sortedTeamAll.length === 0 && (
                                                     <tr>
-                                                        <td colSpan={4} className="p-6 text-center text-muted-foreground">
+                                                        <td colSpan={3} className="p-6 text-center text-muted-foreground">
                                                             Tidak ada user aktif untuk ditampilkan.
                                                         </td>
                                                     </tr>
@@ -1070,81 +1328,6 @@ export default function CommandCenter({
                         </DialogContent>
                     </Dialog>
 
-                </div>
-
-                {/* Permintaan Boss (2026-08-21): widget "Beban per Kategori" -- stacked
-        bar chart per member DALAM PERSENTASE, "Jatah Harian" (kapasitas) jadi
-        basis 100% pembagi (toMemberCategoryChartData()). Tanggal SAMA dengan
-        tabel Team Work Load di atas (MemberCategoryRow, F-109 page-only --
-        lihat KONTRAK DashboardController::memberCategoryChart()). */}
-                <div className="grid grid-cols-1 gap-4">
-                    <Card>
-                        <CardHeader>
-                            <CardTitle className="text-base">
-                                {scopeLabel('Beban per Kategori')} — {team.date}
-                            </CardTitle>
-                        </CardHeader>
-                        <CardContent>
-                            {navigating ? (
-                                <Skeleton className="h-64 w-full" />
-                            ) : memberCategoryChartData.length === 0 ? (
-                                <p className="text-sm text-muted-foreground">Tidak ada user aktif untuk ditampilkan.</p>
-                            ) : (
-                                <ChartContainer config={MEMBER_CATEGORY_CONFIG} className="aspect-auto h-64 w-full">
-                                    <BarChart data={memberCategoryChartData} margin={{ left: 4, right: 4 }}>
-                                        <CartesianGrid vertical={false} />
-                                        <XAxis dataKey="name" tickLine={false} axisLine={false} tickMargin={8} />
-                                        <YAxis tickLine={false} axisLine={false} width={48} tickFormatter={(v: number) => `${v}%`} />
-                                        <ChartTooltip
-                                            content={
-                                                <ChartTooltipContent
-                                                    formatter={(value, name, item) => {
-                                                        const key = name as keyof typeof MEMBER_CATEGORY_CONFIG;
-                                                        // SUMBER: item.payload = baris MemberCategoryChartDatum penuh
-                                                        // (data chart) -- dipakai ambil MENIT mentah pasangan key
-                                                        // persentase ini, supaya tooltip tampilkan keduanya sekaligus.
-                                                        const minutesKey = key.replace('_pct', '_minutes') as keyof MemberCategoryChartDatum;
-                                                        const minutes = (item.payload as MemberCategoryChartDatum)[minutesKey] as number;
-
-                                                        return (
-                                                            <div className="flex w-full items-center gap-2">
-                                                                <span
-                                                                    className="h-2.5 w-2.5 shrink-0 rounded-[2px]"
-                                                                    style={{ backgroundColor: MEMBER_CATEGORY_CONFIG[key].color }}
-                                                                />
-                                                                <span className="flex-1 text-muted-foreground">
-                                                                    {MEMBER_CATEGORY_CONFIG[key].label}
-                                                                </span>
-                                                                <span className="font-mono font-medium tabular-nums text-foreground">
-                                                                    {value}% ({formatLiveMinutes(minutes)})
-                                                                </span>
-                                                            </div>
-                                                        );
-                                                    }}
-                                                />
-                                            }
-                                        />
-                                        {/* Urutan tumpukan BAWAH->ATAS: Selesai, To Do, Jatah Harian --
-                                        Jatah Harian di ATAS (sisa kapasitas belum terpakai), pola mockup Boss. */}
-                                        <Bar dataKey="achievement_pct" stackId="beban" fill="var(--color-achievement_pct)" />
-                                        <Bar dataKey="todo_pct" stackId="beban" fill="var(--color-todo_pct)" />
-                                        <Bar dataKey="longgar_pct" stackId="beban" fill="var(--color-longgar_pct)" radius={[4, 4, 0, 0]} />
-                                    </BarChart>
-                                </ChartContainer>
-                            )}
-                            {/* Legend manual (bukan ChartLegend/recharts) -- 3 kategori TETAP
-                            (bukan dari payload dinamis), pola sederhana SAMA legend heatmap
-                            di bawah (span warna + label). */}
-                            <div className="mt-3 flex flex-wrap items-center gap-4 text-xs text-muted-foreground">
-                                {(Object.keys(MEMBER_CATEGORY_CONFIG) as (keyof typeof MEMBER_CATEGORY_CONFIG)[]).map((key) => (
-                                    <div key={key} className="flex items-center gap-1.5">
-                                        <span className="h-2.5 w-2.5 rounded-[2px]" style={{ backgroundColor: MEMBER_CATEGORY_CONFIG[key].color }} />
-                                        <span>{MEMBER_CATEGORY_CONFIG[key].label}</span>
-                                    </div>
-                                ))}
-                            </div>
-                        </CardContent>
-                    </Card>
                 </div>
 
                 <div className="grid grid-cols-1 gap-4 lg:grid-cols-2">

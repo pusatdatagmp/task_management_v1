@@ -99,7 +99,7 @@ class UserController extends Controller
         ], fn ($value) => ! is_null($value));
 
         $result = $service->onboardNewUser(
-            $request->safe()->only(['name', 'email', 'employment_type', 'daily_capacity_minutes']),
+            $request->safe()->only(['name', 'nickname', 'email', 'employment_type', 'daily_capacity_minutes']),
             $roleConfig,
             $request->user(),
         );
@@ -115,7 +115,7 @@ class UserController extends Controller
         $organizationId = Auth::user()->organization_id;
 
         return Inertia::render('users/edit', [
-            'user' => $user->only(['id', 'name', 'email', 'role_id', 'employment_type', 'daily_capacity_minutes']),
+            'user' => $user->only(['id', 'name', 'nickname', 'email', 'role_id', 'employment_type', 'daily_capacity_minutes']),
             'roles' => Role::where('organization_id', $organizationId)->orderBy('role_name')->get(['id', 'role_name', 'is_system']),
         ]);
     }

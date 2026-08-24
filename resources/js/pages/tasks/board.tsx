@@ -53,6 +53,9 @@ import { useEffect, useState } from 'react';
 interface UserOption {
     id: number;
     name: string;
+    // Permintaan Boss (2026-08-22): nama tampilan (nickname jika diisi, fallback
+    // nama lengkap) -- User::displayName() backend, F-38 nol turunan tersimpan.
+    display_name: string;
 }
 
 interface CardData {
@@ -108,11 +111,11 @@ function AssigneeStack({ assignees }: { assignees: UserOption[] }) {
     }
 
     return (
-        <div className="flex -space-x-2" title={assignees.map((a) => a.name).join(', ')}>
+        <div className="flex -space-x-2" title={assignees.map((a) => a.display_name).join(', ')}>
             {assignees.slice(0, 3).map((a) => (
                 <Avatar key={a.id} className="h-6 w-6 border-2 border-background">
                     <AvatarFallback className="bg-neutral-200 text-[10px] text-black dark:bg-neutral-700 dark:text-white">
-                        {getInitials(a.name)}
+                        {getInitials(a.display_name)}
                     </AvatarFallback>
                 </Avatar>
             ))}
@@ -358,7 +361,7 @@ export default function TaskBoard({ project, columns: initialColumns, members, f
                         {members.map((m) => (
                             <label key={m.id} className="flex items-center gap-2">
                                 <input type="checkbox" checked={filters.assignee.includes(m.id)} onChange={() => toggleAssignee(m.id)} />
-                                {m.name}
+                                {m.display_name}
                             </label>
                         ))}
                         {members.length === 0 && <span className="text-muted-foreground">-</span>}

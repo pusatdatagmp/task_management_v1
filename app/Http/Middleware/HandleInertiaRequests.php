@@ -2,7 +2,9 @@
 
 namespace App\Http\Middleware;
 
+use App\Models\DeadlineExtension;
 use App\Models\Organization;
+use App\Models\Task;
 use Illuminate\Foundation\Inspiring;
 use Illuminate\Http\Request;
 use Inertia\Middleware;
@@ -99,6 +101,49 @@ class HandleInertiaRequests extends Middleware
             // di SEMUA halaman (bukan cuma halaman notifikasi) supaya badge selalu
             // tampil terkini tanpa page tiap halaman query manual.
             'unreadNotificationsCount' => $request->user()?->unreadNotifications()->count() ?? 0,
+            // Permintaan Boss (2026-08-22): badge jumlah tugas di menu sidebar
+            // "Tugas Saya", gaya SAMA icon notifikasi (pill merah). Filter IDENTIK
+            // TaskController::myTasks() (assignee = user login, status belum
+            // selesai, F-44 flag) -- SATU SUMBER supaya angka badge selalu sama
+            // dengan jumlah baris yang benar-benar tampil begitu diklik. Dishare
+            // GLOBAL (pola sama unreadNotificationsCount) karena sidebar dirender
+            // di SETIAP halaman, bukan cuma halaman /my-tasks.
+            'myTasksCount' => $request->user()
+                ? Task::whereHas('assignees', fn ($q) => $q->whereKey($request->user()->id))
+                    ->whereHas('taskStatus', fn ($q) => $q->where('is_completed', false))
+                    ->count()
+                : 0,
+            // Permintaan Boss (2026-08-22): indikator "Review" di header, sebelah
+            // bell notifikasi -- LIVE COUNT tugas berstatus Review SEKARANG (F-44
+            // flag is_review, BUKAN riwayat notifikasi tersimpan/dihitung), pola
+            // SAMA myTasksCount di atas. Digerbangi DUA permission sekaligus:
+            // `task.approve` (SATU-SATUNYA permission yang bisa approve/reject
+            // task keluar dari Review, lihat TaskController::approve()/reject())
+            // DAN `project.viewAll` (link klik mengarah ke route('tasks.all')
+            // yang JUGA digerbangi permission itu, F-90 -- kalau cuma task.approve
+            // tanpa project.viewAll, badge akan tampil tapi link-nya 403 begitu
+            // diklik; DUA syarat sekaligus mencegah link mati). Org-wide (BUKAN
+            // scoped ke proyek tertentu) -- role dgn task.approve lazimnya
+            // reviewer lintas proyek, sama seperti halaman "Perpanjangan".
+            // REVISI 2026-08-22 (permintaan Boss): NULL (bukan 0) untuk yang
+            // TIDAK berwenang -- frontend (review-notice.tsx) SEKARANG tetap
+            // menampilkan "Review · 0" untuk yang BERWENANG tapi nol tugas
+            // Review, TAPI harus tetap sembunyi total untuk member biasa (yang
+            // dulunya juga dapat 0, alasan beda: bukan "nol review", tapi
+            // "tidak berhak lihat"). null vs 0 membedakan dua alasan itu.
+            'reviewTasksCount' => ($request->user()?->can('task.approve') && $request->user()?->can('project.viewAll'))
+                ? Task::whereHas('taskStatus', fn ($q) => $q->where('is_completed', false)->where('is_review', true))->count()
+                : null,
+            // Permintaan Boss (2026-08-22): badge jumlah di menu sidebar
+            // "Perpanjangan" (item admin, gated task.approve — app-sidebar.tsx),
+            // pola SAMA myTasksCount. Filter IDENTIK DeadlineExtensionController::
+            // index() (status='pending') -- SATU SUMBER supaya angka badge selalu
+            // sama dengan jumlah baris yang tampil begitu diklik. 0 untuk yang
+            // tidak berwenang (menu item-nya sendiri sudah tidak dirender di
+            // sidebar buat mereka, jadi 0-vs-null tidak relevan di sini).
+            'pendingExtensionsCount' => $request->user()?->can('task.approve')
+                ? DeadlineExtension::where('status', 'pending')->count()
+                : 0,
         ]);
     }
 }
