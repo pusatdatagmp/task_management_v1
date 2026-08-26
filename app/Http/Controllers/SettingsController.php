@@ -6,10 +6,12 @@
  * KLASIFIKASI : DOMAIN
  * TUJUAN      : Halaman "Setelan" org-level — tab Branding (F-142, v1.2 DS-2) +
  *               tab Tema (F-143, v1.2 DS-3, token+gradasi) + tab KPI (F-166,
- *               v1.4 KPI-2, config poin+toggle). SATU controller untuk shell
- *               halaman + tiap tab (F-144 -- editor MENGUBAH NILAI TOKEN,
- *               komponen mewarisi lewat CSS var, controller ini TIDAK PERNAH
- *               menyentuh warna per-komponen).
+ *               v1.4 KPI-2, config poin+toggle) + tab Tag (permintaan Boss
+ *               2026-08-26, katalog tag Task -- CRUD-nya sendiri ada di
+ *               TagController, edit() di sini cuma kirim daftarnya). SATU
+ *               controller untuk shell halaman + tiap tab (F-144 -- editor
+ *               MENGUBAH NILAI TOKEN, komponen mewarisi lewat CSS var,
+ *               controller ini TIDAK PERNAH menyentuh warna per-komponen).
  * DIPANGGIL   : routes/admin.php (can:settings.manage)
  * MEMANGGIL   : Organization (branding/tema/KPI SELALU milik Auth::user()->organization,
  *               TIDAK PERNAH dari route model binding — F-5, cegah IDOR org lain)
@@ -39,6 +41,7 @@ namespace App\Http\Controllers;
 use App\Http\Requests\Branding\UpdateBrandingRequest;
 use App\Http\Requests\Branding\UpdateKpiRequest;
 use App\Http\Requests\Branding\UpdateThemeRequest;
+use App\Models\Tag;
 use Illuminate\Http\RedirectResponse;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\Storage;
@@ -59,6 +62,9 @@ class SettingsController extends Controller
             ],
             'theme' => $organization->theme_config,
             'kpi' => $organization->only(['kpi_enabled', 'kpi_points_ontime', 'kpi_points_late', 'kpi_points_notdone']),
+            // Permintaan Boss (2026-08-26): tab "Tag" -- katalog tag organisasi
+            // (BelongsToOrganization sudah auto-scope, F-15, nol filter manual).
+            'tags' => Tag::orderBy('name')->get(['id', 'name', 'color']),
         ]);
     }
 

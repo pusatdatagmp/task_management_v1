@@ -25,7 +25,7 @@ class UpdateHolidayRequest extends FormRequest
 {
     public function authorize(): bool
     {
-        return (bool) Auth::user()?->can('workschedule.manage');
+        return (bool) Auth::user()?->can('holiday.manage'); // F-170 (dulu workschedule.manage)
     }
 
     public function rules(): array

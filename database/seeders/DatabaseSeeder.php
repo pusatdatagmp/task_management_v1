@@ -30,17 +30,5 @@ class DatabaseSeeder extends Seeder
             'is_active' => true,
         ]);
 
-        // 4. Buat Akun Members (9 Member)
-        collect(range(1, 2))->each(function (int $i) use ($organization, $roles) {
-            User::create([
-                'organization_id' => $organization->id,
-                'name' => "Member {$i}",
-                'email' => "member{$i}@deevatech.test",
-                'password' => bcrypt('password'),
-                'role_id' => $roles['member']->id,
-                'employment_type' => 'internal',
-                'is_active' => true,
-            ]);
-        });
     }
 }

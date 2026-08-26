@@ -76,7 +76,7 @@ class DashboardService
         $schedules = WorkSchedule::where('organization_id', $organizationId)->where('is_archived', false)->get();
         $holidays = Holiday::where('organization_id', $organizationId)->get();
 
-        $kapasitas = $this->kapasitas($users, $date);
+        $kapasitas = $this->kapasitas($users, $date, $schedules, $holidays);
         [$beban, $backlog] = $this->workloadSpread($users, $date, $calculator, $schedules, $holidays);
         $realisasi = $this->realisasiBreakdown($users, $date, $calculator, $schedules, $holidays);
         $anomalies = $this->anomalies($users, $date);
@@ -106,15 +106,36 @@ class DashboardService
      * "capacity" statis). SATU query schedule untuk seluruh $users (semua user
      * satu organisasi pakai schedule organisasi yang sama).
      *
+     * F-180 (audit Boss 2026-08-27): $date yang BUKAN hari kerja (libur F-43
+     * ATAU di luar days_of_week) -> kapasitas 0 untuk SEMUA user, TERMASUK yang
+     * punya override manual (libur menang mutlak — REUSE
+     * BusinessHoursCalculator::isBusinessDay(), F-72/F-76: SATU sumber "hari
+     * kerja" yang sama dipakai workloadSpread()/realisasiBreakdown()). Root
+     * cause lama: method ini TIDAK PERNAH mengecek Holiday — di hari libur
+     * kapasitas tetap penuh sementara beban ~0, jadi idle_plan ~100% dan badge
+     * frontend (classifyWorkload()) salah tandai "Idle Tinggi" padahal memang
+     * tidak ada jadwal kerja hari itu (guard "kapasitas<=0 -> normal" di sana
+     * tidak pernah kepicu karena kapasitas dari sini tidak pernah nol).
+     *
+     * @param  Collection<int, WorkSchedule>  $schedules  SELURUH versi, dimuat SEKALI oleh forUsers() (F-85).
+     * @param  Collection<int, Holiday>  $holidays  SELURUH holiday organisasi, dimuat SEKALI oleh forUsers() (F-85).
      * @return array<int, int> keyed by user id
      */
-    public function kapasitas(Collection $users, Carbon $date): array
+    public function kapasitas(Collection $users, Carbon $date, Collection $schedules, Collection $holidays): array
     {
         if ($users->isEmpty()) {
             return [];
         }
 
         $organizationId = $users->first()->organization_id;
+
+        $calculator = new BusinessHoursCalculator;
+        $holidayDates = $holidays->map(fn (Holiday $h) => $h->date->toDateString())->flip();
+
+        if (! $calculator->isBusinessDay($date, $schedules, $holidayDates)) {
+            return $users->mapWithKeys(fn (User $u) => [$u->id => 0])->all();
+        }
+
         $schedule = WorkSchedule::active($organizationId, $date);
         $default = $schedule->daily_capacity_minutes ?? 0;
 

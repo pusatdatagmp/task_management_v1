@@ -9,7 +9,8 @@
  *               realisasi kerja (sama seperti akhir pekan).
  * DIPANGGIL   : routes/admin.php
  * MEMANGGIL   : Holiday
- * DATA MASUK  : Form tambah/ubah/hapus hari libur, admin only (permission workschedule.manage)
+ * DATA MASUK  : Form tambah/ubah/hapus hari libur, admin only (permission
+ *               holiday.manage — F-170, dulu workschedule.manage)
  * DATA KELUAR : Inertia page 'holidays/index' — daftar urut tanggal
  * RISIKO      : SUMBER : F-43/F-39 — ubah/hapus holiday MENGUBAH rumus realisasi
  *               untuk task yang BELUM di-approve (belum frozen). Task yang actual_minutes-nya

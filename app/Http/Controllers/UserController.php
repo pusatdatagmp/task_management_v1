@@ -12,11 +12,10 @@
  * MEMANGGIL   : User, Role, UserService (onboarding — RBAC §C)
  * DATA MASUK  : Form buat/edit user, form onboarding 3-mode (Fase E2)
  * DATA KELUAR : Inertia pages 'users/*', flash session `generatedPassword` (SEKALI)
- * RISIKO      : Permintaan Boss: index() SEKARANG juga mengirim `roles` (query
- *               IDENTIK RoleController::index(), gate SAMA can:user.manage) supaya
- *               halaman ini bisa menampilkan Pengguna & Peran 2-kolom sekaligus —
- *               nol permission baru, nol rumus baru, cuma 1 query tambahan tetap
- *               (bukan N+1, tidak tumbuh dgn jumlah user).
+ * RISIKO      : index() mengirim `users` (gate user.manage) DAN `roles` (gate
+ *               role.manage, F-170 — dulu SAMA can:user.manage) supaya halaman ini
+ *               bisa menampilkan Pengguna & Peran 2-kolom sekaligus — tiap kolom
+ *               null kalau permission-nya tidak dipegang (lihat index()).
  *               SUMBER : F-16 — TIDAK ADA destroy(). Nonaktifkan HANYA lewat
  *               toggleActive() (is_active=false), riwayat task/KPI milik user tetap
  *               utuh. Hard delete user akan menghapus jejak assignee/approver di
@@ -43,23 +42,39 @@ use Inertia\Response;
 
 class UserController extends Controller
 {
+    /**
+     * BUSINESS RULE: F-170 — rute ini SENGAJA cuma 'auth' (routes/admin.php),
+     * bukan can:xxx tunggal, karena halaman gabungan ini kini melayani DUA
+     * permission independen (user.manage utk kolom Pengguna, role.manage utk
+     * kolom Peran). Otorisasi union (SALAH SATU cukup) dilakukan INLINE di
+     * sini, lalu tiap kolom data HANYA dikirim kalau permission-nya dipegang —
+     * supaya role yang cuma punya role.manage tidak diam-diam menerima data
+     * users (dan sebaliknya) dari satu response yang sama.
+     */
     public function index(): Response
     {
-        $organizationId = Auth::user()->organization_id;
+        $user = Auth::user();
+        $organizationId = $user->organization_id;
+
+        abort_unless($user->can('user.manage') || $user->can('role.manage'), 403);
 
         return Inertia::render('users/index', [
             // F-172 (permintaan Boss): default 'paling atas = data terbaru' --
             // sebelumnya alfabetis nama.
-            'users' => User::with('role:id,role_name')
-                ->latest()
-                ->get(['id', 'name', 'email', 'role_id', 'employment_type', 'daily_capacity_minutes', 'is_active']),
+            'users' => $user->can('user.manage')
+                ? User::with('role:id,role_name')
+                    ->latest()
+                    ->get(['id', 'name', 'email', 'role_id', 'employment_type', 'daily_capacity_minutes', 'is_active'])
+                : null,
             // SUMBER (permintaan Boss): query IDENTIK RoleController::index() --
             // SATU sumber bentuk data untuk kolom "Peran" di halaman gabungan ini.
-            'roles' => Role::where('organization_id', $organizationId)
-                ->withCount('users')
-                ->orderByDesc('is_system')
-                ->orderBy('role_name')
-                ->get(['id', 'role_name', 'is_system', 'is_default']),
+            'roles' => $user->can('role.manage')
+                ? Role::where('organization_id', $organizationId)
+                    ->withCount('users')
+                    ->orderByDesc('is_system')
+                    ->orderBy('role_name')
+                    ->get(['id', 'role_name', 'is_system', 'is_default'])
+                : null,
             // SUMBER: F-92 — flash session diisi store() SEKALI, otomatis kosong
             // lagi di request BERIKUTNYA (perilaku bawaan Session::flash() Laravel)
             // -- itu sebabnya "tampilkan sekali" tidak butuh logic manual di sini.

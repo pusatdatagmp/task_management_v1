@@ -63,15 +63,55 @@ test('a role holding ONLY workschedule.manage can reach it, and nothing else', f
     $this->actingAs($stranger)->get(route('work-schedules.index'))->assertForbidden();
 });
 
-test('a role holding ONLY user.manage can reach it, and nothing else', function () {
+// F-78: diperbarui — F-170 memisah holiday.manage dari workschedule.manage
+// (dulu Hari Libur numpang gate Jam Kerja). Cakupan setara: pemegang
+// workschedule.manage TIDAK otomatis dapat Hari Libur, dan sebaliknya.
+test('F-170: holiday.manage is separate from workschedule.manage', function () {
+    $admin = User::factory()->admin()->create();
+    $holidayHolder = userWithOnlyPermission($admin->organization_id, 'holiday.manage');
+    $scheduleHolder = userWithOnlyPermission($admin->organization_id, 'workschedule.manage');
+
+    $this->actingAs($holidayHolder)->get(route('holidays.index'))->assertOk();
+    $this->actingAs($scheduleHolder)->get(route('holidays.index'))->assertForbidden();
+    $this->actingAs($holidayHolder)->get(route('work-schedules.index'))->assertForbidden();
+});
+
+// F-78: diperbarui — F-170 memisah user.manage (CRUD user) dari role.manage
+// (CRUD role). Sebelumnya SATU permission (user.manage) buka users.index DAN
+// roles.index sekaligus; sekarang users.create/roles.index masing-masing
+// permission SENDIRI. Cakupan setara + tambahan (lihat test union di bawah).
+test('a role holding ONLY user.manage can manage users but not roles (F-170)', function () {
     $admin = User::factory()->admin()->create();
     $holder = userWithOnlyPermission($admin->organization_id, 'user.manage');
     $stranger = userWithOnlyPermission($admin->organization_id, 'project.manage');
 
-    $this->actingAs($holder)->get(route('users.index'))->assertOk();
+    $this->actingAs($holder)->get(route('users.create'))->assertOk();
+    $this->actingAs($holder)->get(route('roles.index'))->assertForbidden();
+    $this->actingAs($stranger)->get(route('users.create'))->assertForbidden();
+});
+
+test('a role holding ONLY role.manage can manage roles but not users (F-170)', function () {
+    $admin = User::factory()->admin()->create();
+    $holder = userWithOnlyPermission($admin->organization_id, 'role.manage');
+    $stranger = userWithOnlyPermission($admin->organization_id, 'project.manage');
+
     $this->actingAs($holder)->get(route('roles.index'))->assertOk();
-    $this->actingAs($stranger)->get(route('users.index'))->assertForbidden();
+    $this->actingAs($holder)->get(route('users.create'))->assertForbidden();
     $this->actingAs($stranger)->get(route('roles.index'))->assertForbidden();
+});
+
+// F-170: halaman gabungan "Pengguna & Peran" (users.index) diterima SALAH SATU
+// dari user.manage/role.manage (union) — routes/admin.php sengaja cuma 'auth',
+// otorisasi union dilakukan inline di UserController::index().
+test('users.index (Pengguna & Peran) accepts EITHER user.manage OR role.manage, rejects neither (F-170)', function () {
+    $admin = User::factory()->admin()->create();
+    $userManageHolder = userWithOnlyPermission($admin->organization_id, 'user.manage');
+    $roleManageHolder = userWithOnlyPermission($admin->organization_id, 'role.manage');
+    $stranger = userWithOnlyPermission($admin->organization_id, 'project.manage');
+
+    $this->actingAs($userManageHolder)->get(route('users.index'))->assertOk();
+    $this->actingAs($roleManageHolder)->get(route('users.index'))->assertOk();
+    $this->actingAs($stranger)->get(route('users.index'))->assertForbidden();
 });
 
 test('a role holding ONLY project.manage can reach it, and nothing else', function () {
@@ -103,6 +143,18 @@ test('a role holding ONLY task.manage can reach it, and nothing else', function 
     $this->actingAs($stranger)->get(route('tasks.create', $project))->assertForbidden();
 });
 
+// F-78: baru — F-170 memisah tasktemplate.manage dari task.manage (dulu Tugas
+// Berulang numpang gate CRUD task biasa, F-46). Cakupan setara: pemegang
+// task.manage TIDAK otomatis dapat Tugas Berulang, dan sebaliknya.
+test('F-170: tasktemplate.manage is separate from task.manage', function () {
+    $admin = User::factory()->admin()->create();
+    $templateHolder = userWithOnlyPermission($admin->organization_id, 'tasktemplate.manage');
+    $taskHolder = userWithOnlyPermission($admin->organization_id, 'task.manage');
+
+    $this->actingAs($templateHolder)->get(route('task-templates.all'))->assertOk();
+    $this->actingAs($taskHolder)->get(route('task-templates.all'))->assertForbidden();
+});
+
 test('a role holding ONLY task.approve can reach it, and nothing else', function () {
     $admin = User::factory()->admin()->create();
     $project = Project::create(['organization_id' => $admin->organization_id, 'name' => 'P', 'owner_id' => $admin->id]);
@@ -132,6 +184,18 @@ test('a role holding ONLY task.approve can reach it, and nothing else', function
 
     $this->actingAs($stranger)->patch(route('tasks.reject', [$project, $task]), ['reason' => 'test'])
         ->assertForbidden();
+});
+
+// F-78: baru — F-170 memisah extension.approve dari task.approve (dulu
+// Perpanjangan numpang gate approve/reject task biasa, "F-28-setara"). Cakupan
+// setara: pemegang task.approve TIDAK otomatis dapat approve Perpanjangan.
+test('F-170: extension.approve is separate from task.approve', function () {
+    $admin = User::factory()->admin()->create();
+    $extensionHolder = userWithOnlyPermission($admin->organization_id, 'extension.approve');
+    $taskApproveHolder = userWithOnlyPermission($admin->organization_id, 'task.approve');
+
+    $this->actingAs($extensionHolder)->get(route('extensions.index'))->assertOk();
+    $this->actingAs($taskApproveHolder)->get(route('extensions.index'))->assertForbidden();
 });
 
 test('F-15: a role/user from another organization is 404, not 403 — never visible to guess', function () {

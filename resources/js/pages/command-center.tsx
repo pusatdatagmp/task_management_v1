@@ -61,15 +61,17 @@ import { Button } from '@/components/ui/button';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import { ChartContainer, ChartTooltip, ChartTooltipContent, type ChartConfig } from '@/components/ui/chart';
 import { Dialog, DialogContent, DialogHeader, DialogTitle } from '@/components/ui/dialog';
+import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
 import { Separator } from '@/components/ui/separator';
 import { Skeleton } from '@/components/ui/skeleton';
 import { formatLiveMinutes } from '@/hooks/use-live-counter';
-import { classifyWorkload } from '@/lib/dashboard-status';
-import { formatMenitPair, shiftMonth } from '@/lib/command-center-format';
-import { PRIORITY_QUADRANT_COLOR } from '@/lib/priority-quadrant';
 import AppLayout from '@/layouts/app-layout';
-import { type BreadcrumbItem } from '@/types';
-import { Head, Link, router } from '@inertiajs/react';
+import { formatMenitPair, shiftMonth } from '@/lib/command-center-format';
+import { classifyWorkload } from '@/lib/dashboard-status';
+import { PRIORITY_QUADRANT_COLOR } from '@/lib/priority-quadrant';
+import { SELECT_ALL_VALUE } from '@/lib/utils';
+import { type BreadcrumbItem, type SharedData } from '@/types';
+import { Head, Link, router, usePage } from '@inertiajs/react';
 import { AlertTriangle, Briefcase, CheckCircle2, ChevronLeft, ChevronRight, Clock, Eye, ListTodo, PlayCircle, Star, X } from 'lucide-react';
 import { useEffect, useState } from 'react';
 import { Bar, BarChart, CartesianGrid, PolarRadiusAxis, RadialBar, RadialBarChart, XAxis, YAxis } from 'recharts';
@@ -164,8 +166,23 @@ interface MemberCategoryRow {
     achievement_minutes: number;
 }
 
+// Permintaan Boss (2026-08-27): widget bar chart "Tag" -- total task per Tag
+// (DashboardController::tagsChart(), F-85), dipecah todo/selesai untuk tooltip
+// hover. `color` dikirim tapi TIDAK dipakai warnai bar (bar pakai 2 warna tetap
+// todo/selesai, SAMA TAG_CHART_CONFIG di bawah, supaya breakdown status
+// konsisten warna di semua tag -- warna custom tiap tag dipakai di tempat lain,
+// mis. badge tasks/index.tsx, bukan di sini).
+interface TagChartRow {
+    id: number;
+    name: string;
+    color: string;
+    total: number;
+    todo: number;
+    selesai: number;
+}
+
 // F-109/§12.5: SATU sumber bentuk filter, dikirim balik oleh backend (SELALU 19
-// key terisi, null kalau tak difilter) supaya <input>/<select> di bawah selalu
+// key terisi, null kalau tak difilter) supaya <input>/<Select> di bawah selalu
 // controlled (nol undefined->controlled warning React).
 interface Filters {
     donut_from: string | null;
@@ -208,6 +225,9 @@ interface CommandCenterProps {
     // Permintaan Boss: widget "Beban per Kategori" (stacked bar chart per
     // member) -- PAGE-ONLY (pola SAMA `team`, lihat KONTRAK memberCategoryChart()).
     member_category_chart: MemberCategoryRow[];
+    // Permintaan Boss (2026-08-27): widget bar chart "Tag" -- pola SAMA
+    // status_projects (kosong untuk viewer terbatas, lihat KONTRAK tagsChart()).
+    tags_chart: TagChartRow[];
     filters: Filters;
     filter_users: FilterUser[];
 }
@@ -275,9 +295,28 @@ const STATUS_BADGE: Record<string, { label: string; className: string }> = {
 // terlalu rendah (grey pudar, lime pucat) terhadap putih, jadi batang chart
 // sulit dibedakan dari card-nya sendiri.
 const MEMBER_CATEGORY_CONFIG = {
-    achievement_minutes: { label: 'Selesai', color: '#65a30d' }, // lime-600
-    todo_minutes: { label: 'To Do', color: '#2563eb' }, // blue-600
-    longgar_minutes: { label: 'Jatah Harian', color: '#76ABAE' }, // slate-500
+    achievement_minutes: {
+        label: 'Selesai',
+        color: '#65a30d',
+    },
+
+    todo_minutes: {
+        label: 'To Do',
+        color: '#2563eb',
+    },
+
+    longgar_minutes: {
+        label: 'Jatah Harian',
+        color: '#ffff',
+    },
+} satisfies ChartConfig;
+
+// Permintaan Boss (2026-08-27): widget "Tag" -- 2 kategori tetap (todo/selesai),
+// warna REUSE MEMBER_CATEGORY_CONFIG (biru=To Do, lime=Selesai) supaya makna
+// warna konsisten dengan widget "Beban per Kategori" di atas, bukan palet baru.
+const TAG_CHART_CONFIG = {
+    todo: { label: 'To Do', color: '#2563eb' }, // blue-600
+    selesai: { label: 'Selesai', color: '#65a30d' }, // lime-600
 } satisfies ChartConfig;
 
 // Permintaan Boss: card "Team Work Load" & modal "Detail & filter"-nya BUTUH
@@ -299,6 +338,23 @@ function sortTeamRows(rows: TeamRow[], sort: { key: TeamSortKey; dir: 'asc' | 'd
 
         return sort.dir === 'asc' ? cmp : -cmp;
     });
+}
+
+// Permintaan Boss (2026-08-27): sapaan waktu ("Selamat Pagi/Siang/Sore/Malam")
+// di banner welcome Command Center. F-69 -- WAJIB jam WIB, BUKAN jam lokal
+// browser (device traveler/salah setting zona waktu bisa beda dari WIB) --
+// Intl.DateTimeFormat dengan timeZone eksplisit 'Asia/Jakarta' menghindari itu
+// TANPA butuh data dari server (murni presentasi, F-109, nol query baru).
+function jakartaHourNow(): number {
+    return Number(new Intl.DateTimeFormat('en-GB', { hour: '2-digit', hour12: false, timeZone: 'Asia/Jakarta' }).format(new Date()));
+}
+
+function greetingForHour(hour: number): string {
+    if (hour < 11) return 'Pagi';
+    if (hour < 15) return 'Siang';
+    if (hour < 18) return 'Sore';
+
+    return 'Malam';
 }
 
 // SUMBER: proporsi lingkaran donut MURNI presentasi -- count per quadrant SUDAH
@@ -400,7 +456,7 @@ function RangeUserFilter({
             <input
                 type="date"
                 aria-label="Dari tanggal"
-                className="h-6 rounded-md border border-input bg-background px-1.5 text-xs"
+                className="border-input bg-background h-6 rounded-md border px-1.5 text-xs"
                 value={from ?? ''}
                 onChange={(e) => onChange({ from: e.target.value || null })}
             />
@@ -408,23 +464,26 @@ function RangeUserFilter({
             <input
                 type="date"
                 aria-label="Sampai tanggal"
-                className="h-6 rounded-md border border-input bg-background px-1.5 text-xs"
+                className="border-input bg-background h-6 rounded-md border px-1.5 text-xs"
                 value={to ?? ''}
                 onChange={(e) => onChange({ to: e.target.value || null })}
             />
-            <select
-                aria-label="Filter user"
-                className="h-6 rounded-md border border-input bg-background px-1.5 text-xs"
-                value={userId ?? ''}
-                onChange={(e) => onChange({ user_id: e.target.value ? Number(e.target.value) : null })}
+            <Select
+                value={userId === null ? SELECT_ALL_VALUE : String(userId)}
+                onValueChange={(value) => onChange({ user_id: value === SELECT_ALL_VALUE ? null : Number(value) })}
             >
-                <option value="">Semua user</option>
-                {users.map((u) => (
-                    <option key={u.id} value={u.id}>
-                        {u.name}
-                    </option>
-                ))}
-            </select>
+                <SelectTrigger aria-label="Filter user" className="h-6 w-auto rounded-md px-1.5 text-xs">
+                    <SelectValue />
+                </SelectTrigger>
+                <SelectContent>
+                    <SelectItem value={SELECT_ALL_VALUE}>Semua user</SelectItem>
+                    {users.map((u) => (
+                        <SelectItem key={u.id} value={String(u.id)}>
+                            {u.name}
+                        </SelectItem>
+                    ))}
+                </SelectContent>
+            </Select>
             {active && (
                 <button
                     type="button"
@@ -444,19 +503,22 @@ function RangeUserFilter({
 // DashboardController::heatmap()).
 function UserOnlyFilter({ userId, users, onChange }: { userId: number | null; users: FilterUser[]; onChange: (userId: number | null) => void }) {
     return (
-        <select
-            aria-label="Filter user heatmap"
-            className="h-6 rounded-md border border-input bg-background px-1.5 text-xs"
-            value={userId ?? ''}
-            onChange={(e) => onChange(e.target.value ? Number(e.target.value) : null)}
+        <Select
+            value={userId === null ? SELECT_ALL_VALUE : String(userId)}
+            onValueChange={(value) => onChange(value === SELECT_ALL_VALUE ? null : Number(value))}
         >
-            <option value="">Semua user</option>
-            {users.map((u) => (
-                <option key={u.id} value={u.id}>
-                    {u.name}
-                </option>
-            ))}
-        </select>
+            <SelectTrigger aria-label="Filter user heatmap" className="h-6 w-auto rounded-md px-1.5 text-xs">
+                <SelectValue />
+            </SelectTrigger>
+            <SelectContent>
+                <SelectItem value={SELECT_ALL_VALUE}>Semua user</SelectItem>
+                {users.map((u) => (
+                    <SelectItem key={u.id} value={String(u.id)}>
+                        {u.name}
+                    </SelectItem>
+                ))}
+            </SelectContent>
+        </Select>
     );
 }
 
@@ -492,9 +554,15 @@ export default function CommandCenter({
     recent_activity: recentActivity,
     team,
     member_category_chart: memberCategoryChart,
+    tags_chart: tagsChart,
     filters,
     filter_users: filterUsers,
 }: CommandCenterProps) {
+    // Permintaan Boss (2026-08-27): banner welcome + sapaan waktu pakai nama
+    // user login -- display_name (nickname kalau diisi, fallback name, F-38).
+    const { auth } = usePage<SharedData>().props;
+    const greeting = greetingForHour(jakartaHourNow());
+
     // A10: indikator loading ringan saat navigasi bulan heatmap (Inertia visit
     // penuh me-reload seluruh props) -- MURNI UI, tidak menyentuh data.
     const [navigating, setNavigating] = useState(false);
@@ -687,13 +755,45 @@ export default function CommandCenter({
             <Head title="Dashboard — Command Center" />
 
             <div className={`flex flex-col gap-4 p-4 transition-opacity ${navigating ? 'opacity-60' : ''}`}>
+                {/* Permintaan Boss (2026-08-27): banner welcome + sapaan waktu (WIB,
+                    F-69) -- murni presentasi, dihitung SEKALI saat render (nol interval,
+                    halaman ini biasa dibuka fresh via navigasi/reload, bukan SPA lama). */}
+                <div className="relative overflow-hidden rounded-2xl border border-primary/20 bg-gradient-to-r from-primary/15 via-primary/5 to-background p-6 shadow-sm backdrop-blur-sm transition-all hover:shadow-md">
+                    {/* Aksesori dekoratif lingkaran halus di latar belakang */}
+                    <div className="absolute -right-6 -top-6 h-24 w-24 rounded-full bg-primary/10 blur-xl" />
+
+                    <div className="relative z-10 flex flex-col sm:flex-row sm:items-center sm:justify-between gap-4">
+                        <div className="space-y-1">
+                            <h2 className="text-2xl font-bold tracking-tight text-foreground sm:text-3xl">
+                                Selamat {greeting}, <span className="bg-gradient-to-r from-primary to-primary/70 bg-clip-text text-transparent">{auth.user.display_name}</span>! 👋
+                            </h2>
+                            <p className="text-muted-foreground text-sm font-medium">
+                                Selamat datang kembali di Sistem Task Management.
+                            </p>
+                        </div>
+
+
+                    </div>
+                </div>
+
                 <div className="flex flex-wrap items-center justify-between gap-2">
                     <div>
                         <h1 className="text-xl font-semibold">Command Center</h1>
                         {/* Revisi 2026-08-06: penanda cakupan data di level halaman -- viewer
                             terbatas (project.viewAll) WAJIB langsung sadar semua angka di
                             bawah ini milik dirinya sendiri, bukan seluruh tim. */}
-                        {restrictedToSelf && <p className="text-xs text-muted-foreground">Menampilkan data milik kamu sendiri.</p>}
+                        {restrictedToSelf ? (
+                            <p className="text-xs text-muted-foreground flex items-center gap-1">
+                                <svg className="w-3.5 h-3.5 text-amber-500" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M13 16h-1v-4h-1m1-4h.01M21 12a9 9 0 11-18 0 9 9 0 0118 0z" />
+                                </svg>
+                                Menampilkan data milik Anda sendiri.
+                            </p>
+                        ) : (
+                            <p className="text-xs text-muted-foreground">
+                                Ringkasan performa & metrik task secara real-time.
+                            </p>
+                        )}
                     </div>
                     <div className="flex flex-wrap items-center gap-2">
                         {/* §12.5: tombol global periode -- terapkan ke 5 widget berbasis due_date sekaligus */}
@@ -711,7 +811,7 @@ export default function CommandCenter({
                                 <input
                                     type="date"
                                     aria-label="Rentang global dari"
-                                    className="h-6 rounded-md border border-input bg-background px-1.5 text-xs"
+                                    className="border-input bg-background h-6 rounded-md border px-1.5 text-xs"
                                     value={customFrom}
                                     onChange={(e) => setCustomFrom(e.target.value)}
                                 />
@@ -719,7 +819,7 @@ export default function CommandCenter({
                                 <input
                                     type="date"
                                     aria-label="Rentang global sampai"
-                                    className="h-6 rounded-md border border-input bg-background px-1.5 text-xs"
+                                    className="border-input bg-background h-6 rounded-md border px-1.5 text-xs"
                                     value={customTo}
                                     onChange={(e) => setCustomTo(e.target.value)}
                                 />
@@ -750,8 +850,8 @@ export default function CommandCenter({
                 <div className="grid grid-cols-2 gap-3 md:grid-cols-3 lg:grid-cols-6">
                     <Card>
                         <CardHeader className="flex flex-row items-center justify-between space-y-0 p-4 pb-2">
-                            <CardTitle className="text-sm font-medium text-muted-foreground">{scopeLabel('Beban Harian')}</CardTitle>
-                            <Clock className="h-4 w-4 text-muted-foreground" />
+                            <CardTitle className="text-muted-foreground text-sm font-medium">{scopeLabel('Beban Harian')}</CardTitle>
+                            <Clock className="text-muted-foreground h-4 w-4" />
                         </CardHeader>
                         <CardContent className="p-4 pt-0 text-2xl font-semibold">
                             {navigating ? (
@@ -763,8 +863,8 @@ export default function CommandCenter({
                     </Card>
                     <Card>
                         <CardHeader className="flex flex-row items-center justify-between space-y-0 p-4 pb-2">
-                            <CardTitle className="text-sm font-medium text-muted-foreground">{scopeLabel('To Do')}</CardTitle>
-                            <ListTodo className="h-4 w-4 text-muted-foreground" />
+                            <CardTitle className="text-muted-foreground text-sm font-medium">{scopeLabel('To Do')}</CardTitle>
+                            <ListTodo className="text-muted-foreground h-4 w-4" />
                         </CardHeader>
                         <CardContent className="p-4 pt-0 text-2xl font-semibold">
                             {navigating ? <Skeleton className="h-7 w-10" /> : cards.todo}
@@ -772,8 +872,8 @@ export default function CommandCenter({
                     </Card>
                     <Card>
                         <CardHeader className="flex flex-row items-center justify-between space-y-0 p-4 pb-2">
-                            <CardTitle className="text-sm font-medium text-muted-foreground">{scopeLabel('In Progress')}</CardTitle>
-                            <PlayCircle className="h-4 w-4 text-muted-foreground" />
+                            <CardTitle className="text-muted-foreground text-sm font-medium">{scopeLabel('In Progress')}</CardTitle>
+                            <PlayCircle className="text-muted-foreground h-4 w-4" />
                         </CardHeader>
                         <CardContent className="p-4 pt-0 text-2xl font-semibold">
                             {navigating ? <Skeleton className="h-7 w-10" /> : cards.in_progress}
@@ -781,8 +881,8 @@ export default function CommandCenter({
                     </Card>
                     <Card>
                         <CardHeader className="flex flex-row items-center justify-between space-y-0 p-4 pb-2">
-                            <CardTitle className="text-sm font-medium text-muted-foreground">{scopeLabel('Review')}</CardTitle>
-                            <Eye className="h-4 w-4 text-muted-foreground" />
+                            <CardTitle className="text-muted-foreground text-sm font-medium">{scopeLabel('Review')}</CardTitle>
+                            <Eye className="text-muted-foreground h-4 w-4" />
                         </CardHeader>
                         <CardContent className="p-4 pt-0 text-2xl font-semibold">
                             {navigating ? <Skeleton className="h-7 w-10" /> : cards.review}
@@ -790,8 +890,8 @@ export default function CommandCenter({
                     </Card>
                     <Card>
                         <CardHeader className="flex flex-row items-center justify-between space-y-0 p-4 pb-2">
-                            <CardTitle className="text-sm font-medium text-muted-foreground">{scopeLabel('Selesai')}</CardTitle>
-                            <CheckCircle2 className="h-4 w-4 text-muted-foreground" />
+                            <CardTitle className="text-muted-foreground text-sm font-medium">{scopeLabel('Selesai')}</CardTitle>
+                            <CheckCircle2 className="text-muted-foreground h-4 w-4" />
                         </CardHeader>
                         <CardContent className="p-4 pt-0 text-2xl font-semibold">
                             {navigating ? <Skeleton className="h-7 w-10" /> : cards.selesai}
@@ -799,8 +899,8 @@ export default function CommandCenter({
                     </Card>
                     <Card>
                         <CardHeader className="flex flex-row items-center justify-between space-y-0 p-4 pb-2">
-                            <CardTitle className="text-sm font-medium text-muted-foreground">{scopeLabel('Overdue')}</CardTitle>
-                            <AlertTriangle className="h-4 w-4 text-muted-foreground" />
+                            <CardTitle className="text-muted-foreground text-sm font-medium">{scopeLabel('Overdue')}</CardTitle>
+                            <AlertTriangle className="text-muted-foreground h-4 w-4" />
                         </CardHeader>
                         <CardContent className="p-4 pt-0 text-2xl font-semibold">
                             {navigating ? <Skeleton className="h-7 w-10" /> : cards.overdue}
@@ -826,7 +926,7 @@ export default function CommandCenter({
                             {navigating ? (
                                 <Skeleton className="h-64 w-full" />
                             ) : memberCategoryChartData.length === 0 ? (
-                                <p className="text-sm text-muted-foreground">Tidak ada user aktif untuk ditampilkan.</p>
+                                <p className="text-muted-foreground text-sm">Tidak ada user aktif untuk ditampilkan.</p>
                             ) : (
                                 <ChartContainer config={MEMBER_CATEGORY_CONFIG} className="aspect-auto h-64 w-full">
                                     <BarChart data={pagedMemberCategoryChartData} margin={{ left: 4, right: 4 }}>
@@ -880,10 +980,10 @@ export default function CommandCenter({
                                                                     className="h-2.5 w-2.5 shrink-0 rounded-[2px]"
                                                                     style={{ backgroundColor: MEMBER_CATEGORY_CONFIG[key].color }}
                                                                 />
-                                                                <span className="flex-1 text-muted-foreground">
+                                                                <span className="text-muted-foreground flex-1">
                                                                     {MEMBER_CATEGORY_CONFIG[key].label}
                                                                 </span>
-                                                                <span className="font-mono font-medium tabular-nums text-foreground">
+                                                                <span className="text-foreground font-mono font-medium tabular-nums">
                                                                     {formatLiveMinutes(value as number)}
                                                                 </span>
                                                             </div>
@@ -905,7 +1005,7 @@ export default function CommandCenter({
                             tombol Prev/Next SAMA navigasi bulan heatmap di bawah (ChevronLeft/
                             ChevronRight), murni geser slice tampilan, nol fetch/query baru. */}
                             {!navigating && chartPageCount > 1 && (
-                                <div className="mt-3 flex items-center justify-center gap-3 text-xs text-muted-foreground">
+                                <div className="text-muted-foreground mt-3 flex items-center justify-center gap-3 text-xs">
                                     <Button
                                         type="button"
                                         variant="outline"
@@ -932,7 +1032,7 @@ export default function CommandCenter({
                             {/* Legend manual (bukan ChartLegend/recharts) -- 3 kategori TETAP
                             (bukan dari payload dinamis), pola sederhana SAMA legend heatmap
                             di bawah (span warna + label). */}
-                            <div className="mt-3 flex flex-wrap items-center gap-4 text-xs text-muted-foreground">
+                            <div className="text-muted-foreground mt-3 flex flex-wrap items-center gap-4 text-xs">
                                 {(Object.keys(MEMBER_CATEGORY_CONFIG) as (keyof typeof MEMBER_CATEGORY_CONFIG)[]).map((key) => (
                                     <div key={key} className="flex items-center gap-1.5">
                                         <span className="h-2.5 w-2.5 rounded-[2px]" style={{ backgroundColor: MEMBER_CATEGORY_CONFIG[key].color }} />
@@ -978,14 +1078,14 @@ export default function CommandCenter({
                             chart + border-l di baris legend) yang keliatan patah/tidak
                             menyambung -- sekarang murni SATU elemen garis, nol jahitan. */}
                             <div className="grid grid-cols-2 gap-10 sm:grid-cols-[1fr_auto_1fr]">
-                                <div className="flex flex-col items-center gap-4 mt-10">
+                                <div className="mt-10 flex flex-col items-center gap-4">
                                     {navigating ? (
                                         <Skeleton className="h-60 w-60 shrink-0 rounded-full" />
                                     ) : donutChart.total === 0 ? (
-                                        <p className="text-sm text-muted-foreground">Belum ada task untuk ditandai prioritas.</p>
+                                        <p className="text-muted-foreground text-sm">Belum ada task untuk ditandai prioritas.</p>
                                     ) : (
                                         <div className="relative h-40 w-40 shrink-0 rounded-full" style={{ background: donutChart.gradient }}>
-                                            <div className="absolute inset-4 flex items-center justify-center rounded-full bg-card text-base font-semibold">
+                                            <div className="bg-card absolute inset-4 flex items-center justify-center rounded-full text-base font-semibold">
                                                 {donutChart.total}
                                             </div>
                                         </div>
@@ -999,12 +1099,15 @@ export default function CommandCenter({
                                         </div>
                                     ) : (
                                         donutChart.total > 0 && (
-                                            <div className="w-full text-xs mt-12">
-                                                <p className="mb-1.5 font-semibold text-foreground">Prioritas</p>
+                                            <div className="mt-12 w-full text-xs w-full text-xs space-y-2 border-t pt-3">
+                                                <p className="text-foreground mb-1.5 font-semibold">Prioritas</p>
                                                 <ul className="grid grid-cols-2 gap-x-4 gap-y-1.5">
                                                     {(['p1', 'p2', 'p3', 'p4', 'none'] as const).map((key) => (
                                                         <li key={key} className="flex items-center gap-1.5">
-                                                            <span className="h-2.5 w-2.5 rounded-full" style={{ backgroundColor: PRIORITY_COLOR[key] }} />
+                                                            <span
+                                                                className="h-2.5 w-2.5 rounded-full"
+                                                                style={{ backgroundColor: PRIORITY_COLOR[key] }}
+                                                            />
                                                             <span className="text-muted-foreground">{PRIORITY_LABEL[key]}</span>
                                                             <span className="font-medium">{donut[key]}</span>
                                                         </li>
@@ -1017,82 +1120,93 @@ export default function CommandCenter({
 
                                 <Separator orientation="vertical" className="hidden sm:block" />
 
-                                <div className="flex flex-col items-center gap-4">
-                                    {/* Permintaan Boss (2026-08-22): Simple Radial Bar Chart (recharts)
-                                    -- ringkasan 3 kategori "Beban per Kategori" DIJUMLAHKAN se-tim
-                                    (bukan per-member seperti chart di atas). Data & warna REUSE
-                                    memberCategoryChartData/MEMBER_CATEGORY_CONFIG (F-109, nol
-                                    fetch/config baru). Ukuran h-56 w-56 -- SENGAJA lebih besar dari
-                                    donut Prioritas (permintaan Boss "perbesar lagi chart beban
-                                    tim"), barSize 16 supaya ketebalan cincin proporsional. */}
+                                <div className="flex flex-col items-center gap-4 min-h-[320px] justify-center">
                                     {navigating ? (
-                                        <Skeleton className="h-56 w-56 shrink-0 rounded-full" />
+                                        // Unified Skeleton State (Menghindari Layout Shift)
+                                        <div className="flex flex-col items-center gap-4 w-full">
+                                            <Skeleton className="h-60 w-60 shrink-0 rounded-full" />
+                                            <div className="flex w-full flex-wrap justify-center gap-3 pt-2">
+                                                {Array.from({ length: 3 }).map((_, i) => (
+                                                    <Skeleton key={i} className="h-4 w-28 rounded-md" />
+                                                ))}
+                                            </div>
+                                        </div>
                                     ) : teamCategoryTotals.kapasitas === 0 ? (
-                                        <p className="text-sm text-muted-foreground">Tidak ada user aktif untuk ditampilkan.</p>
-                                    ) : (
-                                        <ChartContainer config={MEMBER_CATEGORY_CONFIG} className="aspect-square h-60 w-60 shrink-0">
-                                            <RadialBarChart
-                                                data={teamCategoryRadialData}
-                                                innerRadius="30%"
-                                                outerRadius="100%"
-                                                startAngle={90}
-                                                endAngle={-270}
-                                                barSize={16}
-                                                margin={{ top: 0, right: 0, bottom: 0, left: 0 }}
-                                            >
-                                                <PolarRadiusAxis type="number" domain={[0, teamCategoryTotals.kapasitas]} tick={false} axisLine={false} />
-                                                <RadialBar
-                                                    dataKey="value"
-                                                    cornerRadius={4}
-                                                    /* Diubah dari boolean 'background' ke objek warna */
-                                                    background={{ fill: "#f0f" }} // atau warna hex seperti "#ffff" / "rgba(255,255,255,0.1)"
-                                                />
-                                                <ChartTooltip
-                                                    content={
-                                                        <ChartTooltipContent
-                                                            hideLabel
-                                                            formatter={(value, _name, item) => {
-                                                                const row = item.payload as { key: keyof typeof MEMBER_CATEGORY_CONFIG };
-                                                                const cfg = MEMBER_CATEGORY_CONFIG[row.key];
-
-                                                                return (
-                                                                    <div className="flex w-full items-center gap-2">
-                                                                        <span className="h-2.5 w-2.5 shrink-0 rounded-[2px]" style={{ backgroundColor: cfg.color }} />
-                                                                        <span className="flex-1 text-muted-foreground">{cfg.label}</span>
-                                                                        <span className="font-mono font-medium tabular-nums text-foreground">
-                                                                            {formatLiveMinutes(value as number)}
-                                                                        </span>
-                                                                    </div>
-                                                                );
-                                                            }}
-                                                        />
-                                                    }
-                                                />
-                                            </RadialBarChart>
-                                        </ChartContainer>
-                                    )}
-
-                                    {navigating ? (
-                                        <div className="flex w-full flex-col gap-2">
-                                            {Array.from({ length: 3 }).map((_, i) => (
-                                                <Skeleton key={i} className="h-3 w-32" />
-                                            ))}
+                                        // Empty State Handling dengan container proporsional
+                                        <div className="flex flex-col items-center justify-center p-6 text-center text-muted-foreground h-60">
+                                            <p className="text-sm font-medium">Tidak ada data aktif untuk ditampilkan.</p>
                                         </div>
                                     ) : (
-                                        teamCategoryTotals.kapasitas > 0 && (
-                                            <div className="w-full text-xs">
-                                                <p className="mb-1.5 font-semibold text-foreground">Beban Tim</p>
-                                                <div className="flex flex-wrap gap-x-4 gap-y-1.5">
+                                        // Main Chart & Legend Content
+                                        <>
+                                            <ChartContainer config={MEMBER_CATEGORY_CONFIG} className="aspect-square h-60 w-60 shrink-0">
+                                                <RadialBarChart
+                                                    data={teamCategoryRadialData}
+                                                    innerRadius="30%"
+                                                    outerRadius="100%"
+                                                    startAngle={90}
+                                                    endAngle={-270}
+                                                    barSize={16}
+                                                    margin={{ top: 0, right: 0, bottom: 0, left: 0 }}
+                                                >
+                                                    <PolarRadiusAxis
+                                                        type="number"
+                                                        domain={[0, teamCategoryTotals.kapasitas || 1]} // Fallback ke 1 untuk cegah NaN
+                                                        tick={false}
+                                                        axisLine={false}
+                                                    />
+                                                    <RadialBar
+                                                        dataKey="value"
+                                                        cornerRadius={4}
+                                                        background={{ fill: 'var(--border)' }}
+                                                    />
+                                                    <ChartTooltip
+                                                        content={
+                                                            <ChartTooltipContent
+                                                                hideLabel
+                                                                formatter={(value, _name, item) => {
+                                                                    const row = item.payload as { key: keyof typeof MEMBER_CATEGORY_CONFIG };
+                                                                    const cfg = MEMBER_CATEGORY_CONFIG[row.key];
+                                                                    if (!cfg) return null;
+
+                                                                    return (
+                                                                        <div className="flex w-full items-center gap-2">
+                                                                            <span
+                                                                                className="h-2.5 w-2.5 shrink-0 rounded-[2px]"
+                                                                                style={{ backgroundColor: cfg.color }}
+                                                                            />
+                                                                            <span className="text-muted-foreground flex-1">{cfg.label}</span>
+                                                                            <span className="text-foreground font-mono font-medium tabular-nums">
+                                                                                {formatLiveMinutes(value as number)}
+                                                                            </span>
+                                                                        </div>
+                                                                    );
+                                                                }}
+                                                            />
+                                                        }
+                                                    />
+                                                </RadialBarChart>
+                                            </ChartContainer>
+
+                                            {/* Legend Container */}
+                                            <div className="w-full text-xs space-y-2 border-t pt-3">
+                                                <p className="text-foreground font-semibold">Beban Tim</p>
+                                                <div className="flex flex-wrap items-center justify-start gap-x-4 gap-y-2">
                                                     {(Object.keys(MEMBER_CATEGORY_CONFIG) as (keyof typeof MEMBER_CATEGORY_CONFIG)[]).map((key) => (
-                                                        <div key={key} className="flex items-center gap-1.5">
-                                                            <span className="h-2.5 w-2.5 rounded-[2px]" style={{ backgroundColor: MEMBER_CATEGORY_CONFIG[key].color }} />
-                                                            <span className="text-muted-foreground">{MEMBER_CATEGORY_CONFIG[key].label}</span>
-                                                            <span className="font-medium">{formatLiveMinutes(teamCategoryTotals[key])}</span>
+                                                        <div key={key} className="flex items-center gap-1.5 bg-muted/30 px-2 py-1 rounded-md border border-border/40">
+                                                            <span
+                                                                className="h-2.5 w-2.5 rounded-[2px] shrink-0"
+                                                                style={{ backgroundColor: MEMBER_CATEGORY_CONFIG[key].color }}
+                                                            />
+                                                            <span className="text-muted-foreground">{MEMBER_CATEGORY_CONFIG[key].label}:</span>
+                                                            <span className="font-mono font-medium text-foreground tabular-nums">
+                                                                {formatLiveMinutes(teamCategoryTotals[key] || 0)}
+                                                            </span>
                                                         </div>
                                                     ))}
                                                 </div>
                                             </div>
-                                        )
+                                        </>
                                     )}
                                 </div>
                             </div>
@@ -1128,7 +1242,7 @@ export default function CommandCenter({
                                     ))}
                                 </div>
                             ) : progressTotal === 0 ? (
-                                <p className="text-sm text-muted-foreground">Belum ada task.</p>
+                                <p className="text-muted-foreground text-sm">Belum ada task.</p>
                             ) : (
                                 <div className="flex flex-col gap-2">
                                     {[
@@ -1142,7 +1256,7 @@ export default function CommandCenter({
                                                 <span>{row.label}</span>
                                                 <span className="text-muted-foreground">{row.value}</span>
                                             </div>
-                                            <div className="h-2 w-full overflow-hidden rounded-full bg-muted">
+                                            <div className="bg-muted h-2 w-full overflow-hidden rounded-full">
                                                 <div
                                                     className={`h-full rounded-full ${row.className}`}
                                                     style={{ width: `${(row.value / progressTotal) * 100}%` }}
@@ -1156,6 +1270,80 @@ export default function CommandCenter({
                     </Card>
                 </div>
 
+                {/* Permintaan Boss (2026-08-27): widget bar chart "Tag" -- sumbu X nama
+                Tag, sumbu Y total task per Tag, hover breakdown todo/selesai (stacked
+                bar, pola SAMA "Beban per Kategori" di atas, cuma 2 kategori bukan 3 --
+                lihat KONTRAK DashboardController::tagsChart()). Kosong untuk viewer
+                terbatas (restricted_to_self, pola SAMA status_projects). */}
+                <div className="grid grid-cols-1 gap-4">
+                    <Card>
+                        <CardHeader>
+                            <CardTitle className="text-base">{scopeLabel('Tag')}</CardTitle>
+                        </CardHeader>
+                        <CardContent>
+                            {navigating ? (
+                                <Skeleton className="h-64 w-full" />
+                            ) : tagsChart.length === 0 ? (
+                                <p className="text-muted-foreground text-sm">Belum ada tag — buat dulu di Pengaturan &gt; Setelan.</p>
+                            ) : (
+                                <ChartContainer config={TAG_CHART_CONFIG} className="aspect-auto h-64 w-full">
+                                    <BarChart data={tagsChart} margin={{ left: 4, right: 4 }}>
+                                        {/* Permintaan Boss (2026-08-27): warna gradasi -- pola SAMA
+                                        "Beban per Kategori" (linearGradient vertikal, terang di atas
+                                        ke warna dasar TAG_CHART_CONFIG di bawah). id di-prefix "tagc-"
+                                        supaya tidak tabrakan sama id "mcat-*" di widget lain. */}
+                                        <defs>
+                                            <linearGradient id="tagc-selesai" x1="0" y1="0" x2="0" y2="1">
+                                                <stop offset="0%" stopColor="#bef264" />
+                                                <stop offset="100%" stopColor="#65a30d" />
+                                            </linearGradient>
+                                            <linearGradient id="tagc-todo" x1="0" y1="0" x2="0" y2="1">
+                                                <stop offset="0%" stopColor="#93c5fd" />
+                                                <stop offset="100%" stopColor="#2563eb" />
+                                            </linearGradient>
+                                        </defs>
+                                        <CartesianGrid vertical={false} />
+                                        <XAxis dataKey="name" tickLine={false} axisLine={false} tickMargin={8} />
+                                        <YAxis tickLine={false} axisLine={false} width={40} allowDecimals={false} />
+                                        <ChartTooltip
+                                            content={
+                                                <ChartTooltipContent
+                                                    formatter={(value, name) => {
+                                                        const key = name as keyof typeof TAG_CHART_CONFIG;
+
+                                                        return (
+                                                            <div className="flex w-full items-center gap-2">
+                                                                <span
+                                                                    className="h-2.5 w-2.5 shrink-0 rounded-[2px]"
+                                                                    style={{ backgroundColor: TAG_CHART_CONFIG[key].color }}
+                                                                />
+                                                                <span className="text-muted-foreground flex-1">{TAG_CHART_CONFIG[key].label}</span>
+                                                                <span className="text-foreground font-mono font-medium tabular-nums">
+                                                                    {value as number}
+                                                                </span>
+                                                            </div>
+                                                        );
+                                                    }}
+                                                />
+                                            }
+                                        />
+                                        <Bar dataKey="selesai" stackId="tag" fill="url(#tagc-selesai)" />
+                                        <Bar dataKey="todo" stackId="tag" fill="url(#tagc-todo)" radius={[4, 4, 0, 0]} />
+                                    </BarChart>
+                                </ChartContainer>
+                            )}
+                            <div className="text-muted-foreground mt-3 flex flex-wrap items-center gap-4 text-xs">
+                                {(Object.keys(TAG_CHART_CONFIG) as (keyof typeof TAG_CHART_CONFIG)[]).map((key) => (
+                                    <div key={key} className="flex items-center gap-1.5">
+                                        <span className="h-2.5 w-2.5 rounded-[2px]" style={{ backgroundColor: TAG_CHART_CONFIG[key].color }} />
+                                        <span>{TAG_CHART_CONFIG[key].label}</span>
+                                    </div>
+                                ))}
+                            </div>
+                        </CardContent>
+                    </Card>
+                </div>
+
                 <div className="grid grid-cols-1 gap-4">
                     {/* F-52/F-121: dashboard 3-angka lama DIPERTAHANKAN sebagai section "Beban
         Tim" -- Permintaan Boss: top-5 idle terbanyak + sort per kolom + modal
@@ -1164,7 +1352,9 @@ export default function CommandCenter({
         HANYA berisi kartu ini, jadi tanpa lg:grid-cols-2/col-span. */}
                     <Card>
                         <CardHeader className="flex flex-row items-center justify-between space-y-0">
-                            <CardTitle className="text-base">{scopeLabel('Team Work Load')} — {team.date}</CardTitle>
+                            <CardTitle className="text-base">
+                                {scopeLabel('Team Work Load')} — {team.date}
+                            </CardTitle>
                             <Button type="button" variant="outline" size="sm" onClick={() => setWorkloadModalOpen(true)}>
                                 Detail & filter →
                             </Button>
@@ -1172,7 +1362,7 @@ export default function CommandCenter({
                         <CardContent className="overflow-x-auto p-0">
                             <table className="w-full text-left text-sm">
                                 <thead>
-                                    <tr className="border-b bg-muted/50 text-muted-foreground">
+                                    <tr className="bg-muted/50 text-muted-foreground border-b">
                                         {(
                                             [
                                                 ['name', 'Tim'],
@@ -1183,7 +1373,7 @@ export default function CommandCenter({
                                             <th key={key} className="p-3">
                                                 <button
                                                     type="button"
-                                                    className="flex items-center gap-1 font-medium hover:text-foreground"
+                                                    className="hover:text-foreground flex items-center gap-1 font-medium"
                                                     onClick={() => toggleTeamSort(key)}
                                                 >
                                                     {label}
@@ -1203,14 +1393,25 @@ export default function CommandCenter({
                                                 const badge = STATUS_BADGE[status];
 
                                                 return (
-                                                    <tr key={row.id} className="border-b last:border-0 align-top">
+                                                    <tr key={row.id} className="border-b align-top last:border-0">
                                                         <td className="p-3 font-medium">{row.name}</td>
-                                                        <td className="p-3">
+                                                        {/* F-179 (audit Boss 2026-08-27): Status badge DIHITUNG dari
+                                                            idle_plan (beban/rencana, F-52), TAPI angka yang tampil di
+                                                            kolom ini idle_real (realisasi) -- dua metrik beda sumber,
+                                                            terasa kontradiktif kalau cuma satu yang kelihatan. Tooltip
+                                                            + pemisahan label REUSE pola yang SUDAH benar di
+                                                            pages/dashboard.tsx:161-170 (bukan ubah rumus/basis badge). */}
+                                                        <td className="p-3" title="Realisasi aktual (efisiensi/KPI) -- bukan dasar status di kolom Status">
                                                             {formatLiveMinutes(row.kapasitas - row.idle_real)} (idle{' '}
                                                             {formatLiveMinutes(row.idle_real)})
                                                         </td>
                                                         <td className="p-3">
-                                                            {badge.label && <Badge className={badge.className}>{badge.label}</Badge>}
+                                                            <div className="flex flex-col gap-1">
+                                                                {badge.label && <Badge className={badge.className}>{badge.label}</Badge>}
+                                                                <span className="text-muted-foreground text-xs whitespace-nowrap">
+                                                                    beban {formatLiveMinutes(row.beban)} (idle plan {formatLiveMinutes(row.idle_plan)})
+                                                                </span>
+                                                            </div>
                                                         </td>
                                                     </tr>
                                                 );
@@ -1218,7 +1419,7 @@ export default function CommandCenter({
 
                                             {sortedTeamTop5.length === 0 && (
                                                 <tr>
-                                                    <td colSpan={3} className="p-6 text-center text-muted-foreground">
+                                                    <td colSpan={3} className="text-muted-foreground p-6 text-center">
                                                         Tidak ada user aktif untuk ditampilkan.
                                                     </td>
                                                 </tr>
@@ -1246,30 +1447,34 @@ export default function CommandCenter({
                                         type="date"
                                         value={team.date}
                                         onChange={(e) => applyTeamFilter({ date: e.target.value })}
-                                        className="h-8 rounded-md border border-input bg-background px-2"
+                                        className="border-input bg-background h-8 rounded-md border px-2"
                                     />
                                 </label>
                                 <label className="flex flex-col gap-1">
                                     <span className="font-medium">User</span>
-                                    <select
-                                        value={team.selected_user_id ?? ''}
-                                        onChange={(e) => applyTeamFilter({ user_id: e.target.value ? Number(e.target.value) : null })}
-                                        className="h-8 rounded-md border border-input bg-background px-2"
+                                    <Select
+                                        value={team.selected_user_id === null ? SELECT_ALL_VALUE : String(team.selected_user_id)}
+                                        onValueChange={(value) => applyTeamFilter({ user_id: value === SELECT_ALL_VALUE ? null : Number(value) })}
                                     >
-                                        <option value="">Semua user</option>
-                                        {filterUsers.map((u) => (
-                                            <option key={u.id} value={u.id}>
-                                                {u.name}
-                                            </option>
-                                        ))}
-                                    </select>
+                                        <SelectTrigger className="h-8">
+                                            <SelectValue />
+                                        </SelectTrigger>
+                                        <SelectContent>
+                                            <SelectItem value={SELECT_ALL_VALUE}>Semua user</SelectItem>
+                                            {filterUsers.map((u) => (
+                                                <SelectItem key={u.id} value={String(u.id)}>
+                                                    {u.name}
+                                                </SelectItem>
+                                            ))}
+                                        </SelectContent>
+                                    </Select>
                                 </label>
                             </div>
 
                             <div className="overflow-x-auto rounded-lg border">
                                 <table className="w-full text-left text-sm">
                                     <thead>
-                                        <tr className="border-b bg-muted/50 text-muted-foreground">
+                                        <tr className="bg-muted/50 text-muted-foreground border-b">
                                             {(
                                                 [
                                                     ['name', 'Tim'],
@@ -1280,7 +1485,7 @@ export default function CommandCenter({
                                                 <th key={key} className="p-3">
                                                     <button
                                                         type="button"
-                                                        className="flex items-center gap-1 font-medium hover:text-foreground"
+                                                        className="hover:text-foreground flex items-center gap-1 font-medium"
                                                         onClick={() => toggleTeamModalSort(key)}
                                                     >
                                                         {label}
@@ -1300,14 +1505,23 @@ export default function CommandCenter({
                                                     const badge = STATUS_BADGE[status];
 
                                                     return (
-                                                        <tr key={row.id} className="border-b last:border-0 align-top">
+                                                        <tr key={row.id} className="border-b align-top last:border-0">
                                                             <td className="p-3 font-medium">{row.name}</td>
-                                                            <td className="p-3">
+                                                            {/* F-179: sama seperti tabel Top5 di atas -- badge basis
+                                                                idle_plan, kolom ini idle_real. Tooltip biar tidak
+                                                                terasa kontradiktif (REUSE pola dashboard.tsx). */}
+                                                            <td className="p-3" title="Realisasi aktual (efisiensi/KPI) -- bukan dasar status di kolom Status">
                                                                 {formatLiveMinutes(row.kapasitas - row.idle_real)} (idle{' '}
                                                                 {formatLiveMinutes(row.idle_real)})
                                                             </td>
                                                             <td className="p-3">
-                                                                {badge.label && <Badge className={badge.className}>{badge.label}</Badge>}
+                                                                <div className="flex flex-col gap-1">
+                                                                    {badge.label && <Badge className={badge.className}>{badge.label}</Badge>}
+                                                                    <span className="text-muted-foreground text-xs whitespace-nowrap">
+                                                                        beban {formatLiveMinutes(row.beban)} (idle plan{' '}
+                                                                        {formatLiveMinutes(row.idle_plan)})
+                                                                    </span>
+                                                                </div>
                                                             </td>
                                                         </tr>
                                                     );
@@ -1315,7 +1529,7 @@ export default function CommandCenter({
 
                                                 {sortedTeamAll.length === 0 && (
                                                     <tr>
-                                                        <td colSpan={3} className="p-6 text-center text-muted-foreground">
+                                                        <td colSpan={3} className="text-muted-foreground p-6 text-center">
                                                             Tidak ada user aktif untuk ditampilkan.
                                                         </td>
                                                     </tr>
@@ -1327,16 +1541,21 @@ export default function CommandCenter({
                             </div>
                         </DialogContent>
                     </Dialog>
-
                 </div>
 
                 <div className="grid grid-cols-1 gap-4 lg:grid-cols-2">
                     {/* A6: master calendar heatmap */}
                     <Card>
                         <CardHeader className="flex flex-row flex-wrap items-center justify-between gap-2 space-y-0">
-                            <CardTitle className="text-base">{scopeLabel('Kalender Beban')} — {heatmap.month}</CardTitle>
+                            <CardTitle className="text-base">
+                                {scopeLabel('Kalender Beban')} — {heatmap.month}
+                            </CardTitle>
                             <div className="flex flex-wrap items-center gap-2">
-                                <UserOnlyFilter userId={filters.heatmap_user_id} users={filterUsers} onChange={(userId) => applyFilters({ heatmap_user_id: userId })} />
+                                <UserOnlyFilter
+                                    userId={filters.heatmap_user_id}
+                                    users={filterUsers}
+                                    onChange={(userId) => applyFilters({ heatmap_user_id: userId })}
+                                />
                                 <Button variant="outline" size="sm" onClick={() => goToMonth(shiftMonth(heatmap.month, -1))} disabled={navigating}>
                                     <ChevronLeft className="h-4 w-4" />
                                 </Button>
@@ -1348,7 +1567,7 @@ export default function CommandCenter({
 
                         <CardContent>
                             {/* Header Hari */}
-                            <div className="mb-2 grid grid-cols-7 gap-1 text-center text-xs font-semibold text-muted-foreground">
+                            <div className="text-muted-foreground mb-2 grid grid-cols-7 gap-1 text-center text-xs font-semibold">
                                 {['SEN', 'SEL', 'RAB', 'KAM', 'JUM', 'SAB', 'MIN'].map((d) => (
                                     <div key={d}>{d}</div>
                                 ))}
@@ -1364,42 +1583,37 @@ export default function CommandCenter({
                                 {navigating
                                     ? Array.from({ length: 35 }).map((_, i) => <Skeleton key={i} className="aspect-square rounded-lg" />)
                                     : null}
-                                {!navigating && Array.from({ length: leadingBlank }).map((_, i) => (
-                                    <div key={`blank-${i}`} />
-                                ))}
-                                {!navigating && heatmap.days.map((day) => {
-                                    // F-131: hari LEWAT (level null) -- NETRAL, abu-abu
-                                    const cellClass = day.level ? HEATMAP_LEVEL_CLASS[day.level] : 'bg-muted text-muted-foreground';
+                                {!navigating && Array.from({ length: leadingBlank }).map((_, i) => <div key={`blank-${i}`} />)}
+                                {!navigating &&
+                                    heatmap.days.map((day) => {
+                                        // F-131: hari LEWAT (level null) -- NETRAL, abu-abu
+                                        const cellClass = day.level ? HEATMAP_LEVEL_CLASS[day.level] : 'bg-muted text-muted-foreground';
 
-                                    return (
-                                        <button
-                                            type="button"
-                                            key={day.date}
-                                            onClick={() => openDayModal(day)}
-                                            /* flex-col & p-1 memastikan posisi angka dan icon muat di dalam kotak secara vertikal */
-                                            className={`flex aspect-square flex-col items-center justify-between p-1.5 rounded-lg text-xs font-semibold hover:bg-primary/30 transition-all duration-200 hover:-translate-y-1 hover:shadow cursor-pointer ${cellClass}`}
-                                            title={day.beban === null ? 'Hari lewat (netral)' : `Beban tim: ${formatLiveMinutes(day.beban)}`}
-                                        >
-                                            {/* Angka Tanggal di Bagian Atas/Tengah Kotak */}
-                                            <span>{new Date(`${day.date}T00:00:00`).getDate()}</span>
+                                        return (
+                                            <button
+                                                type="button"
+                                                key={day.date}
+                                                onClick={() => openDayModal(day)}
+                                                /* flex-col & p-1 memastikan posisi angka dan icon muat di dalam kotak secara vertikal */
+                                                className={`hover:bg-primary/30 flex aspect-square cursor-pointer flex-col items-center justify-between rounded-lg p-1.5 text-xs font-semibold transition-all duration-200 hover:-translate-y-1 hover:shadow ${cellClass}`}
+                                                title={day.beban === null ? 'Hari lewat (netral)' : `Beban tim: ${formatLiveMinutes(day.beban)}`}
+                                            >
+                                                {/* Angka Tanggal di Bagian Atas/Tengah Kotak */}
+                                                <span>{new Date(`${day.date}T00:00:00`).getDate()}</span>
 
-                                            {/* Icon di Dalam Kotak Tanggal (Bagian Bawah) */}
-                                            <div className="h-4 flex items-center justify-center">
-                                                {day.type === 'meeting' && (
-                                                    <Briefcase className="h-3.5 w-3.5 text-blue-600" />
-                                                )}
-                                                {day.type === 'libur' && (
-                                                    <Star className="h-3.5 w-3.5" />
-                                                )}
-                                            </div>
-                                        </button>
-                                    );
-                                })}
+                                                {/* Icon di Dalam Kotak Tanggal (Bagian Bawah) */}
+                                                <div className="flex h-4 items-center justify-center">
+                                                    {day.type === 'meeting' && <Briefcase className="h-3.5 w-3.5 text-blue-600" />}
+                                                    {day.type === 'libur' && <Star className="h-3.5 w-3.5" />}
+                                                </div>
+                                            </button>
+                                        );
+                                    })}
                             </div>
 
                             {/* Section Legend di Bawah Kalender */}
-                            <div className="mt-4 pt-3 border-t border-border space-y-2">
-                                <div className="flex flex-wrap items-center justify-start gap-4 text-xs text-muted-foreground font-medium">
+                            <div className="border-border mt-4 space-y-2 border-t pt-3">
+                                <div className="text-muted-foreground flex flex-wrap items-center justify-start gap-4 text-xs font-medium">
                                     {/* Status Beban Warna */}
                                     {(['aman', 'tengah', 'overload'] as const).map((level) => (
                                         <div key={level} className="flex items-center gap-1.5">
@@ -1420,7 +1634,7 @@ export default function CommandCenter({
                                     </div>
                                 </div>
 
-                                <p className="text-xs text-muted-foreground">
+                                <p className="text-muted-foreground text-xs">
                                     Ambang agregat {heatmap.active_user_count} user aktif — hari lewat selalu netral (F-131).
                                 </p>
                             </div>
@@ -1477,7 +1691,7 @@ export default function CommandCenter({
                                             <div className="overflow-x-auto rounded-md border">
                                                 <table className="w-full text-left text-sm">
                                                     <thead>
-                                                        <tr className="border-b bg-muted/50 text-muted-foreground">
+                                                        <tr className="bg-muted/50 text-muted-foreground border-b">
                                                             {(
                                                                 [
                                                                     ['name', 'Tim'],
@@ -1489,11 +1703,13 @@ export default function CommandCenter({
                                                                 <th key={key} className="p-2">
                                                                     <button
                                                                         type="button"
-                                                                        className="flex items-center gap-1 font-medium hover:text-foreground"
+                                                                        className="hover:text-foreground flex items-center gap-1 font-medium"
                                                                         onClick={() => toggleDayWorkloadSort(key)}
                                                                     >
                                                                         {label}
-                                                                        {dayWorkloadSort.key === key && <span>{dayWorkloadSort.dir === 'asc' ? '↑' : '↓'}</span>}
+                                                                        {dayWorkloadSort.key === key && (
+                                                                            <span>{dayWorkloadSort.dir === 'asc' ? '↑' : '↓'}</span>
+                                                                        )}
                                                                     </button>
                                                                 </th>
                                                             ))}
@@ -1505,15 +1721,24 @@ export default function CommandCenter({
                                                             const badge = STATUS_BADGE[status];
 
                                                             return (
-                                                                <tr key={row.id} className="border-b last:border-0 align-top">
+                                                                <tr key={row.id} className="border-b align-top last:border-0">
                                                                     <td className="p-2 font-medium">{row.name}</td>
                                                                     <td className="p-2">{formatLiveMinutes(row.aktif)}</td>
-                                                                    <td className="p-2">
+                                                                    {/* F-179: sama seperti tabel Team Work Load -- badge basis
+                                                                        idle_plan, kolom ini idle_real. Tooltip biar tidak
+                                                                        terasa kontradiktif (REUSE pola dashboard.tsx). */}
+                                                                    <td className="p-2" title="Realisasi aktual (efisiensi/KPI) -- bukan dasar status di kolom Status">
                                                                         {formatLiveMinutes(row.kapasitas - row.idle_real)} (idle{' '}
                                                                         {formatLiveMinutes(row.idle_real)})
                                                                     </td>
                                                                     <td className="p-2">
-                                                                        {badge.label && <Badge className={badge.className}>{badge.label}</Badge>}
+                                                                        <div className="flex flex-col gap-1">
+                                                                            {badge.label && <Badge className={badge.className}>{badge.label}</Badge>}
+                                                                            <span className="text-muted-foreground text-xs whitespace-nowrap">
+                                                                                beban {formatLiveMinutes(row.beban)} (idle plan{' '}
+                                                                                {formatLiveMinutes(row.idle_plan)})
+                                                                            </span>
+                                                                        </div>
                                                                     </td>
                                                                 </tr>
                                                             );
@@ -1527,7 +1752,7 @@ export default function CommandCenter({
                                     </div>
 
                                     {selectedDay.holiday && (
-                                        <div className="flex items-start gap-2 rounded-md border bg-muted/30 p-3">
+                                        <div className="bg-muted/30 flex items-start gap-2 rounded-md border p-3">
                                             <Star className="mt-0.5 h-4 w-4 shrink-0" />
                                             <div>
                                                 <p className="font-medium">Hari Libur</p>
@@ -1545,14 +1770,20 @@ export default function CommandCenter({
                                                         <Briefcase className="mt-0.5 h-4 w-4 shrink-0 text-blue-600" />
                                                         <div className="min-w-0">
                                                             <p className="font-medium">{meeting.title}</p>
-                                                            <p className="text-xs text-muted-foreground">
-                                                                {new Date(meeting.start_at).toLocaleTimeString('id-ID', { hour: '2-digit', minute: '2-digit' })}
+                                                            <p className="text-muted-foreground text-xs">
+                                                                {new Date(meeting.start_at).toLocaleTimeString('id-ID', {
+                                                                    hour: '2-digit',
+                                                                    minute: '2-digit',
+                                                                })}
                                                                 {' – '}
-                                                                {new Date(meeting.end_at).toLocaleTimeString('id-ID', { hour: '2-digit', minute: '2-digit' })}
+                                                                {new Date(meeting.end_at).toLocaleTimeString('id-ID', {
+                                                                    hour: '2-digit',
+                                                                    minute: '2-digit',
+                                                                })}
                                                                 {meeting.project && ` · ${meeting.project}`}
                                                             </p>
                                                             {meeting.description && <p className="mt-1 text-xs">{meeting.description}</p>}
-                                                            <p className="mt-1 text-xs text-muted-foreground">
+                                                            <p className="text-muted-foreground mt-1 text-xs">
                                                                 Peserta: {meeting.participants.join(', ') || '-'}
                                                             </p>
                                                         </div>
@@ -1563,7 +1794,7 @@ export default function CommandCenter({
                                     )}
 
                                     {!selectedDay.holiday && selectedDay.meetings.length === 0 && (
-                                        <p className="text-center text-muted-foreground">Tidak ada acara/peristiwa tercatat pada tanggal ini.</p>
+                                        <p className="text-muted-foreground text-center">Tidak ada acara/peristiwa tercatat pada tanggal ini.</p>
                                     )}
                                 </div>
                             )}
@@ -1599,13 +1830,13 @@ export default function CommandCenter({
                                     ))}
                                 </div>
                             ) : recentActivity.length === 0 ? (
-                                <p className="text-sm text-muted-foreground">Belum ada aktivitas.</p>
+                                <p className="text-muted-foreground text-sm">Belum ada aktivitas.</p>
                             ) : (
                                 <ul className="flex flex-col gap-2 text-sm">
                                     {recentActivity.map((log) => (
                                         <li key={log.id} className="flex items-center justify-between gap-2 border-b pb-2 last:border-0">
                                             <span>{log.message}</span>
-                                            <span className="shrink-0 text-xs text-muted-foreground">
+                                            <span className="text-muted-foreground shrink-0 text-xs">
                                                 {new Date(log.created_at).toLocaleString('id-ID')}
                                             </span>
                                         </li>
@@ -1647,12 +1878,12 @@ export default function CommandCenter({
                                     </table>
                                 </div>
                             ) : topTasks.length === 0 ? (
-                                <p className="text-sm text-muted-foreground">Tidak ada task aktif.</p>
+                                <p className="text-muted-foreground text-sm">Tidak ada task aktif.</p>
                             ) : (
                                 <div className="overflow-x-auto">
                                     <table className="w-full text-left text-sm">
                                         <thead>
-                                            <tr className="border-b bg-muted/50 text-muted-foreground">
+                                            <tr className="bg-muted/50 text-muted-foreground border-b">
                                                 {(
                                                     [
                                                         ['title', 'Tugas'],
@@ -1666,7 +1897,7 @@ export default function CommandCenter({
                                                     <th key={key} className="p-3">
                                                         <button
                                                             type="button"
-                                                            className="flex items-center gap-1 font-medium hover:text-foreground"
+                                                            className="hover:text-foreground flex items-center gap-1 font-medium"
                                                             onClick={() => toggleTopTaskSort(key)}
                                                         >
                                                             {label}
@@ -1678,14 +1909,21 @@ export default function CommandCenter({
                                         </thead>
                                         <tbody>
                                             {sortedTopTasks.map((task) => (
-                                                <tr key={task.id} onClick={() => router.visit(route('tasks.show', [task.project_id, task.id]))} className="border-b last:border-0 cursor-pointer hover:bg-primary/10">
+                                                <tr
+                                                    key={task.id}
+                                                    onClick={() => router.visit(route('tasks.show', [task.project_id, task.id]))}
+                                                    className="hover:bg-primary/10 cursor-pointer border-b last:border-0"
+                                                >
                                                     <td className="p-3">
                                                         {/* Permintaan Boss: judul task DIKLIK -> langsung ke halaman detail
                                                             (route tasks.show, pola SAMA tasks/all.tsx & tasks/index.tsx). */}
-                                                        <Link href={route('tasks.show', [task.project_id, task.id])} className="font-medium hover:underline">
+                                                        <Link
+                                                            href={route('tasks.show', [task.project_id, task.id])}
+                                                            className="font-medium hover:underline"
+                                                        >
                                                             {task.title}
                                                         </Link>
-                                                        <p className="text-xs text-muted-foreground">{task.project ?? '-'}</p>
+                                                        <p className="text-muted-foreground text-xs">{task.project ?? '-'}</p>
                                                     </td>
                                                     <td className="p-3">
                                                         {task.priority_quadrant ? (
@@ -1699,12 +1937,14 @@ export default function CommandCenter({
                                                                 {task.priority_quadrant.toUpperCase()}
                                                             </Badge>
                                                         ) : (
-                                                            <span className="text-xs text-muted-foreground">-</span>
+                                                            <span className="text-muted-foreground text-xs">-</span>
                                                         )}
                                                     </td>
                                                     <td className="p-3">{TASK_TYPE_LABEL[task.task_type] ?? task.task_type}</td>
                                                     <td className="p-3">
-                                                        <Badge style={{ backgroundColor: task.status.color, color: '#fff', borderColor: 'transparent' }}>
+                                                        <Badge
+                                                            style={{ backgroundColor: task.status.color, color: '#fff', borderColor: 'transparent' }}
+                                                        >
                                                             {task.status.name}
                                                         </Badge>
                                                     </td>

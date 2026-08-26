@@ -5,7 +5,8 @@
  * MODUL       : HolidayTest
  * KLASIFIKASI : UTIL
  * TUJUAN      : Verifikasi Pengaturan Hari Libur (F-43 HARDEN) — CRUD, tanggal
- *               unik per organization (F-5), gating permission workschedule.manage.
+ *               unik per organization (F-5), gating permission holiday.manage
+ *               (F-170, dulu workschedule.manage).
  * DIPANGGIL   : php artisan test (Pest)
  * MEMANGGIL   : HolidayController, Holiday
  * DATA MASUK  : -

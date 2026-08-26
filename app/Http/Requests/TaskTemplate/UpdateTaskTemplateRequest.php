@@ -33,7 +33,7 @@ class UpdateTaskTemplateRequest extends FormRequest
 {
     public function authorize(): bool
     {
-        return (bool) Auth::user()?->can('task.manage'); // F-90
+        return (bool) Auth::user()?->can('tasktemplate.manage'); // F-170 (dulu task.manage)
     }
 
     public function rules(): array

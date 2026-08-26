@@ -24,6 +24,7 @@
 //               lain lewat pola yang sama tanpa sanitasi server yang setara.
 // ==========================================================
 
+import TagBadges from '@/components/tag-badges';
 import TaskAttachments from '@/components/task-attachments';
 import TaskChecklist from '@/components/task-checklist';
 import TaskComments from '@/components/task-comments';
@@ -108,6 +109,8 @@ interface TaskDetail {
     // H7/F-132/F-138: state 5-nilai task-wide, dihitung Task::computeWorkState() server.
     work_state: WorkState;
     assignees: UserOption[];
+    // Permintaan Boss (2026-08-26): multi-tag, lihat components/tag-badges.tsx.
+    tags: { id: number; name: string; color: string }[];
     parent: TaskLink | null;
     children: TaskLink[];
     attachments: AttachmentData[];
@@ -174,7 +177,11 @@ export default function TaskShow({ project, task, statuses, projectMembers }: Ta
                             {/* F-122/F-126: badge Eisenhower — nol tampil kalau belum diklasifikasi. */}
                             {task.priority_quadrant && (
                                 <Badge
-                                    style={{ backgroundColor: PRIORITY_QUADRANT_COLOR[task.priority_quadrant], color: '#fff', borderColor: 'transparent' }}
+                                    style={{
+                                        backgroundColor: PRIORITY_QUADRANT_COLOR[task.priority_quadrant],
+                                        color: '#fff',
+                                        borderColor: 'transparent',
+                                    }}
                                 >
                                     {PRIORITY_QUADRANT_LABEL[task.priority_quadrant]}
                                 </Badge>
@@ -187,13 +194,11 @@ export default function TaskShow({ project, task, statuses, projectMembers }: Ta
                             )}
                         </div>
                         {task.parent && (
-                            <Link
-                                href={route('tasks.show', [project.id, task.parent.id])}
-                                className="text-sm text-muted-foreground hover:underline"
-                            >
+                            <Link href={route('tasks.show', [project.id, task.parent.id])} className="text-muted-foreground text-sm hover:underline">
                                 Subtask dari: {task.parent.title}
                             </Link>
                         )}
+                        <TagBadges tags={task.tags} />
                         {/* B1: badge besar, tersembunyi otomatis kalau bukan is_work_state (F-44).
                             H7: isPaused dari work_state task-wide (F-138b/f), BUKAN per-user. */}
                         <TaskLiveCounter
@@ -233,7 +238,7 @@ export default function TaskShow({ project, task, statuses, projectMembers }: Ta
                                     dangerouslySetInnerHTML={{ __html: task.description_html }}
                                 />
                             ) : (
-                                <p className="text-sm text-muted-foreground">Tidak ada deskripsi.</p>
+                                <p className="text-muted-foreground text-sm">Tidak ada deskripsi.</p>
                             )}
                         </CardContent>
                     </Card>
@@ -261,9 +266,7 @@ export default function TaskShow({ project, task, statuses, projectMembers }: Ta
                                 {task.original_due_date && (
                                     <div className="flex justify-between gap-2">
                                         <span className="text-muted-foreground">Tenggat asli</span>
-                                        <span className="text-right">
-                                            {new Date(task.original_due_date).toLocaleString('id-ID')} (diperpanjang)
-                                        </span>
+                                        <span className="text-right">{new Date(task.original_due_date).toLocaleString('id-ID')} (diperpanjang)</span>
                                     </div>
                                 )}
                                 <div className="flex justify-between gap-2">
@@ -319,12 +322,7 @@ export default function TaskShow({ project, task, statuses, projectMembers }: Ta
                                 {/* H7/F-132/F-138: Mulai/Jeda/Lanjut/Submit -- assignee-only,
                                     tombol berbeda per work_state, nol render kalau bukan assignee
                                     atau status sudah review/selesai (komponen sendiri yang jaga). */}
-                                <TaskWorkActions
-                                    projectId={project.id}
-                                    taskId={task.id}
-                                    workState={task.work_state}
-                                    isAssignee={isAssignee}
-                                />
+                                <TaskWorkActions projectId={project.id} taskId={task.id} workState={task.work_state} isAssignee={isAssignee} />
                             </CardContent>
                         </Card>
 
@@ -358,12 +356,10 @@ export default function TaskShow({ project, task, statuses, projectMembers }: Ta
                                         <Link
                                             key={child.id}
                                             href={route('tasks.show', [project.id, child.id])}
-                                            className="flex items-center justify-between gap-2 rounded-md border p-2 text-sm hover:bg-accent"
+                                            className="hover:bg-accent flex items-center justify-between gap-2 rounded-md border p-2 text-sm"
                                         >
                                             <span>{child.title}</span>
-                                            <Badge
-                                                style={{ backgroundColor: child.task_status.color, color: '#fff', borderColor: 'transparent' }}
-                                            >
+                                            <Badge style={{ backgroundColor: child.task_status.color, color: '#fff', borderColor: 'transparent' }}>
                                                 {child.task_status.name}
                                             </Badge>
                                         </Link>
@@ -384,7 +380,7 @@ export default function TaskShow({ project, task, statuses, projectMembers }: Ta
                                     {task.activity_logs.map((log) => (
                                         <div key={log.id} className="flex flex-col gap-0.5 border-b pb-2 text-sm last:border-0 last:pb-0">
                                             <span>{log.message}</span>
-                                            <span className="text-xs text-muted-foreground">{timeAgo(log.created_at)}</span>
+                                            <span className="text-muted-foreground text-xs">{timeAgo(log.created_at)}</span>
                                         </div>
                                     ))}
                                 </CardContent>

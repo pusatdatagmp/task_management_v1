@@ -23,7 +23,7 @@ class RejectExtensionRequest extends FormRequest
 {
     public function authorize(): bool
     {
-        return (bool) Auth::user()?->can('task.approve');
+        return (bool) Auth::user()?->can('extension.approve'); // F-170 (dulu task.approve)
     }
 
     public function rules(): array

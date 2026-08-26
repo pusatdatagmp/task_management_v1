@@ -20,7 +20,9 @@
 import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
+import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
 import AppLayout from '@/layouts/app-layout';
+import { SELECT_ALL_VALUE } from '@/lib/utils';
 import { type BreadcrumbItem } from '@/types';
 import { Head, Link, router } from '@inertiajs/react';
 import { Activity, CalendarClock, Flame, UserRound } from 'lucide-react';
@@ -83,11 +85,7 @@ const breadcrumbs: BreadcrumbItem[] = [{ title: 'Log Aktivitas', href: '/pengatu
 
 export default function ActivityLogIndex({ logs, summary, filters, users, eventTypes }: ActivityLogIndexProps) {
     const applyFilters = (overrides: Partial<Filters>) => {
-        router.get(
-            route('activity-logs.index'),
-            { ...filters, ...overrides },
-            { preserveState: true, preserveScroll: true, replace: true },
-        );
+        router.get(route('activity-logs.index'), { ...filters, ...overrides }, { preserveState: true, preserveScroll: true, replace: true });
     };
 
     const hasActiveFilter = filters.user_id !== null || filters.event !== null || filters.from !== null || filters.to !== null;
@@ -112,36 +110,36 @@ export default function ActivityLogIndex({ logs, summary, filters, users, eventT
                 <div className="grid grid-cols-2 gap-3 md:grid-cols-4">
                     <Card>
                         <CardHeader className="flex flex-row items-center justify-between space-y-0 p-4 pb-2">
-                            <CardTitle className="text-sm font-medium text-muted-foreground">Total Log</CardTitle>
-                            <Activity className="h-4 w-4 text-muted-foreground" />
+                            <CardTitle className="text-muted-foreground text-sm font-medium">Total Log</CardTitle>
+                            <Activity className="text-muted-foreground h-4 w-4" />
                         </CardHeader>
                         <CardContent className="p-4 pt-0 text-2xl font-semibold">{summary.total}</CardContent>
                     </Card>
                     <Card>
                         <CardHeader className="flex flex-row items-center justify-between space-y-0 p-4 pb-2">
-                            <CardTitle className="text-sm font-medium text-muted-foreground">Log Hari Ini</CardTitle>
-                            <CalendarClock className="h-4 w-4 text-muted-foreground" />
+                            <CardTitle className="text-muted-foreground text-sm font-medium">Log Hari Ini</CardTitle>
+                            <CalendarClock className="text-muted-foreground h-4 w-4" />
                         </CardHeader>
                         <CardContent className="p-4 pt-0 text-2xl font-semibold">{summary.today}</CardContent>
                     </Card>
                     <Card>
                         <CardHeader className="flex flex-row items-center justify-between space-y-0 p-4 pb-2">
-                            <CardTitle className="text-sm font-medium text-muted-foreground">User Teraktif</CardTitle>
-                            <UserRound className="h-4 w-4 text-muted-foreground" />
+                            <CardTitle className="text-muted-foreground text-sm font-medium">User Teraktif</CardTitle>
+                            <UserRound className="text-muted-foreground h-4 w-4" />
                         </CardHeader>
                         <CardContent className="p-4 pt-0">
                             <p className="truncate text-lg font-semibold">{summary.top_user ?? '-'}</p>
-                            {summary.top_user && <p className="text-xs text-muted-foreground">{summary.top_user_count} kejadian</p>}
+                            {summary.top_user && <p className="text-muted-foreground text-xs">{summary.top_user_count} kejadian</p>}
                         </CardContent>
                     </Card>
                     <Card>
                         <CardHeader className="flex flex-row items-center justify-between space-y-0 p-4 pb-2">
-                            <CardTitle className="text-sm font-medium text-muted-foreground">Event Terbanyak</CardTitle>
-                            <Flame className="h-4 w-4 text-muted-foreground" />
+                            <CardTitle className="text-muted-foreground text-sm font-medium">Event Terbanyak</CardTitle>
+                            <Flame className="text-muted-foreground h-4 w-4" />
                         </CardHeader>
                         <CardContent className="p-4 pt-0">
                             <p className="truncate text-lg font-semibold">{summary.top_event ?? '-'}</p>
-                            {summary.top_event && <p className="text-xs text-muted-foreground">{summary.top_event_count} kejadian</p>}
+                            {summary.top_event && <p className="text-muted-foreground text-xs">{summary.top_event_count} kejadian</p>}
                         </CardContent>
                     </Card>
                 </div>
@@ -149,41 +147,49 @@ export default function ActivityLogIndex({ logs, summary, filters, users, eventT
                 <div className="flex flex-wrap items-end gap-4 rounded-lg border p-4 text-sm">
                     <div className="flex flex-col gap-1">
                         <span className="font-medium">Pelaku</span>
-                        <select
-                            className="h-8 rounded-md border border-input bg-background px-2"
-                            value={filters.user_id ?? ''}
-                            onChange={(e) => applyFilters({ user_id: e.target.value ? Number(e.target.value) : null })}
+                        <Select
+                            value={filters.user_id === null ? SELECT_ALL_VALUE : String(filters.user_id)}
+                            onValueChange={(value) => applyFilters({ user_id: value === SELECT_ALL_VALUE ? null : Number(value) })}
                         >
-                            <option value="">Semua</option>
-                            {users.map((u) => (
-                                <option key={u.id} value={u.id}>
-                                    {u.name}
-                                </option>
-                            ))}
-                        </select>
+                            <SelectTrigger className="h-8">
+                                <SelectValue />
+                            </SelectTrigger>
+                            <SelectContent>
+                                <SelectItem value={SELECT_ALL_VALUE}>Semua</SelectItem>
+                                {users.map((u) => (
+                                    <SelectItem key={u.id} value={String(u.id)}>
+                                        {u.name}
+                                    </SelectItem>
+                                ))}
+                            </SelectContent>
+                        </Select>
                     </div>
 
                     <div className="flex flex-col gap-1">
                         <span className="font-medium">Tipe event</span>
-                        <select
-                            className="h-8 rounded-md border border-input bg-background px-2"
-                            value={filters.event ?? ''}
-                            onChange={(e) => applyFilters({ event: e.target.value || null })}
+                        <Select
+                            value={filters.event ?? SELECT_ALL_VALUE}
+                            onValueChange={(value) => applyFilters({ event: value === SELECT_ALL_VALUE ? null : value })}
                         >
-                            <option value="">Semua</option>
-                            {eventTypes.map((e) => (
-                                <option key={e.value} value={e.value}>
-                                    {e.label}
-                                </option>
-                            ))}
-                        </select>
+                            <SelectTrigger className="h-8">
+                                <SelectValue />
+                            </SelectTrigger>
+                            <SelectContent>
+                                <SelectItem value={SELECT_ALL_VALUE}>Semua</SelectItem>
+                                {eventTypes.map((e) => (
+                                    <SelectItem key={e.value} value={e.value}>
+                                        {e.label}
+                                    </SelectItem>
+                                ))}
+                            </SelectContent>
+                        </Select>
                     </div>
 
                     <div className="flex flex-col gap-1">
                         <span className="font-medium">Dari tanggal</span>
                         <input
                             type="date"
-                            className="h-8 rounded-md border border-input bg-background px-2"
+                            className="border-input bg-background h-8 rounded-md border px-2"
                             value={filters.from ?? ''}
                             onChange={(e) => applyFilters({ from: e.target.value || null })}
                         />
@@ -193,7 +199,7 @@ export default function ActivityLogIndex({ logs, summary, filters, users, eventT
                         <span className="font-medium">Sampai tanggal</span>
                         <input
                             type="date"
-                            className="h-8 rounded-md border border-input bg-background px-2"
+                            className="border-input bg-background h-8 rounded-md border px-2"
                             value={filters.to ?? ''}
                             onChange={(e) => applyFilters({ to: e.target.value || null })}
                         />
@@ -212,7 +218,7 @@ export default function ActivityLogIndex({ logs, summary, filters, users, eventT
                     </CardHeader>
                     <CardContent className="flex flex-col gap-3">
                         {logs.data.length === 0 ? (
-                            <p className="text-sm text-muted-foreground">Tidak ada kejadian yang cocok dengan filter ini.</p>
+                            <p className="text-muted-foreground text-sm">Tidak ada kejadian yang cocok dengan filter ini.</p>
                         ) : (
                             logs.data.map((log) => (
                                 <div key={log.id} className="flex items-start justify-between gap-3 rounded-md border p-3 text-sm">
@@ -222,9 +228,7 @@ export default function ActivityLogIndex({ logs, summary, filters, users, eventT
                                             {log.event_label}
                                         </Badge>
                                     </div>
-                                    <span className="shrink-0 text-xs text-muted-foreground">
-                                        {new Date(log.created_at).toLocaleString('id-ID')}
-                                    </span>
+                                    <span className="text-muted-foreground shrink-0 text-xs">{new Date(log.created_at).toLocaleString('id-ID')}</span>
                                 </div>
                             ))
                         )}

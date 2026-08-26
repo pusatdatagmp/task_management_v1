@@ -5,11 +5,13 @@
  * MODUL       : DeadlineExtensionController
  * KLASIFIKASI : DOMAIN
  * TUJUAN      : Alur perpanjangan deadline (F-50) — ajukan (assignee/admin, F-95),
- *               approve/reject (admin, F-28-setara). Logika F-47 (original_due_date)
- *               & pemutakhiran task SUDAH ada di DeadlineExtensionObserver (Hari-1) —
- *               controller ini HANYA mengubah status, observer yang bereaksi.
+ *               approve/reject (admin, permission extension.approve — F-170,
+ *               dulu "F-28-setara" reuse task.approve). Logika F-47
+ *               (original_due_date) & pemutakhiran task SUDAH ada di
+ *               DeadlineExtensionObserver (Hari-1) — controller ini HANYA
+ *               mengubah status, observer yang bereaksi.
  * DIPANGGIL   : routes/web.php (store, myExtensions — mixed access),
- *               routes/admin.php (index, approve, reject — can:task.approve)
+ *               routes/admin.php (index, approve, reject — can:extension.approve)
  * MEMANGGIL   : DeadlineExtension, Task, Attachment::storeUploadedFile() (evidence, H5)
  * DATA MASUK  : Form ajukan (extensions/my-extensions.tsx), form approve/reject
  *               (extensions/index.tsx) — task_id di BODY (bukan URL, halaman flat
@@ -119,9 +121,9 @@ class DeadlineExtensionController extends Controller
 
     /**
      * BUSINESS RULE: BF §6 matriks — "Lihat dashboard tim" & aksi approve/reject
-     * admin only. Antrean = PENDING saja (yang butuh keputusan); yang sudah
-     * diputuskan tetap tercatat di riwayat "Perpanjangan Saya" pemohon, tidak
-     * perlu ditampilkan lagi di antrean admin.
+     * admin only (permission extension.approve, F-170). Antrean = PENDING saja
+     * (yang butuh keputusan); yang sudah diputuskan tetap tercatat di riwayat
+     * "Perpanjangan Saya" pemohon, tidak perlu ditampilkan lagi di antrean admin.
      */
     public function index(): Response
     {

@@ -5,7 +5,8 @@
  * MODUL       : RoleController
  * KLASIFIKASI : DOMAIN
  * TUJUAN      : UI Role Management (RBAC §E1) — daftar/buat/edit/hapus role +
- *               tandai role default. Permission user.manage (routes/admin.php).
+ *               tandai role default. Permission role.manage (F-170, dulu
+ *               user.manage — routes/admin.php).
  * DIPANGGIL   : routes/admin.php
  * MEMANGGIL   : Role, Permission, UserService::createRole() (C6, dipakai ulang)
  * DATA MASUK  : Form Role Baru/Edit Role
@@ -18,10 +19,10 @@
  *               halaman roles-saja setelah simpan.
  * RISIKO      : SUMBER : destroy() TOLAK role sistem (tidak bisa dihapus SELAMANYA,
  *               F-88) DAN role yang masih dipakai user (pola F-19 — "masih ada N
- *               user, pindahkan dulu"). update() TOLAK melucuti user.manage dari
- *               role sistem kalau dia SATU-SATUNYA pemegang — tanpa guard ini,
- *               organisasi bisa terkunci total dari halaman kelola user/role
- *               sendiri (tidak ada jalan masuk lain, F-91 tidak ada self-signup).
+ *               user, pindahkan dulu"). update() TOLAK melucuti role.manage (F-170,
+ *               dulu user.manage) dari role sistem kalau dia SATU-SATUNYA pemegang —
+ *               tanpa guard ini, organisasi bisa terkunci total dari halaman kelola
+ *               role sendiri (tidak ada jalan masuk lain, F-91 tidak ada self-signup).
  * ==========================================================
  */
 
@@ -85,12 +86,18 @@ class RoleController extends Controller
             'role' => $role->only(['id', 'role_name', 'is_system', 'is_default']),
             'permissionIds' => $role->permissions->pluck('id'),
             'permissions' => Permission::orderBy('module')->orderBy('permission_name')->get(['id', 'permission_name', 'module']),
-            // SUMBER: E1 — kalau true, checkbox user.manage WAJIB disabled di form
-            // (dijelaskan ke admin KENAPA, bukan cuma dikunci diam-diam). Dihitung
-            // di server supaya tidak lomba dengan Role::wouldLeaveNoHolderOfPermission
-            // yang sama persis dipakai update() untuk penegakan asli.
-            'isLastUserManageHolder' => $role->hasPermission('user.manage')
-                && Role::wouldLeaveNoHolderOfPermission($role->organization_id, 'user.manage', $role->id),
+            // SUMBER: F-170 (dulu user.manage) — kalau true, checkbox role.manage
+            // WAJIB disabled di form (dijelaskan ke admin KENAPA, bukan cuma
+            // dikunci diam-diam). role.manage yang dijaga di sini SEKARANG,
+            // bukan lagi user.manage — role.manage satu-satunya permission yang
+            // bisa mengedit permission role manapun (termasuk dirinya sendiri),
+            // jadi nol pemegang = organisasi terkunci SELAMANYA dari kelola role
+            // (chicken-egg). user.manage kalau nol pemegang masih recoverable
+            // lewat role lain yang punya role.manage. Dihitung di server supaya
+            // tidak lomba dengan Role::wouldLeaveNoHolderOfPermission yang sama
+            // persis dipakai update() untuk penegakan asli.
+            'isLastRoleManageHolder' => $role->hasPermission('role.manage')
+                && Role::wouldLeaveNoHolderOfPermission($role->organization_id, 'role.manage', $role->id),
         ]);
     }
 
@@ -108,12 +115,14 @@ class RoleController extends Controller
             }
 
             $permissionIds = collect($request->validated('permissions'));
-            $userManageId = Permission::where('permission_name', 'user.manage')->value('id');
-            $isDroppingUserManage = $userManageId && ! $permissionIds->contains($userManageId);
+            // F-170 (dulu user.manage) — role.manage yang dijaga sekarang, lihat
+            // komentar isLastRoleManageHolder di edit() untuk rationale lengkap.
+            $roleManageId = Permission::where('permission_name', 'role.manage')->value('id');
+            $isDroppingRoleManage = $roleManageId && ! $permissionIds->contains($roleManageId);
 
-            if ($isDroppingUserManage && Role::wouldLeaveNoHolderOfPermission($role->organization_id, 'user.manage', $role->id)) {
+            if ($isDroppingRoleManage && Role::wouldLeaveNoHolderOfPermission($role->organization_id, 'role.manage', $role->id)) {
                 throw ValidationException::withMessages([
-                    'permissions' => "Permission 'user.manage' tidak bisa dilepas dari role ini — ini satu-satunya role yang bisa kelola user/role di organisasi. Beri role lain user.manage dulu sebelum melepasnya dari sini.",
+                    'permissions' => "Permission 'role.manage' tidak bisa dilepas dari role ini — ini satu-satunya role yang bisa kelola role di organisasi. Beri role lain role.manage dulu sebelum melepasnya dari sini.",
                 ]);
             }
 

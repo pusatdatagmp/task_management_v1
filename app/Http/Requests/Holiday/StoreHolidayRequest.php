@@ -25,9 +25,9 @@ class StoreHolidayRequest extends FormRequest
 {
     public function authorize(): bool
     {
-        // F-90 — penegakan sebenarnya di middleware route (can:workschedule.manage,
-        // routes/admin.php). Ini cuma lapis kedua.
-        return (bool) Auth::user()?->can('workschedule.manage');
+        // F-170 (dulu workschedule.manage) — penegakan sebenarnya di middleware
+        // route (can:holiday.manage, routes/admin.php). Ini cuma lapis kedua.
+        return (bool) Auth::user()?->can('holiday.manage');
     }
 
     public function rules(): array

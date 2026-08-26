@@ -11,16 +11,18 @@
 //               Permintaan Boss (ref. docs/task-fixx.html VIEWS.leaderboard,
 //               stateLeaderboard.highlight): 3 kartu sorotan DINAMIS di atas tabel
 //               -- filter "Sorotan" (Top 3 / Bottom 3, MURNI client-side, F-109)
-//               menukar ISI 3 kartu yang SAMA antara 3 Point tertinggi vs 3 Point
-//               terendah. Cuma SATU set 3 kartu tampil sekaligus (bukan 6) --
-//               MURNI slice/reverse dari rows[] yang SUDAH urut Point desc, nol
-//               angka baru dihitung di FE.
+//               menukar ISI 3 kartu yang SAMA antara 3 tertinggi vs 3 terendah.
+//               Cuma SATU set 3 kartu tampil sekaligus (bukan 6) -- MURNI
+//               slice/reverse dari rows[] yang SUDAH urut kpi_total desc (F-177,
+//               permintaan Boss 2026-08-27, dulu Point desc), nol angka baru
+//               dihitung di FE.
 // DIPANGGIL   : LeaderboardController::index() (route 'leaderboard', can:leaderboard.view)
 // MEMANGGIL   : todayRange/thisWeekRange/thisMonthRange (lib/leaderboard-period,
 //               MURNI tanggal, F-109), useInitials (hooks, REUSE F-avatar sama UserInfo)
-// DATA MASUK  : from, to (string 'Y-m-d'), rows[] (sudah urut Point desc, tiap row
-//               bawa kpi_total F-168), kpi_enabled (toggle org-level F-166 -- kolom
-//               KPI di tabel disembunyikan total kalau false, "tinggal disable")
+// DATA MASUK  : from, to (string 'Y-m-d'), rows[] (sudah urut kpi_total desc F-177,
+//               tiap row bawa point F-168 kolom terpisah), kpi_enabled (toggle
+//               org-level F-166 -- kolom KPI di tabel disembunyikan total kalau
+//               false, "tinggal disable")
 // DATA KELUAR : router.get (filter periode, tercermin URL — pola sama activity-logs/index.tsx)
 // RISIKO      : SUMBER F-4/F-134 — halaman ini SKOR RANKING, BUKAN nominal uang.
 //               JANGAN PERNAH tambah rupiah/gaji/reward di sini (itu v2.0). Skor
@@ -34,6 +36,7 @@ import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import { Input } from '@/components/ui/input';
+import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
 import { useInitials } from '@/hooks/use-initials';
 import AppLayout from '@/layouts/app-layout';
 import { thisMonthRange, thisWeekRange, todayRange } from '@/lib/leaderboard-period';
@@ -50,7 +53,8 @@ interface LeaderboardRow {
     ditolak: number;
     on_time_percent: number | null;
     // F-168: KOLOM TERPISAH dari point (Σpts TETAP) -- indikator ketepatan-waktu,
-    // BUKAN pengganti Point.
+    // BUKAN pengganti Point SEBAGAI NILAI. F-177: TAPI sekarang jadi BASIS
+    // RANKING rows[] (urutan array dari backend), lihat LeaderboardService.
     kpi_total: number;
 }
 
@@ -70,7 +74,8 @@ const MEDAL_BORDER = ['border-t-yellow-400', 'border-t-slate-400', 'border-t-amb
 // SUMBER (permintaan Boss, ref. docs/task-fixx.html .leader-card): kartu sorotan
 // Top-3/Bottom-3 -- MURNI presentasi dari 1 baris `rows[]` yang SUDAH final dari
 // backend (nol Point/Rating dihitung ulang di sini, F-109). `rank` cuma indeks
-// tampilan (medali/label), BUKAN dipakai untuk urutan (rows[] SUDAH urut Point desc).
+// tampilan (medali/label), BUKAN dipakai untuk urutan (rows[] SUDAH urut kpi_total
+// desc, F-177, permintaan Boss 2026-08-27 -- dulu Point desc).
 function LeaderCard({ row, rank, variant, kpiEnabled }: { row: LeaderboardRow; rank: number; variant: 'top' | 'bottom'; kpiEnabled: boolean }) {
     const getInitials = useInitials();
     const isTop = variant === 'top';
@@ -85,35 +90,42 @@ function LeaderCard({ row, rank, variant, kpiEnabled }: { row: LeaderboardRow; r
                 <p className="mt-2 text-base font-bold">{row.name}</p>
                 {/* F-62: label NETRAL -- ini rem Goodhart (F-4), bukan papan malu member.
                     "Terbawah N" (bukan "terburuk"/"gagal") -- pola sama task-fixx.html. */}
-                <p className="text-xs text-muted-foreground">{isTop ? `Peringkat ${rank + 1}` : `Terbawah ${rank + 1}`}</p>
+                <p className="text-muted-foreground text-xs">{isTop ? `Peringkat ${rank + 1}` : `Terbawah ${rank + 1}`}</p>
                 {/* F-173 (permintaan Boss): kartu sorotan tampilkan NILAI KPI (kpi_total,
-                    F-168), bukan Point lagi -- RANKING tetap dari Point (rows[] sudah urut
-                    Point desc dari server, F-109, TIDAK diubah di sini, cuma angka yang
-                    ditampilkan). Fallback ke Point kalau kpi_enabled=false (F-166 -- org yang
-                    belum aktifkan KPI, kpi_total akan 0 utk semua, tampilkan itu jelas salah). */}
+                    F-168), bukan Point -- angka besar di kartu ini. F-177 (permintaan Boss
+                    2026-08-27): RANKING (urutan rows[]) SEKARANG JUGA dari kpi_total desc,
+                    dulu dari Point (lihat KONTRAK LeaderboardService::forPeriod()) -- jadi
+                    urutan+angka kartu SEKARANG konsisten satu sumber. Fallback ke Point
+                    kalau kpi_enabled=false (F-166 -- org yang belum aktifkan KPI, kpi_total
+                    akan 0 utk semua, tampilkan itu jelas salah) TETAP DIPERTAHANKAN untuk
+                    ANGKA yang ditampilkan -- TAPI catatan: kalau kpi_enabled=false, URUTAN
+                    baris (rows[] dari backend) tetap berbasis kpi_total yang all-zero itu
+                    (bukan Point), jadi urutan tampil BISA tidak sinkron dengan angka Point
+                    yang ditampilkan di kartu ini saat toggle KPI organisasi mati. Belum ada
+                    fallback sort di backend untuk skenario ini -- lapor Boss kalau perlu. */}
                 <p className={`mt-1 text-2xl font-bold ${isTop ? '' : 'text-rose-600'}`}>
                     {kpiEnabled ? (
                         <>
-                            {row.kpi_total} <span className="text-sm font-normal text-muted-foreground">KPI</span>
+                            {row.kpi_total} <span className="text-muted-foreground text-sm font-normal">KPI</span>
                         </>
                     ) : (
                         <>
-                            {row.point} <span className="text-sm font-normal text-muted-foreground">pts</span>
+                            {row.point} <span className="text-muted-foreground text-sm font-normal">pts</span>
                         </>
                     )}
                 </p>
                 <div className="mt-3 grid w-full grid-cols-3 gap-2 border-t pt-3">
                     <div>
                         <p className="text-lg font-semibold">{row.rating !== null ? `⭐ ${row.rating.toFixed(1)}` : '-'}</p>
-                        <p className="text-[11px] text-muted-foreground">Rating</p>
+                        <p className="text-muted-foreground text-[11px]">Rating</p>
                     </div>
                     <div>
                         <p className="text-lg font-semibold">{row.revisi}</p>
-                        <p className="text-[11px] text-muted-foreground">Revisi</p>
+                        <p className="text-muted-foreground text-[11px]">Revisi</p>
                     </div>
                     <div>
                         <p className="text-lg font-semibold">{row.ditolak}</p>
-                        <p className="text-[11px] text-muted-foreground">Ditolak</p>
+                        <p className="text-muted-foreground text-[11px]">Ditolak</p>
                     </div>
                 </div>
             </CardContent>
@@ -177,14 +189,15 @@ export default function LeaderboardIndex({ from, to, rows, kpi_enabled }: Leader
 
                     <label className="flex flex-col gap-1">
                         <span className="font-medium">Sorotan</span>
-                        <select
-                            value={highlight}
-                            onChange={(e) => setHighlight(e.target.value as 'top' | 'bottom')}
-                            className="h-8 rounded-md border border-input bg-background px-2 text-sm"
-                        >
-                            <option value="top">🏆 Top 3</option>
-                            <option value="bottom">📉 Bottom 3</option>
-                        </select>
+                        <Select value={highlight} onValueChange={(value) => setHighlight(value as 'top' | 'bottom')}>
+                            <SelectTrigger className="h-8 text-sm">
+                                <SelectValue />
+                            </SelectTrigger>
+                            <SelectContent>
+                                <SelectItem value="top">🏆 Top 3</SelectItem>
+                                <SelectItem value="bottom">📉 Bottom 3</SelectItem>
+                            </SelectContent>
+                        </Select>
                     </label>
                 </div>
 
@@ -210,7 +223,7 @@ export default function LeaderboardIndex({ from, to, rows, kpi_enabled }: Leader
                     <CardContent className="overflow-x-auto p-0">
                         <table className="w-full text-left text-sm">
                             <thead>
-                                <tr className="border-b bg-muted/50 text-muted-foreground">
+                                <tr className="bg-muted/50 text-muted-foreground border-b">
                                     <th className="p-3">Rank</th>
                                     <th className="p-3">Nama</th>
                                     <th className="p-3">Point</th>
@@ -226,10 +239,11 @@ export default function LeaderboardIndex({ from, to, rows, kpi_enabled }: Leader
                             <tbody>
                                 {rows.map((row, index) => {
                                     const isTop3 = index < 3;
-                                    // B2: Bottom-3 = 3 baris TERAKHIR (list sudah urut Point desc dari
-                                    // server) -- utk analisa manajemen (blueprint §7.2), BUKAN papan
-                                    // malu member (halaman ini management-only, F-134). Kalau daftar
-                                    // pendek (<6 baris), boleh tumpang tindih dengan Top-3 -- itu wajar.
+                                    // B2: Bottom-3 = 3 baris TERAKHIR (list sudah urut kpi_total desc
+                                    // dari server, F-177 -- dulu Point desc) -- utk analisa manajemen
+                                    // (blueprint §7.2), BUKAN papan malu member (halaman ini
+                                    // management-only, F-134). Kalau daftar pendek (<6 baris), boleh
+                                    // tumpang tindih dengan Top-3 -- itu wajar.
                                     const isBottom3 = index >= bottomStartIndex;
 
                                     return (
@@ -257,7 +271,7 @@ export default function LeaderboardIndex({ from, to, rows, kpi_enabled }: Leader
 
                                 {rows.length === 0 && (
                                     <tr>
-                                        <td colSpan={kpi_enabled ? 8 : 7} className="p-8 text-center text-muted-foreground">
+                                        <td colSpan={kpi_enabled ? 8 : 7} className="text-muted-foreground p-8 text-center">
                                             Tidak ada user aktif untuk ditampilkan.
                                         </td>
                                     </tr>
@@ -268,9 +282,10 @@ export default function LeaderboardIndex({ from, to, rows, kpi_enabled }: Leader
                 </Card>
 
                 {/* F-2/F-134: catatan provisional WAJIB tetap ada -- ini bukan skor final. */}
-                <p className="text-xs text-muted-foreground">
-                    Skor provisional — kalibrasi final v1.5. Point dihitung dari task yang sudah disetujui pada periode terpilih; kolom Rating/
-                    Revisi/Ditolak/On-time% adalah konteks tampilan dan tidak memengaruhi urutan Point.
+                <p className="text-muted-foreground text-xs">
+                    Skor provisional — kalibrasi final v1.5. Peringkat saat ini berdasarkan nilai KPI (bukan Point, F-177). Point tetap dihitung
+                    dari task yang sudah disetujui pada periode terpilih; kolom Rating/Revisi/Ditolak/On-time% adalah konteks tampilan dan tidak
+                    memengaruhi peringkat.
                 </p>
             </div>
         </AppLayout>

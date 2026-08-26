@@ -21,6 +21,7 @@
 // ==========================================================
 
 import { Button } from '@/components/ui/button';
+import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
 import { promptInput, showError } from '@/lib/swal';
 import { router } from '@inertiajs/react';
 
@@ -108,7 +109,7 @@ export default function TaskStatusCell({ projectId, task, statuses, currentUserI
 
     if (task.task_status.is_review) {
         if (!canApprove) {
-            return <span className="text-xs text-muted-foreground">Menunggu review</span>;
+            return <span className="text-muted-foreground text-xs">Menunggu review</span>;
         }
 
         return (
@@ -128,7 +129,7 @@ export default function TaskStatusCell({ projectId, task, statuses, currentUserI
     // HINT UI saja (server yang menegakkan); tanpa ini dropdown tetap muncul dan
     // gagal baru terlihat setelah klik (bukan salah, cuma UX buruk).
     if (task.task_status.is_completed) {
-        return <span className="text-xs text-muted-foreground">Selesai — status terkunci</span>;
+        return <span className="text-muted-foreground text-xs">Selesai — status terkunci</span>;
     }
 
     // BUSINESS RULE F-45: opsi target maju cuma position+1, mundur bebas ke posisi
@@ -145,19 +146,17 @@ export default function TaskStatusCell({ projectId, task, statuses, currentUserI
     }
 
     return (
-        <select
-            className="h-8 rounded-md border border-input bg-background px-2 text-xs"
-            value=""
-            onChange={(e) => {
-                if (e.target.value) changeStatus(Number(e.target.value));
-            }}
-        >
-            <option value="">Ubah status...</option>
-            {options.map((s) => (
-                <option key={s.id} value={s.id}>
-                    {s.name}
-                </option>
-            ))}
-        </select>
+        <Select value="" onValueChange={(value) => changeStatus(Number(value))}>
+            <SelectTrigger className="h-8 w-auto text-xs">
+                <SelectValue placeholder="Ubah status..." />
+            </SelectTrigger>
+            <SelectContent>
+                {options.map((s) => (
+                    <SelectItem key={s.id} value={String(s.id)}>
+                        {s.name}
+                    </SelectItem>
+                ))}
+            </SelectContent>
+        </Select>
     );
 }

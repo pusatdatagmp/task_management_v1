@@ -24,6 +24,7 @@
  * ==========================================================
  */
 
+use App\Models\Holiday;
 use App\Models\Project;
 use App\Models\Task;
 use App\Models\TaskStatus;
@@ -167,6 +168,48 @@ test('kapasitas: user tanpa override pakai work_schedule aktif, dengan override 
     $response->assertOk();
     expect(dashboardUserRow($response, $memberDefault->id)['kapasitas'])->toBe(480)
         ->and(dashboardUserRow($response, $memberOverride->id)['kapasitas'])->toBe(360);
+});
+
+// F-180 (audit Boss 2026-08-27): hari libur -> kapasitas HARUS 0 untuk SEMUA
+// user (termasuk yang override manual), supaya classifyWorkload() (frontend)
+// jatuh ke guard "kapasitas<=0 -> normal" alih-alih salah tandai "Idle Tinggi".
+// Root cause lama: kapasitas() tidak pernah mengecek Holiday sama sekali.
+test('kapasitas: hari libur -> 0 untuk semua user, TERMASUK yang override manual (F-180)', function () {
+    $admin = User::factory()->admin()->create();
+    $memberDefault = User::factory()->create(['organization_id' => $admin->organization_id]);
+    $memberOverride = User::factory()->create(['organization_id' => $admin->organization_id, 'daily_capacity_minutes' => 360]);
+    createDashboardProject($admin, [$memberDefault->id, $memberOverride->id]);
+
+    $anchor = Carbon::create(2026, 7, 20, 9, 0, 0); // Senin, hari kerja normal
+    seedDashboardWorkSchedule($admin, $anchor, 480);
+    Holiday::create([
+        'organization_id' => $admin->organization_id,
+        'date' => $anchor->toDateString(),
+        'name' => 'Libur Uji F-180',
+    ]);
+    $this->travelTo($anchor);
+
+    $response = $this->actingAs($admin)->get(route('dashboard.summary', ['date' => $anchor->toDateString()]));
+
+    $response->assertOk();
+    expect(dashboardUserRow($response, $memberDefault->id)['kapasitas'])->toBe(0)
+        ->and(dashboardUserRow($response, $memberOverride->id)['kapasitas'])->toBe(0);
+});
+
+test('kapasitas: akhir pekan di luar days_of_week -> 0, walau tidak ada baris Holiday manual (F-180)', function () {
+    $admin = User::factory()->admin()->create();
+    $member = User::factory()->create(['organization_id' => $admin->organization_id]);
+    createDashboardProject($admin, [$member->id]);
+
+    $anchor = Carbon::create(2026, 7, 20, 9, 0, 0); // Senin -> Minggu = 2026-07-19
+    $sunday = $anchor->copy()->subDay();
+    seedDashboardWorkSchedule($admin, $anchor, 480); // days_of_week = [1..5], Minggu tidak termasuk
+    $this->travelTo($anchor);
+
+    $response = $this->actingAs($admin)->get(route('dashboard.summary', ['date' => $sunday->toDateString()]));
+
+    $response->assertOk();
+    expect(dashboardUserRow($response, $member->id)['kapasitas'])->toBe(0);
 });
 
 // F-78: PEMBARUAN (bukan tambalan) — sebelum v1.0.1 task "masa depan" 100% masuk

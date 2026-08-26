@@ -15,8 +15,10 @@
  * DATA MASUK  : query string ?from=Y-m-d&to=Y-m-d (opsional, default bulan
  *               berjalan WIB — F-69)
  * DATA KELUAR : Inertia props (from, to, rows[], kpi_enabled) — rows sudah urut
- *               Point desc. kpi_enabled (F-166) org-level -- frontend sembunyikan
- *               kolom KPI kalau false, TIDAK PERNAH dihitung ulang di controller ini.
+ *               kpi_total DESC (F-177, permintaan Boss 2026-08-27, dulu Point desc
+ *               — lihat KONTRAK LeaderboardService::forPeriod() untuk rationale).
+ *               kpi_enabled (F-166) org-level -- frontend sembunyikan kolom KPI
+ *               kalau false, TIDAK PERNAH dihitung ulang di controller ini.
  * RISIKO      : F-4 — TIDAK BOLEH ada field rupiah/gaji di props ini. Halaman ini
  *               skor RANKING, bukan nominal uang (itu v2.0).
  * ==========================================================

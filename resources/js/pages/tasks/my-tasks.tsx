@@ -23,11 +23,14 @@
 // RISIKO      : -
 // ==========================================================
 
+import TagBadges from '@/components/tag-badges';
 import TaskLiveCounter, { type LiveCounterData } from '@/components/task-live-counter';
 import TaskStatusCell, { type TaskStatusOption } from '@/components/task-status-cell';
 import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
+import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
 import AppLayout from '@/layouts/app-layout';
+import { SELECT_ALL_VALUE } from '@/lib/utils';
 import { type BreadcrumbItem, type SharedData } from '@/types';
 import { Head, Link, usePage } from '@inertiajs/react';
 import { useMemo, useState } from 'react';
@@ -39,6 +42,8 @@ interface MyTaskRow {
     due_date: string;
     task_status: TaskStatusOption;
     assignees: { id: number; name: string }[];
+    // Permintaan Boss (2026-08-26): multi-tag, lihat components/tag-badges.tsx.
+    tags: { id: number; name: string; color: string }[];
     project: { id: number; name: string; task_statuses: TaskStatusOption[] };
     live_counter: LiveCounterData | null;
     // Revisi 2026-08-06 item 1: persentase progress (F-123 basis).
@@ -107,20 +112,24 @@ export default function MyTasks({ groups }: MyTasksProps) {
                                 placeholder="Cari judul..."
                                 value={search}
                                 onChange={(e) => setSearch(e.target.value)}
-                                className="h-9 w-48 rounded-md border border-input bg-background px-2 text-sm"
+                                className="border-input bg-background h-9 w-48 rounded-md border px-2 text-sm"
                             />
-                            <select
-                                className="h-9 rounded-md border border-input bg-background px-2 text-sm"
-                                value={projectId}
-                                onChange={(e) => setProjectId(e.target.value ? Number(e.target.value) : '')}
+                            <Select
+                                value={projectId === '' ? SELECT_ALL_VALUE : String(projectId)}
+                                onValueChange={(value) => setProjectId(value === SELECT_ALL_VALUE ? '' : Number(value))}
                             >
-                                <option value="">Semua Project</option>
-                                {projectOptions.map((p) => (
-                                    <option key={p.id} value={p.id}>
-                                        {p.name}
-                                    </option>
-                                ))}
-                            </select>
+                                <SelectTrigger className="h-9 w-auto text-sm">
+                                    <SelectValue />
+                                </SelectTrigger>
+                                <SelectContent>
+                                    <SelectItem value={SELECT_ALL_VALUE}>Semua Project</SelectItem>
+                                    {projectOptions.map((p) => (
+                                        <SelectItem key={p.id} value={String(p.id)}>
+                                            {p.name}
+                                        </SelectItem>
+                                    ))}
+                                </SelectContent>
+                            </Select>
                             {/* F-109: Board cuma valid 1 project -- muncul HANYA saat filter
                                 mempersempit ke satu project. assignee=diriku supaya board yang
                                 terbuka cuma tampilkan kartu milikku, bukan seluruh project. */}
@@ -134,13 +143,13 @@ export default function MyTasks({ groups }: MyTasksProps) {
                 </div>
 
                 {totalCount === 0 && (
-                    <p className="rounded-lg border p-6 text-center text-muted-foreground">
+                    <p className="text-muted-foreground rounded-lg border p-6 text-center">
                         Tidak ada task aktif yang di-assign ke kamu. Kerja bagus, atau saatnya tanya admin.
                     </p>
                 )}
 
                 {totalCount > 0 && filteredCount === 0 && (
-                    <p className="rounded-lg border p-6 text-center text-muted-foreground">
+                    <p className="text-muted-foreground rounded-lg border p-6 text-center">
                         Tidak ada task yang cocok dengan filter ini.
                         {hasActiveFilter && (
                             <Button
@@ -163,13 +172,13 @@ export default function MyTasks({ groups }: MyTasksProps) {
                     (section) =>
                         filteredGroups[section.key].length > 0 && (
                             <div key={section.key} className="flex flex-col gap-2">
-                                <h2 className="text-sm font-semibold text-muted-foreground">
+                                <h2 className="text-muted-foreground text-sm font-semibold">
                                     {section.label} ({filteredGroups[section.key].length})
                                 </h2>
                                 <div className="overflow-x-auto rounded-lg border">
                                     <table className="w-full text-left text-sm">
                                         <thead>
-                                            <tr className="border-b bg-muted/50 text-muted-foreground">
+                                            <tr className="bg-muted/50 text-muted-foreground border-b">
                                                 <th className="p-3">Judul</th>
                                                 <th className="p-3">Project</th>
                                                 <th className="p-3">Prioritas</th>
@@ -191,7 +200,11 @@ export default function MyTasks({ groups }: MyTasksProps) {
                                                                 {task.title}
                                                             </Link>
                                                             {/* B2: counter kecil di baris — badge default (bukan varian dot). */}
-                                                            <TaskLiveCounter isWorkState={task.task_status.is_work_state} liveCounter={task.live_counter} />
+                                                            <TaskLiveCounter
+                                                                isWorkState={task.task_status.is_work_state}
+                                                                liveCounter={task.live_counter}
+                                                            />
+                                                            <TagBadges tags={task.tags} />
                                                         </div>
                                                     </td>
                                                     <td className="p-3">{task.project.name}</td>
@@ -211,7 +224,7 @@ export default function MyTasks({ groups }: MyTasksProps) {
                                                         {task.checklist_items_count > 0 ? (
                                                             <Badge variant="outline">{task.progress_percent}%</Badge>
                                                         ) : (
-                                                            <span className="text-xs text-muted-foreground">-</span>
+                                                            <span className="text-muted-foreground text-xs">-</span>
                                                         )}
                                                     </td>
                                                     <td className="p-3">{new Date(task.due_date).toLocaleString('id-ID')}</td>

@@ -51,7 +51,13 @@ interface AttachmentRef {
 interface ExtensionRow {
     id: number;
     task_id: number;
-    task: { id: number; title: string; project: { id: number; name: string } };
+    // F-181 (audit Boss 2026-08-27): NULLABLE -- task ber-soft-delete (F-16)
+    // dikecualikan otomatis dari eager load DeadlineExtensionController::
+    // myExtensions() (task:id,title,project_id TANPA withTrashed()). Baris
+    // riwayat yang task-nya sudah dihapus TETAP tampil (histori pengajuan
+    // tidak boleh hilang), tapi field task jadi null dari backend -- WAJIB
+    // null-check di render, JANGAN diakses langsung (dulu crash blank putih).
+    task: { id: number; title: string; project: { id: number; name: string } } | null;
     requested_due_date: string;
     additional_minutes: number;
     reason: string;
@@ -262,7 +268,7 @@ export default function MyExtensions({ tasks, extensions }: { tasks: TaskOption[
                                 <div key={ext.id} className="rounded-md border p-3 text-sm">
                                     <div className="flex flex-wrap items-center justify-between gap-2">
                                         <span className="font-medium">
-                                            {ext.task.project.name} — {ext.task.title}
+                                            {ext.task ? `${ext.task.project.name} — ${ext.task.title}` : 'Task telah dihapus'}
                                         </span>
                                         <Badge className={statusBadge[ext.status].className}>{statusBadge[ext.status].label}</Badge>
                                     </div>
@@ -276,13 +282,19 @@ export default function MyExtensions({ tasks, extensions }: { tasks: TaskOption[
                                         <div className="mt-2 flex flex-col gap-1">
                                             {ext.attachments.map((a) => (
                                                 <div key={a.id} className="text-xs">
-                                                    {a.content_type === 'file' && (
+                                                    {/* F-181: link download BUTUH project.id -- kalau task sudah
+                                                        dihapus, id itu tidak ada lagi, jadi tampil sebagai label
+                                                        statis (bukan link mati) alih-alih crash membangun route(). */}
+                                                    {a.content_type === 'file' && ext.task && (
                                                         <a
                                                             href={route('attachments.download', [ext.task.project.id, ext.task_id, a.id])}
                                                             className="text-primary hover:underline"
                                                         >
                                                             Lihat bukti: {a.file_name}
                                                         </a>
+                                                    )}
+                                                    {a.content_type === 'file' && !ext.task && (
+                                                        <span className="text-muted-foreground">Bukti: {a.file_name} (task terhapus)</span>
                                                     )}
                                                     {a.content_type === 'link' && (
                                                         <a href={a.url ?? '#'} target="_blank" rel="noopener noreferrer" className="text-primary hover:underline">

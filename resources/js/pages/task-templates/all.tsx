@@ -24,8 +24,10 @@
 
 import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
+import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
 import AppLayout from '@/layouts/app-layout';
 import { PRIORITY_QUADRANT_COLOR, PRIORITY_QUADRANT_LABEL, type PriorityQuadrant } from '@/lib/priority-quadrant';
+import { SELECT_ALL_VALUE } from '@/lib/utils';
 import { type BreadcrumbItem } from '@/types';
 import { Head, Link, router } from '@inertiajs/react';
 import { useState } from 'react';
@@ -95,20 +97,24 @@ export default function AllTaskTemplates({ templates, projects }: { templates: T
                 <div className="flex flex-wrap items-center justify-between gap-2">
                     <h1 className="text-xl font-semibold">Tugas Berulang</h1>
                     <div className="flex items-center gap-2">
-                        <select
-                            className="h-9 rounded-md border border-input bg-background px-2 text-sm"
-                            value={targetProject}
-                            onChange={(e) => setTargetProject(e.target.value)}
-                        >
-                            <option value="">Pilih project...</option>
-                            {projects.map((p) => (
-                                <option key={p.id} value={p.id}>
-                                    {p.name}
-                                </option>
-                            ))}
-                        </select>
+                        <Select value={targetProject} onValueChange={setTargetProject}>
+                            <SelectTrigger className="h-9 w-auto text-sm">
+                                <SelectValue placeholder="Pilih project..." />
+                            </SelectTrigger>
+                            <SelectContent>
+                                {projects.map((p) => (
+                                    <SelectItem key={p.id} value={String(p.id)}>
+                                        {p.name}
+                                    </SelectItem>
+                                ))}
+                            </SelectContent>
+                        </Select>
                         <Button disabled={!targetProject} asChild={!!targetProject}>
-                            {targetProject ? <Link href={route('task-templates.create', targetProject)}>Template Baru</Link> : <span>Template Baru</span>}
+                            {targetProject ? (
+                                <Link href={route('task-templates.create', targetProject)}>Template Baru</Link>
+                            ) : (
+                                <span>Template Baru</span>
+                            )}
                         </Button>
                     </div>
                 </div>
@@ -122,35 +128,43 @@ export default function AllTaskTemplates({ templates, projects }: { templates: T
                             setSearch(e.target.value);
                             setPage(1);
                         }}
-                        className="h-9 w-48 rounded-md border border-input bg-background px-2 text-sm"
+                        className="border-input bg-background h-9 w-48 rounded-md border px-2 text-sm"
                     />
-                    <select
-                        className="h-9 rounded-md border border-input bg-background px-2 text-sm"
-                        value={filterProjectId}
-                        onChange={(e) => {
-                            setFilterProjectId(e.target.value ? Number(e.target.value) : '');
+                    <Select
+                        value={filterProjectId === '' ? SELECT_ALL_VALUE : String(filterProjectId)}
+                        onValueChange={(value) => {
+                            setFilterProjectId(value === SELECT_ALL_VALUE ? '' : Number(value));
                             setPage(1);
                         }}
                     >
-                        <option value="">Semua Project</option>
-                        {projects.map((p) => (
-                            <option key={p.id} value={p.id}>
-                                {p.name}
-                            </option>
-                        ))}
-                    </select>
-                    <select
-                        className="h-9 rounded-md border border-input bg-background px-2 text-sm"
+                        <SelectTrigger className="h-9 w-auto text-sm">
+                            <SelectValue />
+                        </SelectTrigger>
+                        <SelectContent>
+                            <SelectItem value={SELECT_ALL_VALUE}>Semua Project</SelectItem>
+                            {projects.map((p) => (
+                                <SelectItem key={p.id} value={String(p.id)}>
+                                    {p.name}
+                                </SelectItem>
+                            ))}
+                        </SelectContent>
+                    </Select>
+                    <Select
                         value={statusFilter}
-                        onChange={(e) => {
-                            setStatusFilter(e.target.value as typeof statusFilter);
+                        onValueChange={(value) => {
+                            setStatusFilter(value as typeof statusFilter);
                             setPage(1);
                         }}
                     >
-                        <option value="all">Semua Status</option>
-                        <option value="active">Aktif</option>
-                        <option value="inactive">Nonaktif</option>
-                    </select>
+                        <SelectTrigger className="h-9 w-auto text-sm">
+                            <SelectValue />
+                        </SelectTrigger>
+                        <SelectContent>
+                            <SelectItem value="all">Semua Status</SelectItem>
+                            <SelectItem value="active">Aktif</SelectItem>
+                            <SelectItem value="inactive">Nonaktif</SelectItem>
+                        </SelectContent>
+                    </Select>
                     {hasActiveFilter && (
                         <Button type="button" variant="ghost" size="sm" onClick={resetFilters}>
                             Reset filter
@@ -161,7 +175,7 @@ export default function AllTaskTemplates({ templates, projects }: { templates: T
                 <div className="overflow-x-auto rounded-lg border">
                     <table className="w-full text-left text-sm">
                         <thead>
-                            <tr className="border-b bg-muted/50 text-muted-foreground">
+                            <tr className="bg-muted/50 text-muted-foreground border-b">
                                 <th className="p-3">Project</th>
                                 <th className="p-3">Judul</th>
                                 <th className="p-3">Jadwal</th>
@@ -192,12 +206,10 @@ export default function AllTaskTemplates({ templates, projects }: { templates: T
                                                 {PRIORITY_QUADRANT_LABEL[template.priority_quadrant]}
                                             </Badge>
                                         ) : (
-                                            <span className="text-xs text-muted-foreground">Belum diklasifikasi</span>
+                                            <span className="text-muted-foreground text-xs">Belum diklasifikasi</span>
                                         )}
                                     </td>
-                                    <td className="p-3">
-                                        {template.is_active ? <Badge>Aktif</Badge> : <Badge variant="secondary">Nonaktif</Badge>}
-                                    </td>
+                                    <td className="p-3">{template.is_active ? <Badge>Aktif</Badge> : <Badge variant="secondary">Nonaktif</Badge>}</td>
                                     <td className="p-3">
                                         <div className="flex gap-2">
                                             <Button variant="outline" size="sm" asChild>
@@ -213,7 +225,7 @@ export default function AllTaskTemplates({ templates, projects }: { templates: T
 
                             {templates.length === 0 && (
                                 <tr>
-                                    <td colSpan={8} className="p-6 text-center text-muted-foreground">
+                                    <td colSpan={8} className="text-muted-foreground p-6 text-center">
                                         Belum ada template recurring di project manapun.
                                     </td>
                                 </tr>
@@ -221,7 +233,7 @@ export default function AllTaskTemplates({ templates, projects }: { templates: T
 
                             {templates.length > 0 && filteredTemplates.length === 0 && (
                                 <tr>
-                                    <td colSpan={8} className="p-6 text-center text-muted-foreground">
+                                    <td colSpan={8} className="text-muted-foreground p-6 text-center">
                                         Tidak ada template yang cocok dengan filter ini.
                                     </td>
                                 </tr>
@@ -231,18 +243,12 @@ export default function AllTaskTemplates({ templates, projects }: { templates: T
                 </div>
 
                 {filteredTemplates.length > 0 && (
-                    <div className="flex items-center justify-between text-sm text-muted-foreground">
+                    <div className="text-muted-foreground flex items-center justify-between text-sm">
                         <span>
                             Halaman {currentPage} dari {totalPages} ({filteredTemplates.length} template)
                         </span>
                         <div className="flex gap-2">
-                            <Button
-                                type="button"
-                                variant="outline"
-                                size="sm"
-                                disabled={currentPage <= 1}
-                                onClick={() => setPage(currentPage - 1)}
-                            >
+                            <Button type="button" variant="outline" size="sm" disabled={currentPage <= 1} onClick={() => setPage(currentPage - 1)}>
                                 Sebelumnya
                             </Button>
                             <Button

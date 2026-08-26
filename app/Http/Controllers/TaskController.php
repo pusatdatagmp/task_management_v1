@@ -38,6 +38,7 @@ use App\Http\Requests\Task\UpdateTaskRequest;
 use App\Http\Requests\Task\UpdateTaskStatusRequest;
 use App\Models\ActivityLog;
 use App\Models\Project;
+use App\Models\Tag;
 use App\Models\Task;
 use App\Models\TaskStatus;
 use App\Models\User;
@@ -87,7 +88,7 @@ class TaskController extends Controller
         $filters['assignee'] = array_map('intval', $filters['assignee'] ?? []);
 
         $query = self::withChecklistCounts(
-            $project->tasks()->with(['taskStatus', 'assignees:id,name,nickname', 'parent:id,title'])
+            $project->tasks()->with(['taskStatus', 'assignees:id,name,nickname', 'parent:id,title', 'tags:id,name,color'])
         );
 
         if (! empty($filters['status'])) {
@@ -191,6 +192,7 @@ class TaskController extends Controller
         $task->load([
             'taskStatus',
             'assignees:id,name,nickname',
+            'tags:id,name,color',
             'parent:id,title,task_status_id',
             'parent.taskStatus:id,name,color',
             'children' => fn ($q) => $q->with('taskStatus:id,name,color')->orderBy('title'),
@@ -265,6 +267,7 @@ class TaskController extends Controller
                 // badge "Jeda" (F-138f) — TERPISAH dari live_counter (per-user).
                 'work_state' => $task->computeWorkState(),
                 'assignees' => $task->assignees,
+                'tags' => $task->tags,
                 'parent' => $task->parent,
                 'children' => $task->children,
                 // F-123/B4: progress (done/total) dari DATA yang sama yang dipakai
@@ -333,7 +336,7 @@ class TaskController extends Controller
         $tasks = self::withChecklistCounts(
             Task::whereHas('assignees', fn ($q) => $q->whereKey($user->id))
                 ->whereHas('taskStatus', fn ($q) => $q->where('is_completed', false))
-                ->with(['taskStatus', 'assignees:id,name,nickname', 'project:id,name', 'project.taskStatuses'])
+                ->with(['taskStatus', 'assignees:id,name,nickname', 'project:id,name', 'project.taskStatuses', 'tags:id,name,color'])
                 ->orderByDesc('created_at')
         )->get();
 
@@ -391,7 +394,7 @@ class TaskController extends Controller
         // TaskStatusCell per baris (F-45/F-28) bisa bangun dropdown status project
         // MASING-MASING task — pola sama myTasks(), status TIDAK seragam lintas project.
         $query = self::withChecklistCounts(
-            Task::query()->with(['taskStatus', 'assignees:id,name,nickname', 'project:id,name', 'project.taskStatuses', 'parent:id,title'])
+            Task::query()->with(['taskStatus', 'assignees:id,name,nickname', 'project:id,name', 'project.taskStatuses', 'parent:id,title', 'tags:id,name,color'])
         );
 
         if (! empty($filters['project_id'])) {
@@ -602,6 +605,10 @@ class TaskController extends Controller
         return Inertia::render('tasks/create', [
             'project' => $project->only(['id', 'name']),
             'members' => $project->members()->select('users.id', 'users.name', 'users.nickname')->orderBy('users.name')->get(),
+            // Permintaan Boss (2026-08-26): katalog tag organisasi -- TagPicker
+            // pilih dari sini, BUKAN free-text per task (Tag::class sudah
+            // auto-scope organization_id via BelongsToOrganization, F-15).
+            'availableTags' => Tag::orderBy('name')->get(['id', 'name', 'color']),
         ]);
     }
 
@@ -615,7 +622,7 @@ class TaskController extends Controller
             $statusId = TaskStatus::where('project_id', $project->id)->orderBy('position')->value('id');
 
             $task = Task::create([
-                ...$request->safe()->except(['assignees', 'checklist_items']),
+                ...$request->safe()->except(['assignees', 'tags', 'checklist_items']),
                 'project_id' => $project->id,
                 'task_status_id' => $statusId,
                 'created_by' => Auth::id(),
@@ -624,6 +631,9 @@ class TaskController extends Controller
             // F-51: sync() (bukan query manual ke task_user) supaya TaskUserObserver
             // menangkap event assigned untuk tiap assignee.
             $task->assignees()->sync($request->validated('assignees') ?? []);
+            // Permintaan Boss (2026-08-26): multi-tag, nol activity log per sync
+            // (lihat KONTRAK Task::tags()) -- murni kategorisasi tampilan.
+            $task->tags()->sync($request->validated('tags') ?? []);
 
             // Revisi 2026-08-06 item 5: checklist ("subtask" ringan, F-123) diisi
             // LANGSUNG saat create -- pola IDENTIK TaskTemplateController::syncChecklistItems()
@@ -644,13 +654,16 @@ class TaskController extends Controller
 
     public function edit(Project $project, Task $task): Response
     {
-        $task->load('assignees:id,name,nickname');
+        $task->load(['assignees:id,name,nickname', 'tags:id,name,color']);
 
         return Inertia::render('tasks/edit', [
             'project' => $project->only(['id', 'name']),
             'task' => $task,
             'assigneeIds' => $task->assignees->pluck('id'),
+            'tagIds' => $task->tags->pluck('id'),
             'members' => $project->members()->select('users.id', 'users.name', 'users.nickname')->orderBy('users.name')->get(),
+            // Permintaan Boss (2026-08-26): lihat create().
+            'availableTags' => Tag::orderBy('name')->get(['id', 'name', 'color']),
         ]);
     }
 
@@ -664,13 +677,14 @@ class TaskController extends Controller
     public function update(UpdateTaskRequest $request, Project $project, Task $task): RedirectResponse
     {
         DB::transaction(function () use ($request, $task) {
-            $excluded = ['assignees'];
+            $excluded = ['assignees', 'tags'];
             if ($task->task_template_id) {
                 $excluded[] = 'task_type';
             }
 
             $task->update($request->safe()->except($excluded));
             $task->assignees()->sync($request->validated('assignees') ?? []);
+            $task->tags()->sync($request->validated('tags') ?? []); // Permintaan Boss (2026-08-26)
         });
 
         return to_route('tasks.index', $project);

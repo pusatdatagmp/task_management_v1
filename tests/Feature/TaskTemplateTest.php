@@ -7,7 +7,7 @@
  * TUJUAN      : Verifikasi CRUD blueprint template recurring (F-46, v0.8 H4 Fase A) —
  *               default_assignees tervalidasi member project SAAT SIMPAN (F-86), edit
  *               tidak menyentuh instance yang sudah lahir (A6), gating permission
- *               task.manage (F-90).
+ *               tasktemplate.manage (F-170, dulu task.manage — F-90).
  *               Revisi 2026-08-07 (permintaan Boss): dropdown `task_type`
  *               (daily/weekly/monthly) & `recurrence_config` DICABUT dari
  *               form/validasi -- jadwal SEPENUHNYA dari kolom Automation Engine
@@ -98,7 +98,7 @@ test('non-member sebagai default_assignee saat simpan ditolak (F-86/A3)', functi
     expect(TaskTemplate::where('project_id', $project->id)->where('title', 'Template Invalid Assignee')->exists())->toBeFalse();
 });
 
-test('member (tanpa permission task.manage) tidak bisa akses CRUD template (F-90)', function () {
+test('member (tanpa permission tasktemplate.manage, F-170 dulu task.manage) tidak bisa akses CRUD template (F-90)', function () {
     $admin = User::factory()->admin()->create();
     $member = User::factory()->create(['organization_id' => $admin->organization_id]);
     $project = createTemplateTestProject($admin, [$member->id]);

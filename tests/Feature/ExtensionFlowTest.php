@@ -100,6 +100,58 @@ test('assignee can submit an extension request with evidence, starting as pendin
     Storage::disk('local')->assertExists($evidence->file_path);
 });
 
+// F-181 (audit Boss 2026-08-27): member melapor "Perpanjangan Saya" blank
+// putih -- root cause: Task pakai soft delete (F-16), myExtensions()/index()
+// eager-load task TANPA withTrashed(), jadi task jadi null begitu dihapus.
+// Frontend lama asumsi task selalu ada (ext.task.project.name tanpa null-check)
+// -> TypeError "Cannot read properties of null (reading 'project')" -> crash
+// SELURUH halaman. Fix: backend TETAP kirim task=null (histori tidak diubah,
+// F-16 tidak disentuh), frontend dikasih null-check + fallback "Task telah
+// dihapus". Test ini pagar backend (200 + task:null di props, BUKAN 500).
+test('F-181: my-extensions TIDAK error 500 walau task-nya sudah di-soft-delete, task jadi null di props', function () {
+    $admin = User::factory()->admin()->create();
+    $member = User::factory()->create(['organization_id' => $admin->organization_id]);
+    $project = createExtProject($admin, [$member->id]);
+    $task = createExtTask($project, $admin, $member);
+
+    $this->actingAs($member)->post(route('extensions.store'), [
+        'task_id' => $task->id,
+        'requested_due_date' => now()->addDays(3)->format('Y-m-d H:i:s'),
+        'reason' => 'Butuh waktu tambahan.',
+    ])->assertRedirect(route('extensions.my'));
+
+    $task->delete(); // soft delete (F-16) -- BUKAN hard delete
+
+    $response = $this->actingAs($member)->get(route('extensions.my'));
+
+    $response->assertOk();
+    $response->assertInertia(fn ($page) => $page
+        ->component('extensions/my-extensions')
+        ->where('extensions.0.task', null));
+});
+
+test('F-181: antrean admin (extensions.index) TIDAK error 500 walau task pengajuan pending sudah di-soft-delete', function () {
+    $admin = User::factory()->admin()->create();
+    $member = User::factory()->create(['organization_id' => $admin->organization_id]);
+    $project = createExtProject($admin, [$member->id]);
+    $task = createExtTask($project, $admin, $member);
+
+    $this->actingAs($member)->post(route('extensions.store'), [
+        'task_id' => $task->id,
+        'requested_due_date' => now()->addDays(3)->format('Y-m-d H:i:s'),
+        'reason' => 'Butuh waktu tambahan.',
+    ])->assertRedirect(route('extensions.my'));
+
+    $task->delete();
+
+    $response = $this->actingAs($admin)->get(route('extensions.index'));
+
+    $response->assertOk();
+    $response->assertInertia(fn ($page) => $page
+        ->component('extensions/index')
+        ->where('extensions.0.task', null));
+});
+
 test('revisi 2026-08-06 item 4: evidence berupa link tersimpan, type=evidence', function () {
     $admin = User::factory()->admin()->create();
     $member = User::factory()->create(['organization_id' => $admin->organization_id]);
@@ -313,7 +365,7 @@ test('reject leaves due_date unchanged', function () {
         ->and($task->original_due_date)->toBeNull();
 });
 
-test('a member without task.approve cannot approve an extension', function () {
+test('a member without extension.approve cannot approve an extension (F-170)', function () {
     $admin = User::factory()->admin()->create();
     $member = User::factory()->create(['organization_id' => $admin->organization_id]);
     $project = createExtProject($admin, [$member->id]);

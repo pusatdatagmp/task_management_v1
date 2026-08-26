@@ -9,6 +9,7 @@ use App\Http\Controllers\LeaderboardController;
 use App\Http\Controllers\ProjectController;
 use App\Http\Controllers\RoleController;
 use App\Http\Controllers\SettingsController;
+use App\Http\Controllers\TagController;
 use App\Http\Controllers\TaskController;
 use App\Http\Controllers\TaskStatusController;
 use App\Http\Controllers\TaskTemplateController;
@@ -43,9 +44,13 @@ Route::middleware(['auth', 'can:workschedule.manage'])->group(function () {
     // Permintaan Boss (2026-08-10) -- "pilih mana yang aktif" TANPA urus
     // tanggal. TETAP INSERT (F-40) -- lihat komentar activateNow() di controller.
     Route::post('pengaturan/jam-kerja/{workSchedule}/activate-now', [WorkScheduleController::class, 'activateNow'])->name('work-schedules.activate-now');
+});
 
-    // F-43 (HARDEN Fase D) — reuse permission workschedule.manage (setara, sama-sama
-    // "kelola konfigurasi jendela kerja organisasi"), tidak perlu permission baru.
+// F-170 (audit permission per-menu, revisi Boss atas F-43): SEBELUMNYA reuse
+// workschedule.manage ("setara, sama-sama kelola konfigurasi jendela kerja") —
+// digerbangi permission SENDIRI holiday.manage supaya role bisa dikasih akses
+// Hari Libur TANPA otomatis dapat akses Jam Kerja, atau sebaliknya.
+Route::middleware(['auth', 'can:holiday.manage'])->group(function () {
     Route::get('pengaturan/hari-libur', [HolidayController::class, 'index'])->name('holidays.index');
     Route::post('pengaturan/hari-libur', [HolidayController::class, 'store'])->name('holidays.store');
     Route::put('pengaturan/hari-libur/{holiday}', [HolidayController::class, 'update'])->name('holidays.update');
@@ -88,9 +93,11 @@ Route::middleware(['auth', 'can:project.viewAll'])->group(function () {
 });
 
 // v1.2 H7b (F-140/F-144) — "Tugas Berulang": flat lintas SEMUA project, listing
-// murni (CRUD tetap project-scoped, F-46 utuh). Permission task.manage SAMA
-// dengan CRUD template biasa (routes/admin.php grup task-templates.* di bawah).
-Route::middleware(['auth', 'can:task.manage'])->group(function () {
+// murni (CRUD tetap project-scoped). F-170 (revisi Boss atas F-46): permission
+// SENDIRI tasktemplate.manage — SEBELUMNYA reuse task.manage ("template adalah
+// cara lain membuat task, bukan resource terpisah izinnya"), sekarang role bisa
+// dikasih akses Tugas Berulang TANPA otomatis dapat CRUD task biasa.
+Route::middleware(['auth', 'can:tasktemplate.manage'])->group(function () {
     Route::get('task-templates', [TaskTemplateController::class, 'allProjects'])->name('task-templates.all');
 });
 
@@ -115,18 +122,34 @@ Route::middleware(['auth', 'can:settings.manage'])->group(function () {
     // v1.4 KPI-2 (F-166) -- tab KPI, permission SAMA settings.manage (reuse
     // DS-2/DS-3, pola konsisten: 1 halaman Setelan, 1 gate, N tab).
     Route::post('pengaturan/setelan/kpi', [SettingsController::class, 'updateKpi'])->name('settings.kpi.update');
+    // Permintaan Boss (2026-08-26): tab "Tag" -- CRUD katalog Tag organisasi,
+    // permission SAMA settings.manage (reuse, pola konsisten N tab di atas).
+    // 'create'/index tidak perlu route sendiri -- data dikirim SettingsController::
+    // edit(), form tambah/edit/hapus inline di tab (nol halaman baru).
+    Route::post('pengaturan/setelan/tags', [TagController::class, 'store'])->name('tags.store');
+    Route::put('pengaturan/setelan/tags/{tag}', [TagController::class, 'update'])->name('tags.update');
+    Route::delete('pengaturan/setelan/tags/{tag}', [TagController::class, 'destroy'])->name('tags.destroy');
 });
 
-// RBAC §C2/E1/E2 — CRUD user + kelola role, permission user.manage. 'create'
-// WAJIB didaftarkan sebelum {user}/edit dan {role}/edit, pola sama F-76/'flags'.
+// RBAC §C2/E2 — CRUD user, permission user.manage. 'create' WAJIB didaftarkan
+// sebelum {user}/edit, pola sama F-76/'flags'.
 Route::middleware(['auth', 'can:user.manage'])->group(function () {
-    Route::get('pengaturan/users', [UserController::class, 'index'])->name('users.index');
     Route::get('pengaturan/users/create', [UserController::class, 'create'])->name('users.create');
     Route::post('pengaturan/users', [UserController::class, 'store'])->name('users.store');
     Route::get('pengaturan/users/{user}/edit', [UserController::class, 'edit'])->name('users.edit');
     Route::put('pengaturan/users/{user}', [UserController::class, 'update'])->name('users.update');
     Route::patch('pengaturan/users/{user}/toggle-active', [UserController::class, 'toggleActive'])->name('users.toggle-active');
+});
 
+// F-170 (revisi Boss atas §E1): CRUD role permission SENDIRI role.manage —
+// SEBELUMNYA numpang user.manage (1 switch buka User CRUD + Role CRUD sekaligus),
+// sekarang bisa dipisah. role.manage JUGA satu-satunya permission yang boleh
+// mengedit permission role manapun (termasuk role.manage-nya sendiri) — guard
+// lockout `wouldLeaveNoHolderOfPermission` di RoleController::update() pindah
+// mengawal permission INI (bukan lagi user.manage), karena kalau role.manage
+// sampai nol pemegang, organisasi terkunci SELAMANYA dari kelola role (chicken-
+// egg: butuh role.manage untuk memberi role.manage).
+Route::middleware(['auth', 'can:role.manage'])->group(function () {
     Route::get('pengaturan/roles', [RoleController::class, 'index'])->name('roles.index');
     Route::get('pengaturan/roles/create', [RoleController::class, 'create'])->name('roles.create');
     Route::post('pengaturan/roles', [RoleController::class, 'store'])->name('roles.store');
@@ -134,6 +157,16 @@ Route::middleware(['auth', 'can:user.manage'])->group(function () {
     Route::put('pengaturan/roles/{role}', [RoleController::class, 'update'])->name('roles.update');
     Route::patch('pengaturan/roles/{role}/set-default', [RoleController::class, 'setDefault'])->name('roles.set-default');
     Route::delete('pengaturan/roles/{role}', [RoleController::class, 'destroy'])->name('roles.destroy');
+});
+
+// F-170: halaman gabungan "Pengguna & Peran" (users/index.tsx) dilihat siapa
+// pun yang punya SALAH SATU dari user.manage/role.manage (union, bukan AND) —
+// role yang cuma pegang role.manage tetap perlu jalan masuk ke halaman ini
+// untuk lihat kolom Peran, begitu juga sebaliknya. Middleware `can:` bawaan
+// Laravel tidak punya OR — otorisasi union-nya dilakukan INLINE di
+// UserController::index() (abort_unless), rute ini SENGAJA hanya 'auth'.
+Route::middleware(['auth'])->group(function () {
+    Route::get('pengaturan/users', [UserController::class, 'index'])->name('users.index');
 });
 
 Route::middleware(['auth', 'can:project.manage'])->scopeBindings()->group(function () {
@@ -176,11 +209,12 @@ Route::middleware(['auth', 'can:task.manage'])->scopeBindings()->group(function 
     Route::delete('projects/{project}/tasks/{task}', [TaskController::class, 'destroy'])->name('tasks.destroy');
 });
 
-// v0.8 H4 (F-46) — CRUD blueprint recurring task per project, permission task.manage
-// (sama dengan CRUD task biasa — F-46: template adalah cara lain membuat task,
-// bukan resource terpisah izinnya). 'create' WAJIB sebelum {taskTemplate}/edit,
-// pola sama F-76/'flags'/'create' di grup lain di file ini.
-Route::middleware(['auth', 'can:task.manage'])->scopeBindings()->group(function () {
+// v0.8 H4 — CRUD blueprint recurring task per project. F-170 (revisi Boss atas
+// F-46): permission SENDIRI tasktemplate.manage — SEBELUMNYA sama dengan CRUD
+// task biasa ("template adalah cara lain membuat task, bukan resource terpisah
+// izinnya"), sekarang menu Tugas Berulang dikontrol terpisah dari task.manage.
+// 'create' WAJIB sebelum {taskTemplate}/edit, pola sama F-76/'flags'/'create'.
+Route::middleware(['auth', 'can:tasktemplate.manage'])->scopeBindings()->group(function () {
     Route::get('projects/{project}/templates', [TaskTemplateController::class, 'index'])->name('task-templates.index');
     Route::get('projects/{project}/templates/create', [TaskTemplateController::class, 'create'])->name('task-templates.create');
     Route::post('projects/{project}/templates', [TaskTemplateController::class, 'store'])->name('task-templates.store');
@@ -202,12 +236,13 @@ Route::middleware(['auth', 'can:task.manage'])->scopeBindings()->group(function 
     Route::delete('projects/{project}/tasks/{task}/attachments/{attachment}', [AttachmentController::class, 'destroy'])->name('attachments.destroy');
 });
 
-// v0.8 H6 (F-50) — antrean & keputusan perpanjangan deadline, permission
-// task.approve (sama dengan approve/reject task biasa, F-28-setara — BF §6
-// matriks "Approve extension" admin only). Flat (bukan nested project/task) —
-// extension resolusi lewat route model binding biasa, tidak butuh scopeBindings
-// karena tidak ada {project}/{task} di URL ini.
-Route::middleware(['auth', 'can:task.approve'])->group(function () {
+// v0.8 H6 (F-50) — antrean & keputusan perpanjangan deadline. F-170 (revisi
+// Boss atas "F-28-setara"): permission SENDIRI extension.approve — SEBELUMNYA
+// sama dengan approve/reject task biasa, sekarang menu Perpanjangan dikontrol
+// terpisah dari task.approve. Flat (bukan nested project/task) — extension
+// resolusi lewat route model binding biasa, tidak butuh scopeBindings karena
+// tidak ada {project}/{task} di URL ini.
+Route::middleware(['auth', 'can:extension.approve'])->group(function () {
     Route::get('pengaturan/perpanjangan', [DeadlineExtensionController::class, 'index'])->name('extensions.index');
     Route::patch('deadline-extensions/{deadlineExtension}/approve', [DeadlineExtensionController::class, 'approve'])->name('extensions.approve');
     Route::patch('deadline-extensions/{deadlineExtension}/reject', [DeadlineExtensionController::class, 'reject'])->name('extensions.reject');

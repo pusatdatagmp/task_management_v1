@@ -38,6 +38,10 @@
  *               chart per member, 3 kategori DALAM MENIT (longgar/todo/achievement,
  *               lihat KONTRAK memberCategoryChart()) — PAGE-ONLY (commandCenterPage()
  *               saja, pola SAMA `team`, karena tergantung $teamRows/$teamDate).
+ *               Widget baru `tags_chart` (permintaan Boss 2026-08-27): bar chart
+ *               total task per Tag + breakdown todo/selesai (tagsChart(), F-85
+ *               nol N+1) — di commandCenterPayload() (BUKAN page-only), pola SAMA
+ *               status_projects (oversight, kosong untuk viewer terbatas).
  * DIPANGGIL   : routes/admin.php (gated can:dashboard.view)
  * MEMANGGIL   : DashboardService, User, Task, Project, ActivityLog, ActivityLogPresenter
  * DATA MASUK  : query string ?date=Y-m-d (opsional, default hari ini WIB) +
@@ -78,6 +82,7 @@ use App\Models\DeadlineExtension;
 use App\Models\Holiday;
 use App\Models\Meeting;
 use App\Models\Project;
+use App\Models\Tag;
 use App\Models\Task;
 use App\Models\TaskTemplate;
 use App\Models\User;
@@ -320,6 +325,10 @@ class DashboardController extends Controller
             // Revisi 2026-08-06: widget ini per-PROYEK, nol makna "punya siapa" --
             // kosong untuk viewer terbatas (keputusan Boss), bukan di-scope.
             'status_projects' => $restrictToSelf ? [] : $this->statusProjects(),
+            // Permintaan Boss (2026-08-27): widget bar chart "Tag" -- pola SAMA
+            // status_projects (oversight lintas-tenant, kosong untuk viewer
+            // terbatas, bukan di-scope per-user).
+            'tags_chart' => $restrictToSelf ? [] : $this->tagsChart(),
             // F-109: filter aktif dikirim balik supaya frontend bisa render
             // selector ter-isi (pola SAMA ActivityLogController::index() -- state
             // datang dari URL lewat backend, bukan disimpan di localStorage FE).
@@ -507,6 +516,41 @@ class DashboardController extends Controller
                 'selesai' => $p->selesai_count,
                 'overdue' => $p->overdue_count,
                 'due_date' => $p->due_date,
+            ])
+            ->all();
+    }
+
+    /**
+     * KONTRAK: widget bar chart "Tag" (permintaan Boss 2026-08-27) — total task
+     * per Tag (sumbu Y widget, F-90 nol permission baru), dipecah todo/selesai
+     * untuk tooltip hover (F-44: flag is_completed, BUKAN nama status — "todo"
+     * di sini = SEMUA task yang belum is_completed, tidak dipecah lagi jadi
+     * review/in_progress seperti progressDistribution(), karena permintaan Boss
+     * eksplisit cuma 2 kategori "todo dan selesai"). withCount (F-85, nol N+1)
+     * -- pola SAMA statusProjects(), ganti Project::tasks() jadi Tag::tasks()
+     * (Task::tags() many-to-many, lihat app/Models/Tag.php). Diurut total DESC
+     * SEMUA tag ikut tampil (termasuk total=0) supaya katalog Tag yang belum
+     * dipakai task manapun tetap kelihatan di chart, bukan hilang diam-diam.
+     *
+     * @return array<int, array<string, mixed>>
+     */
+    private function tagsChart(): array
+    {
+        return Tag::query()
+            ->withCount([
+                'tasks as total',
+                'tasks as todo_count' => fn ($q) => $q->whereHas('taskStatus', fn ($s) => $s->where('is_completed', false)),
+                'tasks as selesai_count' => fn ($q) => $q->whereHas('taskStatus', fn ($s) => $s->where('is_completed', true)),
+            ])
+            ->orderByDesc('total')
+            ->get(['id', 'name', 'color'])
+            ->map(fn (Tag $t) => [
+                'id' => $t->id,
+                'name' => $t->name,
+                'color' => $t->color,
+                'total' => $t->total,
+                'todo' => $t->todo_count,
+                'selesai' => $t->selesai_count,
             ])
             ->all();
     }

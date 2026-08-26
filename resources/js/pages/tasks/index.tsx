@@ -21,13 +21,15 @@
 //               menampilkan "tidak ada hasil" walau datanya ada di halaman 1.
 // ==========================================================
 
+import TagBadges from '@/components/tag-badges';
 import TaskLiveCounter, { type LiveCounterData } from '@/components/task-live-counter';
 import TaskStatusCell, { type TaskStatusOption } from '@/components/task-status-cell';
 import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
+import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
 import AppLayout from '@/layouts/app-layout';
-import { confirmAction } from '@/lib/swal';
 import { PRIORITY_QUADRANT_COLOR, PRIORITY_QUADRANT_LABEL, type PriorityQuadrant } from '@/lib/priority-quadrant';
+import { confirmAction } from '@/lib/swal';
 import { type BreadcrumbItem, type SharedData } from '@/types';
 import { Head, Link, router, usePage } from '@inertiajs/react';
 
@@ -50,6 +52,8 @@ interface TaskRow {
     points: number;
     task_status: TaskStatusOption;
     assignees: UserOption[];
+    // Permintaan Boss (2026-08-26): multi-tag, lihat components/tag-badges.tsx.
+    tags: { id: number; name: string; color: string }[];
     parent: { id: number; title: string } | null;
     live_counter: LiveCounterData | null;
     // Revisi 2026-08-06 item 1: persentase progress (F-123 basis, freeze saat Selesai).
@@ -167,7 +171,7 @@ export default function TasksIndex({ project, tasks, statuses, members, filters 
                         {project.description && (
                             <div>
                                 <span className="font-medium">Deskripsi</span>
-                                <p className="mt-1 whitespace-pre-wrap text-muted-foreground">{project.description}</p>
+                                <p className="text-muted-foreground mt-1 whitespace-pre-wrap">{project.description}</p>
                             </div>
                         )}
                         {members.length > 0 && (
@@ -175,7 +179,7 @@ export default function TasksIndex({ project, tasks, statuses, members, filters 
                                 <span className="font-medium">Anggota Project ({members.length})</span>
                                 <div className="mt-1 flex flex-wrap gap-1.5">
                                     {members.map((m) => (
-                                        <Badge key={m.id} variant="outline" className='bg-blue-700 text-white'>
+                                        <Badge key={m.id} variant="outline" className="bg-blue-700 text-white">
                                             {m.display_name}
                                         </Badge>
                                     ))}
@@ -238,17 +242,18 @@ export default function TasksIndex({ project, tasks, statuses, members, filters 
 
                     <div className="flex flex-col gap-1">
                         <span className="font-medium">Urutkan</span>
-                        <select
-                            className="h-8 rounded-md border border-input bg-background px-2"
-                            value={filters.sort}
-                            onChange={(e) => applyFilters({ sort: e.target.value as Filters['sort'] })}
-                        >
-                            {SORT_OPTIONS.map((opt) => (
-                                <option key={opt.value} value={opt.value}>
-                                    {opt.label}
-                                </option>
-                            ))}
-                        </select>
+                        <Select value={filters.sort} onValueChange={(value) => applyFilters({ sort: value as Filters['sort'] })}>
+                            <SelectTrigger className="h-8">
+                                <SelectValue />
+                            </SelectTrigger>
+                            <SelectContent>
+                                {SORT_OPTIONS.map((opt) => (
+                                    <SelectItem key={opt.value} value={opt.value}>
+                                        {opt.label}
+                                    </SelectItem>
+                                ))}
+                            </SelectContent>
+                        </Select>
                         <Button
                             type="button"
                             variant="outline"
@@ -269,7 +274,7 @@ export default function TasksIndex({ project, tasks, statuses, members, filters 
                 <div className="overflow-x-auto rounded-lg border">
                     <table className="w-full text-left text-sm">
                         <thead>
-                            <tr className="border-b bg-muted/50 text-muted-foreground">
+                            <tr className="bg-muted/50 text-muted-foreground border-b">
                                 <th className="p-3">Judul</th>
                                 <th className="p-3">Prioritas</th>
                                 <th className="p-3">Status</th>
@@ -289,9 +294,14 @@ export default function TasksIndex({ project, tasks, statuses, members, filters 
                                                 {task.title}
                                             </Link>
                                             {/* B3: indikator ringkas (dot + waktu). */}
-                                            <TaskLiveCounter isWorkState={task.task_status.is_work_state} liveCounter={task.live_counter} variant="dot" />
+                                            <TaskLiveCounter
+                                                isWorkState={task.task_status.is_work_state}
+                                                liveCounter={task.live_counter}
+                                                variant="dot"
+                                            />
                                         </div>
-                                        {task.parent && <div className="text-xs text-muted-foreground">Subtask dari: {task.parent.title}</div>}
+                                        {task.parent && <div className="text-muted-foreground text-xs">Subtask dari: {task.parent.title}</div>}
+                                        <TagBadges tags={task.tags} className="mt-1" />
                                     </td>
                                     <td className="p-3">
                                         {/* F-122/F-126: badge Eisenhower gantikan tampilan enum priority lama. */}
@@ -306,7 +316,7 @@ export default function TasksIndex({ project, tasks, statuses, members, filters 
                                                 {PRIORITY_QUADRANT_LABEL[task.priority_quadrant]}
                                             </Badge>
                                         ) : (
-                                            <span className="text-xs text-muted-foreground">Belum diklasifikasi</span>
+                                            <span className="text-muted-foreground text-xs">Belum diklasifikasi</span>
                                         )}
                                     </td>
                                     <td className="p-3">
@@ -320,7 +330,7 @@ export default function TasksIndex({ project, tasks, statuses, members, filters 
                                         {task.checklist_items_count > 0 || task.task_status.is_completed ? (
                                             <Badge variant="outline">{task.progress_percent}%</Badge>
                                         ) : (
-                                            <span className="text-xs text-muted-foreground">-</span>
+                                            <span className="text-muted-foreground text-xs">-</span>
                                         )}
                                     </td>
                                     <td className="p-3">{task.assignees.map((a) => a.display_name).join(', ') || '-'}</td>

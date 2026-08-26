@@ -35,16 +35,27 @@
 
 import HeadingSmall from '@/components/heading-small';
 import InputError from '@/components/input-error';
+import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
+import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
 import { Textarea } from '@/components/ui/textarea';
 import AppLayout from '@/layouts/app-layout';
-import { applyThemeTokens, DEFAULT_GRADIENT, GRADIENT_DIRECTIONS, TEMPO_TOKENS, type GradientConfig, type ThemeConfig, type TokenKey } from '@/lib/theme-tokens';
+import { confirmAction } from '@/lib/swal';
+import {
+    applyThemeTokens,
+    DEFAULT_GRADIENT,
+    GRADIENT_DIRECTIONS,
+    TEMPO_TOKENS,
+    type GradientConfig,
+    type ThemeConfig,
+    type TokenKey,
+} from '@/lib/theme-tokens';
 import { type BreadcrumbItem } from '@/types';
 import { Transition } from '@headlessui/react';
-import { Head, useForm } from '@inertiajs/react';
+import { Head, router, useForm } from '@inertiajs/react';
 import { FormEventHandler, useEffect, useRef, useState } from 'react';
 
 interface Branding {
@@ -64,11 +75,27 @@ interface KpiConfig {
     kpi_points_notdone: number;
 }
 
+interface TagRow {
+    id: number;
+    name: string;
+    color: string;
+}
+
 const breadcrumbs: BreadcrumbItem[] = [{ title: 'Setelan', href: '/pengaturan/setelan' }];
 
-type TabKey = 'branding' | 'tema' | 'kpi';
+type TabKey = 'branding' | 'tema' | 'kpi' | 'tag';
 
-export default function OrgSettingsIndex({ branding, theme, kpi }: { branding: Branding; theme: ThemeConfig | null; kpi: KpiConfig }) {
+export default function OrgSettingsIndex({
+    branding,
+    theme,
+    kpi,
+    tags,
+}: {
+    branding: Branding;
+    theme: ThemeConfig | null;
+    kpi: KpiConfig;
+    tags: TagRow[];
+}) {
     const [activeTab, setActiveTab] = useState<TabKey>('branding');
 
     return (
@@ -84,7 +111,7 @@ export default function OrgSettingsIndex({ branding, theme, kpi }: { branding: B
                         type="button"
                         onClick={() => setActiveTab('branding')}
                         className={`border-b-2 px-3 py-2 text-sm font-medium ${
-                            activeTab === 'branding' ? 'border-primary text-foreground' : 'border-transparent text-muted-foreground'
+                            activeTab === 'branding' ? 'border-primary text-foreground' : 'text-muted-foreground border-transparent'
                         }`}
                     >
                         Branding
@@ -93,7 +120,7 @@ export default function OrgSettingsIndex({ branding, theme, kpi }: { branding: B
                         type="button"
                         onClick={() => setActiveTab('tema')}
                         className={`border-b-2 px-3 py-2 text-sm font-medium ${
-                            activeTab === 'tema' ? 'border-primary text-foreground' : 'border-transparent text-muted-foreground'
+                            activeTab === 'tema' ? 'border-primary text-foreground' : 'text-muted-foreground border-transparent'
                         }`}
                     >
                         Tema
@@ -102,16 +129,26 @@ export default function OrgSettingsIndex({ branding, theme, kpi }: { branding: B
                         type="button"
                         onClick={() => setActiveTab('kpi')}
                         className={`border-b-2 px-3 py-2 text-sm font-medium ${
-                            activeTab === 'kpi' ? 'border-primary text-foreground' : 'border-transparent text-muted-foreground'
+                            activeTab === 'kpi' ? 'border-primary text-foreground' : 'text-muted-foreground border-transparent'
                         }`}
                     >
                         KPI
+                    </button>
+                    <button
+                        type="button"
+                        onClick={() => setActiveTab('tag')}
+                        className={`border-b-2 px-3 py-2 text-sm font-medium ${
+                            activeTab === 'tag' ? 'border-primary text-foreground' : 'text-muted-foreground border-transparent'
+                        }`}
+                    >
+                        Tag
                     </button>
                 </div>
 
                 {activeTab === 'branding' && <BrandingTab branding={branding} />}
                 {activeTab === 'tema' && <ThemeTab theme={theme} />}
                 {activeTab === 'kpi' && <KpiTab kpi={kpi} />}
+                {activeTab === 'tag' && <TagTab tags={tags} />}
             </div>
         </AppLayout>
     );
@@ -268,8 +305,14 @@ function BrandingTab({ branding }: { branding: Branding }) {
                     <div className="flex items-center gap-4">
                         <Button disabled={processing}>Simpan</Button>
 
-                        <Transition show={recentlySuccessful} enter="transition ease-in-out" enterFrom="opacity-0" leave="transition ease-in-out" leaveTo="opacity-0">
-                            <p className="text-sm text-muted-foreground">Tersimpan</p>
+                        <Transition
+                            show={recentlySuccessful}
+                            enter="transition ease-in-out"
+                            enterFrom="opacity-0"
+                            leave="transition ease-in-out"
+                            leaveTo="opacity-0"
+                        >
+                            <p className="text-muted-foreground text-sm">Tersimpan</p>
                         </Transition>
                     </div>
                 </form>
@@ -305,7 +348,6 @@ function ThemeTab({ theme }: { theme: ThemeConfig | null }) {
     // TIDAK boleh meninggalkan draft warna nempel di :root untuk halaman lain.
     useEffect(() => {
         return () => applyThemeTokens(lastKnownGoodRef.current);
-         
     }, []);
 
     const setToken = (key: TokenKey, value: string) => {
@@ -361,7 +403,7 @@ function ThemeTab({ theme }: { theme: ThemeConfig | null }) {
                                         />
                                         <Input value={value} onChange={(e) => setToken(token.key, e.target.value)} className="font-mono text-xs" />
                                     </div>
-                                    <p className="text-xs text-muted-foreground">{token.hint}</p>
+                                    <p className="text-muted-foreground text-xs">{token.hint}</p>
                                     <InputError message={formErrors[`tokens.${token.key}`]} />
                                 </div>
                             );
@@ -371,11 +413,7 @@ function ThemeTab({ theme }: { theme: ThemeConfig | null }) {
                     <HeadingSmall title="Gradasi" description="Opsional — diterapkan ke tombol utama & sidebar sekaligus (bukan per-elemen)." />
 
                     <label className="flex items-center gap-2 text-sm">
-                        <input
-                            type="checkbox"
-                            checked={data.gradient.enabled}
-                            onChange={(e) => setGradientField('enabled', e.target.checked)}
-                        />
+                        <input type="checkbox" checked={data.gradient.enabled} onChange={(e) => setGradientField('enabled', e.target.checked)} />
                         Aktifkan gradasi
                     </label>
 
@@ -403,17 +441,21 @@ function ThemeTab({ theme }: { theme: ThemeConfig | null }) {
                             </div>
                             <div className="grid gap-1">
                                 <Label>Arah</Label>
-                                <select
-                                    className="h-9 rounded-md border border-input bg-background px-2 text-sm"
+                                <Select
                                     value={data.gradient.direction}
-                                    onChange={(e) => setGradientField('direction', e.target.value as GradientConfig['direction'])}
+                                    onValueChange={(value) => setGradientField('direction', value as GradientConfig['direction'])}
                                 >
-                                    {GRADIENT_DIRECTIONS.map((d) => (
-                                        <option key={d.value} value={d.value}>
-                                            {d.label}
-                                        </option>
-                                    ))}
-                                </select>
+                                    <SelectTrigger className="text-sm">
+                                        <SelectValue />
+                                    </SelectTrigger>
+                                    <SelectContent>
+                                        {GRADIENT_DIRECTIONS.map((d) => (
+                                            <SelectItem key={d.value} value={d.value}>
+                                                {d.label}
+                                            </SelectItem>
+                                        ))}
+                                    </SelectContent>
+                                </Select>
                             </div>
                         </div>
                     )}
@@ -427,8 +469,14 @@ function ThemeTab({ theme }: { theme: ThemeConfig | null }) {
                             Reset ke default TEMPO
                         </Button>
 
-                        <Transition show={recentlySuccessful} enter="transition ease-in-out" enterFrom="opacity-0" leave="transition ease-in-out" leaveTo="opacity-0">
-                            <p className="text-sm text-muted-foreground">Tersimpan</p>
+                        <Transition
+                            show={recentlySuccessful}
+                            enter="transition ease-in-out"
+                            enterFrom="opacity-0"
+                            leave="transition ease-in-out"
+                            leaveTo="opacity-0"
+                        >
+                            <p className="text-muted-foreground text-sm">Tersimpan</p>
                         </Transition>
                     </div>
                 </form>
@@ -518,15 +566,139 @@ function KpiTab({ kpi }: { kpi: KpiConfig }) {
                     <div className="flex items-center gap-4">
                         <Button disabled={processing}>Simpan</Button>
 
-                        <Transition show={recentlySuccessful} enter="transition ease-in-out" enterFrom="opacity-0" leave="transition ease-in-out" leaveTo="opacity-0">
-                            <p className="text-sm text-muted-foreground">Tersimpan</p>
+                        <Transition
+                            show={recentlySuccessful}
+                            enter="transition ease-in-out"
+                            enterFrom="opacity-0"
+                            leave="transition ease-in-out"
+                            leaveTo="opacity-0"
+                        >
+                            <p className="text-muted-foreground text-sm">Tersimpan</p>
                         </Transition>
                     </div>
 
                     {/* F-2: catatan provisional WAJIB tetap ada sampai v1.5 kalibrasi. */}
-                    <p className="text-xs text-muted-foreground">Indikator sementara (provisional) — formula final dikalibrasi dari data nyata di v1.5.</p>
+                    <p className="text-muted-foreground text-xs">
+                        Indikator sementara (provisional) — formula final dikalibrasi dari data nyata di v1.5.
+                    </p>
                 </form>
             </CardContent>
         </Card>
+    );
+}
+
+// Permintaan Boss (2026-08-26): tab "Tag" -- BEDA dari 3 tab di atas (branding/
+// tema/KPI = 1 objek config per organisasi, POST tunggal). Tag adalah resource
+// banyak-baris (list) -- CRUD sendiri lewat TagController (route tags.*), tab
+// ini cuma daftar + form tambah/edit inline, nol halaman terpisah.
+function TagTab({ tags }: { tags: TagRow[] }) {
+    const [editingTag, setEditingTag] = useState<TagRow | null>(null);
+
+    const destroyTag = async (tag: TagRow) => {
+        // BUSINESS RULE (keputusan Boss 2026-08-26): hapus tag OTOMATIS melepasnya
+        // dari semua task yang memakai (cascadeOnDelete di DB, TagController::destroy()
+        // TIDAK menolak seperti TaskStatus) -- makanya konfirmasi di sini eksplisit
+        // menyebut konsekuensi itu, bukan sekadar "yakin hapus?".
+        if (!(await confirmAction(`Hapus tag "${tag.name}"? Tag ini akan otomatis lepas dari semua task yang memakainya.`, { danger: true }))) return;
+        router.delete(route('tags.destroy', tag.id), { preserveScroll: true });
+    };
+
+    return (
+        <Card className="max-w-2xl">
+            <CardHeader>
+                <CardTitle>Tag</CardTitle>
+            </CardHeader>
+            <CardContent className="space-y-6">
+                <HeadingSmall
+                    title="Kelola Tag"
+                    description="Tag dipilih (multi) saat buat/edit Task. Hapus tag akan otomatis melepasnya dari semua task yang memakai, bukan ditolak."
+                />
+
+                {/* SUMBER: key ganti tiap target edit berubah -- lihat KONTRAK TagForm
+                    di bawah, tanpa ini useForm() internal "nyangkut" data tag lama
+                    (Inertia useForm cuma baca initial value SEKALI saat mount). */}
+                <TagForm key={editingTag?.id ?? 'new'} tag={editingTag} onDone={() => setEditingTag(null)} />
+
+                <div className="divide-y rounded-md border">
+                    {tags.length === 0 && <p className="text-muted-foreground p-4 text-sm">Belum ada tag.</p>}
+                    {tags.map((tag) => (
+                        <div key={tag.id} className="flex items-center justify-between gap-2 p-3">
+                            <Badge style={{ backgroundColor: tag.color, color: '#fff', borderColor: 'transparent' }}>{tag.name}</Badge>
+                            <div className="flex gap-2">
+                                <Button type="button" variant="outline" size="sm" onClick={() => setEditingTag(tag)}>
+                                    Edit
+                                </Button>
+                                <Button type="button" variant="outline" size="sm" onClick={() => destroyTag(tag)}>
+                                    Hapus
+                                </Button>
+                            </div>
+                        </div>
+                    ))}
+                </div>
+            </CardContent>
+        </Card>
+    );
+}
+
+// KONTRAK: SATU form dipakai DUA mode -- `tag` null = tambah baru (POST
+// tags.store), `tag` terisi = edit baris itu (PUT tags.update). `key={tag?.id}`
+// di pemanggil (lihat TagTab) memaksa React remount form ini saat pindah target
+// edit, supaya state useForm tidak "nyangkut" data tag sebelumnya.
+function TagForm({ tag, onDone }: { tag: TagRow | null; onDone: () => void }) {
+    const { data, setData, post, put, processing, errors, reset } = useForm<{ name: string; color: string }>({
+        name: tag?.name ?? '',
+        color: tag?.color ?? '#3b82f6',
+    });
+
+    const submit: FormEventHandler = (e) => {
+        e.preventDefault();
+
+        const options = {
+            preserveScroll: true,
+            onSuccess: () => {
+                reset();
+                onDone();
+            },
+        };
+
+        if (tag) {
+            put(route('tags.update', tag.id), options);
+        } else {
+            post(route('tags.store'), options);
+        }
+    };
+
+    return (
+        <form onSubmit={submit} className="flex flex-wrap items-end gap-3 border-b pb-6">
+            <div className="grid gap-1">
+                <Label htmlFor="tag_name">Nama tag</Label>
+                <Input id="tag_name" value={data.name} onChange={(e) => setData('name', e.target.value)} className="w-48" />
+                <InputError message={errors.name} />
+            </div>
+            <div className="grid gap-1">
+                <Label htmlFor="tag_color">Warna</Label>
+                <input
+                    id="tag_color"
+                    type="color"
+                    value={data.color}
+                    onChange={(e) => setData('color', e.target.value)}
+                    className="h-9 w-16 cursor-pointer rounded border"
+                />
+                <InputError message={errors.color} />
+            </div>
+            <Button disabled={processing}>{tag ? 'Simpan' : 'Tambah'}</Button>
+            {tag && (
+                <Button
+                    type="button"
+                    variant="outline"
+                    onClick={() => {
+                        reset();
+                        onDone();
+                    }}
+                >
+                    Batal
+                </Button>
+            )}
+        </form>
     );
 }

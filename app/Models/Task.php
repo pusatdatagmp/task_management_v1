@@ -147,6 +147,22 @@ class Task extends Model
         return $this->belongsToMany(User::class)->using(TaskUser::class);
     }
 
+    /**
+     * KONTRAK: multi-tag per task (permintaan Boss 2026-08-26). BEDA dari
+     * assignees() -- TANPA custom pivot model, attach/detach tag TIDAK memicu
+     * activity log (bukan event bisnis yang perlu dicatat F-22/F-51, murni
+     * kategorisasi tampilan). Tag milik organisasi yang SAMA dengan task ini
+     * ditegakkan di FormRequest (Rule::exists('tags','id')->where('organization_id', ...)),
+     * BUKAN di relasi ini.
+     */
+    public function tags(): BelongsToMany
+    {
+        // SUMBER: nama tabel pivot dipaksa eksplisit 'task_tag' -- konvensi
+        // default Eloquent (alfabetis nama model) akan menebak 'tag_task'
+        // ("tag" < "task" alfabetis), beda dari migration yang sudah dibuat.
+        return $this->belongsToMany(Tag::class, 'task_tag');
+    }
+
     public function createdBy(): BelongsTo
     {
         return $this->belongsTo(User::class, 'created_by');

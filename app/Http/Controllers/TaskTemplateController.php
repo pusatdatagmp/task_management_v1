@@ -5,7 +5,8 @@
  * MODUL       : TaskTemplateController
  * KLASIFIKASI : DOMAIN
  * TUJUAN      : CRUD blueprint recurring task per project (F-46, admin only,
- *               task.manage). Engine yang MELAHIRKAN instance ada terpisah —
+ *               tasktemplate.manage — F-170, dulu task.manage). Engine yang
+ *               MELAHIRKAN instance ada terpisah —
  *               `RunAutomationEngineCommand` (AE-2/3, aktif) & `GenerateRecurringTasksCommand`
  *               (@deprecated F-162) — controller ini cuma kelola blueprint-nya
  *               (identitas + jadwal + default assignee + AE-2b: konfigurasi
@@ -64,7 +65,8 @@ class TaskTemplateController extends Controller
      * BUSINESS RULE: v1.2 H7b (F-140/F-144) — "Tugas Berulang" flat lintas SEMUA
      * project (nav sebelumnya disabled, F-147). CRUD asli TETAP per-project (F-46
      * tidak berubah) — halaman ini MURNI listing+navigasi baru, link Edit/Aktifkan
-     * mengarah ke route project-scoped yang sudah ada, nol endpoint baru.
+     * mengarah ke route project-scoped yang sudah ada, nol endpoint baru. Gate
+     * SEKARANG tasktemplate.manage (F-170, dulu task.manage).
      */
     public function allProjects(): Response
     {

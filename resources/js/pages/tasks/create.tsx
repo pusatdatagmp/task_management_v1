@@ -16,6 +16,7 @@
 import HeadingSmall from '@/components/heading-small';
 import InputError from '@/components/input-error';
 import RichTextEditor from '@/components/rich-text-editor';
+import TagPicker, { type TagOption } from '@/components/tag-picker';
 import { Button } from '@/components/ui/button';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import { Checkbox } from '@/components/ui/checkbox';
@@ -39,6 +40,7 @@ interface UserOption {
 interface TaskCreateProps {
     project: { id: number; name: string };
     members: UserOption[];
+    availableTags: TagOption[];
 }
 
 // SUMBER: Hari-4 §D2 — due_date WAJIB, default +7 hari di FORM (F-68). JANGAN
@@ -50,7 +52,7 @@ function defaultDueDate(): string {
     return date.toISOString().slice(0, 16);
 }
 
-export default function TaskCreate({ project, members }: TaskCreateProps) {
+export default function TaskCreate({ project, members, availableTags }: TaskCreateProps) {
     const breadcrumbs: BreadcrumbItem[] = [
         { title: 'Project', href: '/projects' },
         { title: project.name, href: route('projects.edit', project.id) },
@@ -70,6 +72,9 @@ export default function TaskCreate({ project, members }: TaskCreateProps) {
         points: 0,
         due_date: defaultDueDate(),
         assignees: [] as number[],
+        // Permintaan Boss (2026-08-26): multi-tag, dipilih dari katalog Tag
+        // organisasi (availableTags) via TagPicker, bukan free-text.
+        tags: [] as number[],
         // Revisi 2026-08-06 item 5: checklist ("subtask" ringan, F-123) diisi
         // LANGSUNG saat buat task — pola IDENTIK task-templates/create.tsx.
         checklist_items: [] as string[],
@@ -216,6 +221,15 @@ export default function TaskCreate({ project, members }: TaskCreateProps) {
                                     {members.length === 0 && <span className="text-muted-foreground">Project ini belum punya member.</span>}
                                 </div>
                                 <InputError message={errors.assignees} />
+                            </div>
+
+                            <div className="grid gap-2">
+                                <HeadingSmall
+                                    title="Tag"
+                                    description="Opsional, multi-select dari katalog tag organisasi (kelola di Pengaturan > Setelan)"
+                                />
+                                <TagPicker tags={availableTags} selected={data.tags} onChange={(ids) => setData('tags', ids)} />
+                                <InputError message={errors.tags} />
                             </div>
 
                             <div className="grid gap-2">

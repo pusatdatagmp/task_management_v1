@@ -25,8 +25,6 @@ import {
 } from 'lucide-react';
 import AppLogo from './app-logo';
 
-
-
 export function AppSidebar() {
     // F-90: sembunyikan menu per PERMISSION (03-BUSINESS-FLOW §6), bukan boolean
     // isAdmin — role custom dengan user.manage tapi bukan workschedule.manage
@@ -74,8 +72,12 @@ export function AppSidebar() {
         // digerbangi permission KONKRET (F-90), sama seperti route-nya di
         // routes/admin.php, BUKAN blanket "admin boleh semua".
         ...(can('project.viewAll') ? [{ title: 'Semua Tugas', url: '/tasks', icon: ListChecks }] : []),
-        ...(can('task.manage') ? [{ title: 'Tugas Berulang', url: '/task-templates', icon: Repeat }] : []),
-        ...(can('task.approve') ? [{ title: 'Perpanjangan', url: '/pengaturan/perpanjangan', icon: CalendarClock, badge: pendingExtensionsCount }] : []),
+        // F-170 (dulu task.manage/task.approve — permission sendiri per menu,
+        // audit permission per-menu Boss 2026-08-26).
+        ...(can('tasktemplate.manage') ? [{ title: 'Tugas Berulang', url: '/task-templates', icon: Repeat }] : []),
+        ...(can('extension.approve')
+            ? [{ title: 'Perpanjangan', url: '/pengaturan/perpanjangan', icon: CalendarClock, badge: pendingExtensionsCount }]
+            : []),
         // v0.8 H6 (F-50): "ajukan" tersedia admin & member (matriks BF §6), jadi
         // link ini SELALU tampil, tidak digerbangi permission (F-95 — gating
         // assignee, bukan RBAC).
@@ -83,13 +85,14 @@ export function AppSidebar() {
     ];
 
     const organisasiItems: NavItem[] = [
-        ...(can('user.manage') ? [{ title: 'Pengguna & Peran', url: '/pengaturan/users', icon: Users }] : []),
-        ...(can('workschedule.manage')
-            ? [
-                  { title: 'Jam Kerja', url: '/pengaturan/jam-kerja', icon: Clock },
-                  { title: 'Hari Libur', url: '/pengaturan/hari-libur', icon: CalendarOff },
-              ]
-            : []),
+        // F-170: union user.manage/role.manage -- role yang cuma pegang salah
+        // satu tetap perlu jalan masuk ke halaman gabungan ini (lihat
+        // UserController::index()).
+        ...(can('user.manage') || can('role.manage') ? [{ title: 'Pengguna & Peran', url: '/pengaturan/users', icon: Users }] : []),
+        ...(can('workschedule.manage') ? [{ title: 'Jam Kerja', url: '/pengaturan/jam-kerja', icon: Clock }] : []),
+        // F-170 (dulu digabung workschedule.manage): permission sendiri
+        // holiday.manage supaya Jam Kerja & Hari Libur bisa diberikan terpisah.
+        ...(can('holiday.manage') ? [{ title: 'Hari Libur', url: '/pengaturan/hari-libur', icon: CalendarOff }] : []),
         // v1.0 H4 (F-116): log GLOBAL — permission activity.view (admin default),
         // BUKAN ditampilkan ke member biasa.
         ...(can('activity.view') ? [{ title: 'Log Activity', url: '/pengaturan/activity-log', icon: History }] : []),
@@ -143,14 +146,14 @@ export function AppSidebar() {
                 {/* F-142: alamat = teks (bukan link), sosmed/wa = NavFooter (link,
                     buka tab baru). Cuma tampil kalau Boss sudah isi Setelan. */}
                 {branding?.address && (
-                    <p className="px-2 pb-1 text-xs text-sidebar-foreground/70 group-data-[collapsible=icon]:hidden">{branding.address}</p>
+                    <p className="text-sidebar-foreground/70 px-2 pb-1 text-xs group-data-[collapsible=icon]:hidden">{branding.address}</p>
                 )}
                 {brandingFooterItems.length > 0 && <NavFooter items={brandingFooterItems} className="mt-0" />}
                 <NavUser />
                 {/* Permintaan Boss (2026-08-10, F-169): label versi sistem --
                     sekadar info build, disembunyikan otomatis saat sidebar
                     di-collapse ke mode ikon (pola sama alamat branding di atas). */}
-                <p className="px-2 pt-1 text-center text-[10px] text-sidebar-foreground/50 group-data-[collapsible=icon]:hidden">{version}</p>
+                <p className="text-sidebar-foreground/50 px-2 pt-1 text-center text-[10px] group-data-[collapsible=icon]:hidden">{version}</p>
             </SidebarFooter>
         </Sidebar>
     );

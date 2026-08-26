@@ -23,6 +23,7 @@
 import HeadingSmall from '@/components/heading-small';
 import InputError from '@/components/input-error';
 import RichTextEditor from '@/components/rich-text-editor';
+import TagPicker, { type TagOption } from '@/components/tag-picker';
 import { Button } from '@/components/ui/button';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import { Checkbox } from '@/components/ui/checkbox';
@@ -67,7 +68,9 @@ interface TaskEditProps {
     project: { id: number; name: string };
     task: TaskData;
     assigneeIds: number[];
+    tagIds: number[];
     members: UserOption[];
+    availableTags: TagOption[];
 }
 
 function toLocalInput(iso: string): string {
@@ -77,7 +80,7 @@ function toLocalInput(iso: string): string {
     return iso.slice(0, 16);
 }
 
-export default function TaskEdit({ project, task, assigneeIds, members }: TaskEditProps) {
+export default function TaskEdit({ project, task, assigneeIds, tagIds, members, availableTags }: TaskEditProps) {
     const breadcrumbs: BreadcrumbItem[] = [
         { title: 'Project', href: '/projects' },
         { title: project.name, href: route('projects.edit', project.id) },
@@ -95,6 +98,7 @@ export default function TaskEdit({ project, task, assigneeIds, members }: TaskEd
         points: task.points,
         due_date: toLocalInput(task.due_date),
         assignees: assigneeIds,
+        tags: tagIds, // Permintaan Boss (2026-08-26)
     });
 
     const submit: FormEventHandler = (e) => {
@@ -135,7 +139,7 @@ export default function TaskEdit({ project, task, assigneeIds, members }: TaskEd
                                     {task.task_template_id ? (
                                         // BUG FIX (2026-08-08): task hasil recurring -- tipe dikunci dari
                                         // Template asalnya, tidak bisa diubah lewat form ini (lihat header).
-                                        <div className="flex h-9 items-center rounded-md border bg-muted px-3 text-sm text-muted-foreground">
+                                        <div className="bg-muted text-muted-foreground flex h-9 items-center rounded-md border px-3 text-sm">
                                             {TASK_TYPE_LABEL[data.task_type] ?? data.task_type} (mengikuti Template)
                                         </div>
                                     ) : (
@@ -229,6 +233,15 @@ export default function TaskEdit({ project, task, assigneeIds, members }: TaskEd
                                     {members.length === 0 && <span className="text-muted-foreground">Project ini belum punya member.</span>}
                                 </div>
                                 <InputError message={errors.assignees} />
+                            </div>
+
+                            <div className="grid gap-2">
+                                <HeadingSmall
+                                    title="Tag"
+                                    description="Opsional, multi-select dari katalog tag organisasi (kelola di Pengaturan > Setelan)"
+                                />
+                                <TagPicker tags={availableTags} selected={data.tags} onChange={(ids) => setData('tags', ids)} />
+                                <InputError message={errors.tags} />
                             </div>
 
                             <Button disabled={processing}>Simpan Perubahan</Button>

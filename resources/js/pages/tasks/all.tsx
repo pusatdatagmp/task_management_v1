@@ -28,12 +28,15 @@
 //               endpoint/validasi baru), cuma disabled sampai project dipilih.
 // ==========================================================
 
+import TagBadges from '@/components/tag-badges';
 import TaskLiveCounter, { type LiveCounterData } from '@/components/task-live-counter';
 import TaskStatusCell, { type TaskStatusOption } from '@/components/task-status-cell';
 import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
+import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
 import AppLayout from '@/layouts/app-layout';
 import { PRIORITY_QUADRANT_COLOR, PRIORITY_QUADRANT_LABEL, type PriorityQuadrant } from '@/lib/priority-quadrant';
+import { SELECT_ALL_VALUE } from '@/lib/utils';
 import { type BreadcrumbItem, type SharedData } from '@/types';
 import { Head, Link, router, usePage } from '@inertiajs/react';
 import { motion } from 'framer-motion';
@@ -64,6 +67,8 @@ interface TaskRow {
     points: number;
     task_status: TaskStatusOption;
     assignees: UserOption[];
+    // Permintaan Boss (2026-08-26): multi-tag, lihat components/tag-badges.tsx.
+    tags: { id: number; name: string; color: string }[];
     project: { id: number; name: string; task_statuses: TaskStatusOption[] };
     parent: { id: number; title: string } | null;
     live_counter: LiveCounterData | null;
@@ -151,7 +156,9 @@ export default function AllTasks({ tasks, projects, members, filters }: AllTasks
     };
 
     const toggleStatusFlag = (value: StatusFlag) => {
-        applyFilters({ status_flag: filters.status_flag.includes(value) ? filters.status_flag.filter((v) => v !== value) : [...filters.status_flag, value] });
+        applyFilters({
+            status_flag: filters.status_flag.includes(value) ? filters.status_flag.filter((v) => v !== value) : [...filters.status_flag, value],
+        });
     };
 
     const toggleAssignee = (id: number) => {
@@ -184,7 +191,16 @@ export default function AllTasks({ tasks, projects, members, filters }: AllTasks
         router.get(
             route('tasks.all'),
             // F-172 (permintaan Boss): default 'paling atas = data terbaru'.
-            { project_id: null, status_flag: [], assignee: [], task_type: [], priority_quadrant: [], due: 'all', sort: 'created_at', direction: 'desc' },
+            {
+                project_id: null,
+                status_flag: [],
+                assignee: [],
+                task_type: [],
+                priority_quadrant: [],
+                due: 'all',
+                sort: 'created_at',
+                direction: 'desc',
+            },
             { preserveState: true, preserveScroll: true, replace: true },
         );
     };
@@ -212,22 +228,22 @@ export default function AllTasks({ tasks, projects, members, filters }: AllTasks
                                 <Link href={route('tasks.board', filters.project_id)}>Board View</Link>
                             </Button>
                         ) : (
-                            <span className="self-center text-xs text-muted-foreground">Pilih 1 project untuk lihat Board View</span>
+                            <span className="text-muted-foreground self-center text-xs">Pilih 1 project untuk lihat Board View</span>
                         )}
                         {can('task.manage') && (
                             <>
-                                <select
-                                    className="h-9 rounded-md border border-input bg-background px-2 text-sm"
-                                    value={targetProject}
-                                    onChange={(e) => setTargetProject(e.target.value)}
-                                >
-                                    <option value="">Pilih project...</option>
-                                    {projects.map((p) => (
-                                        <option key={p.id} value={p.id}>
-                                            {p.name}
-                                        </option>
-                                    ))}
-                                </select>
+                                <Select value={targetProject} onValueChange={setTargetProject}>
+                                    <SelectTrigger className="h-9 w-auto text-sm">
+                                        <SelectValue placeholder="Pilih project..." />
+                                    </SelectTrigger>
+                                    <SelectContent>
+                                        {projects.map((p) => (
+                                            <SelectItem key={p.id} value={String(p.id)}>
+                                                {p.name}
+                                            </SelectItem>
+                                        ))}
+                                    </SelectContent>
+                                </Select>
                                 <Button disabled={!targetProject} asChild={!!targetProject}>
                                     {targetProject ? <Link href={route('tasks.create', targetProject)}>Tugas Baru</Link> : <span>Tugas Baru</span>}
                                 </Button>
@@ -239,18 +255,22 @@ export default function AllTasks({ tasks, projects, members, filters }: AllTasks
                 <div className="flex flex-wrap items-start gap-6 rounded-lg border p-4 text-sm">
                     <div className="flex flex-col gap-1">
                         <span className="font-medium">Project</span>
-                        <select
-                            className="h-8 rounded-md border border-input bg-background px-2"
-                            value={filters.project_id ?? ''}
-                            onChange={(e) => applyFilters({ project_id: e.target.value ? Number(e.target.value) : null })}
+                        <Select
+                            value={filters.project_id === null ? SELECT_ALL_VALUE : String(filters.project_id)}
+                            onValueChange={(value) => applyFilters({ project_id: value === SELECT_ALL_VALUE ? null : Number(value) })}
                         >
-                            <option value="">Semua Project</option>
-                            {projects.map((p) => (
-                                <option key={p.id} value={p.id}>
-                                    {p.name}
-                                </option>
-                            ))}
-                        </select>
+                            <SelectTrigger className="h-8">
+                                <SelectValue />
+                            </SelectTrigger>
+                            <SelectContent>
+                                <SelectItem value={SELECT_ALL_VALUE}>Semua Project</SelectItem>
+                                {projects.map((p) => (
+                                    <SelectItem key={p.id} value={String(p.id)}>
+                                        {p.name}
+                                    </SelectItem>
+                                ))}
+                            </SelectContent>
+                        </Select>
                     </div>
 
                     <div className="flex flex-col gap-1">
@@ -287,11 +307,7 @@ export default function AllTasks({ tasks, projects, members, filters }: AllTasks
                         <span className="font-medium">Prioritas (Eisenhower)</span>
                         {QUADRANTS.map((q) => (
                             <label key={q} className="flex items-center gap-2">
-                                <input
-                                    type="checkbox"
-                                    checked={filters.priority_quadrant.includes(q)}
-                                    onChange={() => toggleQuadrant(q)}
-                                />
+                                <input type="checkbox" checked={filters.priority_quadrant.includes(q)} onChange={() => toggleQuadrant(q)} />
                                 {PRIORITY_QUADRANT_LABEL[q]}
                             </label>
                         ))}
@@ -301,7 +317,12 @@ export default function AllTasks({ tasks, projects, members, filters }: AllTasks
                         <span className="font-medium">Due date</span>
                         {DUE_OPTIONS.map((opt) => (
                             <label key={opt.value} className="flex items-center gap-2">
-                                <input type="radio" name="due" checked={filters.due === opt.value} onChange={() => applyFilters({ due: opt.value })} />
+                                <input
+                                    type="radio"
+                                    name="due"
+                                    checked={filters.due === opt.value}
+                                    onChange={() => applyFilters({ due: opt.value })}
+                                />
                                 {opt.label}
                             </label>
                         ))}
@@ -309,17 +330,18 @@ export default function AllTasks({ tasks, projects, members, filters }: AllTasks
 
                     <div className="flex flex-col gap-1">
                         <span className="font-medium">Urutkan</span>
-                        <select
-                            className="h-8 rounded-md border border-input bg-background px-2"
-                            value={filters.sort}
-                            onChange={(e) => applyFilters({ sort: e.target.value as Filters['sort'] })}
-                        >
-                            {SORT_OPTIONS.map((opt) => (
-                                <option key={opt.value} value={opt.value}>
-                                    {opt.label}
-                                </option>
-                            ))}
-                        </select>
+                        <Select value={filters.sort} onValueChange={(value) => applyFilters({ sort: value as Filters['sort'] })}>
+                            <SelectTrigger className="h-8">
+                                <SelectValue />
+                            </SelectTrigger>
+                            <SelectContent>
+                                {SORT_OPTIONS.map((opt) => (
+                                    <SelectItem key={opt.value} value={opt.value}>
+                                        {opt.label}
+                                    </SelectItem>
+                                ))}
+                            </SelectContent>
+                        </Select>
                         <Button
                             type="button"
                             variant="outline"
@@ -340,11 +362,11 @@ export default function AllTasks({ tasks, projects, members, filters }: AllTasks
                 <div className="overflow-x-auto rounded-lg border">
                     <table className="w-full text-left text-sm">
                         <thead>
-                            <tr className="border-b bg-muted/50 text-muted-foreground">
+                            <tr className="bg-muted/50 text-muted-foreground border-b">
                                 <th className="p-3">
                                     <button
                                         type="button"
-                                        className="flex items-center gap-1 font-medium hover:text-foreground"
+                                        className="hover:text-foreground flex items-center gap-1 font-medium"
                                         onClick={() => toggleColumnSort('title')}
                                     >
                                         Judul
@@ -354,7 +376,7 @@ export default function AllTasks({ tasks, projects, members, filters }: AllTasks
                                 <th className="p-3">
                                     <button
                                         type="button"
-                                        className="flex items-center gap-1 font-medium hover:text-foreground"
+                                        className="hover:text-foreground flex items-center gap-1 font-medium"
                                         onClick={() => toggleColumnSort('project')}
                                     >
                                         Project
@@ -364,7 +386,7 @@ export default function AllTasks({ tasks, projects, members, filters }: AllTasks
                                 <th className="p-3">
                                     <button
                                         type="button"
-                                        className="flex items-center gap-1 font-medium hover:text-foreground"
+                                        className="hover:text-foreground flex items-center gap-1 font-medium"
                                         onClick={() => toggleColumnSort('priority_quadrant')}
                                     >
                                         Prioritas
@@ -376,7 +398,7 @@ export default function AllTasks({ tasks, projects, members, filters }: AllTasks
                                 <th className="p-3">
                                     <button
                                         type="button"
-                                        className="flex items-center gap-1 font-medium hover:text-foreground"
+                                        className="hover:text-foreground flex items-center gap-1 font-medium"
                                         onClick={() => toggleColumnSort('assignee')}
                                     >
                                         Assignee
@@ -386,7 +408,7 @@ export default function AllTasks({ tasks, projects, members, filters }: AllTasks
                                 <th className="p-3">
                                     <button
                                         type="button"
-                                        className="flex items-center gap-1 font-medium hover:text-foreground"
+                                        className="hover:text-foreground flex items-center gap-1 font-medium"
                                         onClick={() => toggleColumnSort('due_date')}
                                     >
                                         Due date
@@ -396,7 +418,7 @@ export default function AllTasks({ tasks, projects, members, filters }: AllTasks
                                 <th className="p-3">
                                     <button
                                         type="button"
-                                        className="flex items-center gap-1 font-medium hover:text-foreground"
+                                        className="hover:text-foreground flex items-center gap-1 font-medium"
                                         onClick={() => toggleColumnSort('points')}
                                     >
                                         Poin
@@ -420,9 +442,14 @@ export default function AllTasks({ tasks, projects, members, filters }: AllTasks
                                             <Link href={route('tasks.show', [task.project.id, task.id])} className="font-medium hover:underline">
                                                 {task.title}
                                             </Link>
-                                            <TaskLiveCounter isWorkState={task.task_status.is_work_state} liveCounter={task.live_counter} variant="dot" />
+                                            <TaskLiveCounter
+                                                isWorkState={task.task_status.is_work_state}
+                                                liveCounter={task.live_counter}
+                                                variant="dot"
+                                            />
                                         </div>
-                                        {task.parent && <div className="text-xs text-muted-foreground">Subtask dari: {task.parent.title}</div>}
+                                        {task.parent && <div className="text-muted-foreground text-xs">Subtask dari: {task.parent.title}</div>}
+                                        <TagBadges tags={task.tags} className="mt-1" />
                                     </td>
                                     <td className="p-3">{task.project.name}</td>
                                     <td className="p-3">
@@ -437,7 +464,7 @@ export default function AllTasks({ tasks, projects, members, filters }: AllTasks
                                                 {PRIORITY_QUADRANT_LABEL[task.priority_quadrant]}
                                             </Badge>
                                         ) : (
-                                            <span className="text-xs text-muted-foreground">Belum diklasifikasi</span>
+                                            <span className="text-muted-foreground text-xs">Belum diklasifikasi</span>
                                         )}
                                     </td>
                                     <td className="p-3">
@@ -449,7 +476,7 @@ export default function AllTasks({ tasks, projects, members, filters }: AllTasks
                                         {task.checklist_items_count > 0 || task.task_status.is_completed ? (
                                             <Badge variant="outline">{task.progress_percent}%</Badge>
                                         ) : (
-                                            <span className="text-xs text-muted-foreground">-</span>
+                                            <span className="text-muted-foreground text-xs">-</span>
                                         )}
                                     </td>
                                     <td className="p-3">{task.assignees.map((a) => a.display_name).join(', ') || '-'}</td>

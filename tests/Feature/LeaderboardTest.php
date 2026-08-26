@@ -440,3 +440,41 @@ test('F-4: nol field rupiah/gaji/reward di output leaderboard', function () {
         expect(str_contains(strtolower($flat), $forbidden))->toBeFalse("field terlarang '{$forbidden}' bocor ke leaderboard (F-4)");
     }
 });
+
+// =============================================================================
+// F-177 -- ranking berbasis kpi_total (permintaan Boss 2026-08-27, "jangan poin
+// dulu"), BUKAN lagi Point. Point TETAP dihitung & dikirim utuh (F-168 nilai
+// tidak berubah) -- yang berubah HANYA urutan array rows[].
+// =============================================================================
+
+test('F-177: urutan leaderboard (rows[]) berdasarkan kpi_total DESC, bukan point -- user point tinggi tapi KPI rendah kalah dari sebaliknya', function () {
+    $admin = User::factory()->admin()->create();
+    grantLeaderboardView($admin);
+    $highPointLowKpi = User::factory()->create(['organization_id' => $admin->organization_id, 'name' => 'Tinggi Poin Rendah KPI']);
+    $lowPointHighKpi = User::factory()->create(['organization_id' => $admin->organization_id, 'name' => 'Rendah Poin Tinggi KPI']);
+    $project = createLbProject($admin, [$highPointLowKpi->id, $lowPointHighKpi->id]);
+    $anchor = Carbon::create(2026, 8, 10, 12, 0, 0);
+    $this->travelTo($anchor);
+
+    // GUARD F-168: point & kpi_score SENGAJA saling berlawanan -- kalau service
+    // diam-diam masih sort by point (regresi), test ini akan gagal.
+    createApprovedTask($project, $admin, [$highPointLowKpi->id], ['points' => 100, 'kpi_score' => 0, 'approved_at' => $anchor]);
+    createApprovedTask($project, $admin, [$lowPointHighKpi->id], ['points' => 1, 'kpi_score' => 5, 'approved_at' => $anchor]);
+
+    $response = $this->actingAs($admin)->get(route('leaderboard.index', ['from' => '2026-08-01', 'to' => '2026-08-31']));
+
+    $response->assertOk();
+    $rows = collect($response->viewData('page')['props']['rows']);
+
+    // Urutan RELATIF (bukan posisi absolut -- admin/user aktif lain di organisasi
+    // ini ikut tampil di rows[] juga, F-95, dengan kpi_total=0 yang bisa seri):
+    // lowPointHighKpi (kpi=5) WAJIB muncul lebih dulu dari highPointLowKpi (kpi=0).
+    $ids = $rows->pluck('id')->values();
+    expect($ids->search($lowPointHighKpi->id))->toBeLessThan($ids->search($highPointLowKpi->id));
+
+    // F-168 tetap utuh: point TIDAK ikut berubah/tercampur walau urutan berbeda.
+    expect($rows->firstWhere('id', $highPointLowKpi->id)['point'])->toBe(100)
+        ->and($rows->firstWhere('id', $lowPointHighKpi->id)['point'])->toBe(1)
+        ->and($rows->firstWhere('id', $highPointLowKpi->id)['kpi_total'])->toBe(0)
+        ->and($rows->firstWhere('id', $lowPointHighKpi->id)['kpi_total'])->toBe(5);
+});

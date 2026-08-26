@@ -27,3 +27,9 @@ Schedule::command('automation:run')->dailyAt('00:01')->timezone('Asia/Jakarta');
 // deploy ke server (bukan pekerjaan Hari-6).
 Schedule::command('tasks:notify-due-soon')->dailyAt('06:00');
 Schedule::command('tasks:notify-overdue')->dailyAt('06:05');
+
+// F-182 (permintaan Boss 2026-08-27): cadangan activity_logs bulan lalu ke .log,
+// tanggal 1 tiap bulan jam 01:30 WIB (off-peak). MURNI export -- F-23 (immutable)
+// tidak disentuh, baris asli TETAP di database (lihat header ArchiveActivityLogsCommand
+// untuk kenapa beban DB tidak berkurang oleh command ini).
+Schedule::command('activity-logs:archive')->monthlyOn(1, '01:30')->timezone('Asia/Jakarta');

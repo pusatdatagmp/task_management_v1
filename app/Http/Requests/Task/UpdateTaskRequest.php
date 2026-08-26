@@ -65,6 +65,9 @@ class UpdateTaskRequest extends FormRequest
             'due_date' => ['required', 'date'],
             'assignees' => ['nullable', 'array'],
             'assignees.*' => [Rule::exists('project_user', 'user_id')->where('project_id', $project->id)],
+            // Permintaan Boss (2026-08-26): lihat StoreTaskRequest.
+            'tags' => ['nullable', 'array'],
+            'tags.*' => [Rule::exists('tags', 'id')->where('organization_id', $project->organization_id)],
             'parent_task_id' => [
                 'nullable',
                 Rule::exists('tasks', 'id')->where('project_id', $project->id)->whereNull('deleted_at'),

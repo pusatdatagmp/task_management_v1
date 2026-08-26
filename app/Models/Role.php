@@ -84,9 +84,9 @@ class Role extends Model
     /**
      * KONTRAK: true kalau MENGECUALIKAN permission tertentu dari $excludingRoleId
      * akan membuat organisasi ini kehilangan SEMUA pemegang permission itu.
-     * DIPAKAI: RoleController::update() (E1 — role sistem 'admin' tidak boleh
-     * dilucuti user.manage kalau dia satu-satunya pemegang, org terkunci
-     * selamanya dari halaman kelola user/role). Pola sama
+     * DIPAKAI: RoleController::update() — F-170 (dulu user.manage): role
+     * sistem 'admin' tidak boleh dilucuti role.manage kalau dia satu-satunya
+     * pemegang, org terkunci selamanya dari halaman kelola role. Pola sama
      * TaskStatus::wouldLeaveNoWorkState() (Hari-5).
      */
     public static function wouldLeaveNoHolderOfPermission(int $organizationId, string $permissionName, int $excludingRoleId): bool

@@ -135,13 +135,14 @@ class HandleInertiaRequests extends Middleware
                 ? Task::whereHas('taskStatus', fn ($q) => $q->where('is_completed', false)->where('is_review', true))->count()
                 : null,
             // Permintaan Boss (2026-08-22): badge jumlah di menu sidebar
-            // "Perpanjangan" (item admin, gated task.approve — app-sidebar.tsx),
-            // pola SAMA myTasksCount. Filter IDENTIK DeadlineExtensionController::
-            // index() (status='pending') -- SATU SUMBER supaya angka badge selalu
-            // sama dengan jumlah baris yang tampil begitu diklik. 0 untuk yang
-            // tidak berwenang (menu item-nya sendiri sudah tidak dirender di
-            // sidebar buat mereka, jadi 0-vs-null tidak relevan di sini).
-            'pendingExtensionsCount' => $request->user()?->can('task.approve')
+            // "Perpanjangan" (item admin, gated extension.approve F-170 — dulu
+            // task.approve, app-sidebar.tsx), pola SAMA myTasksCount. Filter
+            // IDENTIK DeadlineExtensionController::index() (status='pending') --
+            // SATU SUMBER supaya angka badge selalu sama dengan jumlah baris yang
+            // tampil begitu diklik. 0 untuk yang tidak berwenang (menu item-nya
+            // sendiri sudah tidak dirender di sidebar buat mereka, jadi 0-vs-null
+            // tidak relevan di sini).
+            'pendingExtensionsCount' => $request->user()?->can('extension.approve')
                 ? DeadlineExtension::where('status', 'pending')->count()
                 : 0,
         ]);

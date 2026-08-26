@@ -28,7 +28,7 @@ class UpdateRoleRequest extends FormRequest
 {
     public function authorize(): bool
     {
-        return (bool) Auth::user()?->can('user.manage'); // F-90
+        return (bool) Auth::user()?->can('role.manage'); // F-170 (dulu user.manage)
     }
 
     public function rules(): array

@@ -78,6 +78,19 @@ class RolePermissionSeeder extends Seeder
             ['permission_name' => 'task.manage', 'module' => 'task'],
             ['permission_name' => 'task.approve', 'module' => 'task'],
             ['permission_name' => 'project.viewAll', 'module' => 'project'],
+            // F-170 (audit permission per-menu, permintaan Boss 2026-08-26): SEBELUMNYA
+            // 4 pasang menu berbagi 1 permission dengan menu lain (F-46 "template
+            // = task.manage", F-28-setara "extension = task.approve", "Peran" numpang
+            // user.manage, "Hari Libur" numpang workschedule.manage) — admin tidak
+            // bisa kasih akses Tugas Berulang TANPA sekalian kasih CRUD task biasa,
+            // dst. 4 baris baru ini 1:1 gantikan permission lama KHUSUS untuk
+            // menu-nya masing-masing (lihat routes/admin.php) — permission lama
+            // TETAP ADA untuk resource aslinya (task.manage = CRUD task biasa,
+            // task.approve = approve/reject task biasa, dst), TIDAK dihapus.
+            ['permission_name' => 'role.manage', 'module' => 'role'],
+            ['permission_name' => 'holiday.manage', 'module' => 'holiday'],
+            ['permission_name' => 'tasktemplate.manage', 'module' => 'tasktemplate'],
+            ['permission_name' => 'extension.approve', 'module' => 'extension'],
             // v0.8 H2 (F-52/F-95): dashboard TIM — admin saja (matriks BF §6
             // "Lihat dashboard tim"), member NOL permission sesuai desain RBAC.
             ['permission_name' => 'dashboard.view', 'module' => 'dashboard'],

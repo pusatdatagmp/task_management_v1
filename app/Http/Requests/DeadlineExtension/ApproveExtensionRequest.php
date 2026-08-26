@@ -24,7 +24,7 @@ class ApproveExtensionRequest extends FormRequest
 {
     public function authorize(): bool
     {
-        return (bool) Auth::user()?->can('task.approve'); // F-90, sama dengan approve task (F-28)
+        return (bool) Auth::user()?->can('extension.approve'); // F-170 (dulu task.approve)
     }
 
     public function rules(): array

@@ -5,15 +5,16 @@
  * MODUL       : AllTaskTemplatesTest
  * KLASIFIKASI : UTIL
  * TUJUAN      : Verifikasi halaman "Tugas Berulang" flat lintas project (F-140/F-144/
- *               F-147, v1.2 H7b) — listing gabungan SEMUA project, gating task.manage
- *               (F-90). CRUD template SENDIRI tidak disentuh sesi ini (F-46 utuh,
- *               sudah dites TaskTemplateTest) — test ini HANYA menyasar endpoint listing baru.
+ *               F-147, v1.2 H7b) — listing gabungan SEMUA project, gating
+ *               tasktemplate.manage (F-170, dulu task.manage — F-90). CRUD template
+ *               SENDIRI tidak disentuh sesi ini (F-46 utuh, sudah dites
+ *               TaskTemplateTest) — test ini HANYA menyasar endpoint listing baru.
  * DIPANGGIL   : php artisan test (Pest)
  * MEMANGGIL   : TaskTemplateController::allProjects()
  * DATA MASUK  : -
  * DATA KELUAR : Assertion pass/fail
- * RISIKO      : Kalau gating task.manage bocor, member biasa bisa lihat blueprint
- *               recurring SELURUH organisasi (bukan cuma yang relevan untuknya).
+ * RISIKO      : Kalau gating tasktemplate.manage bocor, member biasa bisa lihat
+ *               blueprint recurring SELURUH organisasi (bukan cuma yang relevan untuknya).
  * ==========================================================
  */
 
@@ -36,7 +37,7 @@ function createAllTemplatesProject(User $admin, string $suffix = ''): Project
     return $project;
 }
 
-test('a user without task.manage cannot access Tugas Berulang', function () {
+test('a user without tasktemplate.manage cannot access Tugas Berulang (F-170)', function () {
     $admin = User::factory()->admin()->create();
     $member = User::factory()->create(['organization_id' => $admin->organization_id]);
 

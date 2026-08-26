@@ -4,14 +4,15 @@
 // TUJUAN      : Form edit role (RBAC §E1) — nama HANYA untuk role custom (role
 //               sistem read-only, "tidak bisa dihapus/rename"), permission bisa
 //               diedit untuk KEDUA jenis, dengan lantai minimum untuk role sistem
-//               (checkbox user.manage disabled kalau ini pemegang terakhir —
-//               dijelaskan LANGSUNG di UI, bukan cuma ditolak diam-diam server).
+//               (checkbox role.manage disabled kalau ini pemegang terakhir —
+//               F-170, dulu user.manage — dijelaskan LANGSUNG di UI, bukan cuma
+//               ditolak diam-diam server).
 // DIPANGGIL   : RoleController::edit()
 // MEMANGGIL   : route('roles.update')
 // DATA MASUK  : role (existing), permissionIds[] (yang dimiliki role ini),
-//               permissions[] (katalog global), isLastUserManageHolder
+//               permissions[] (katalog global), isLastRoleManageHolder
 // DATA KELUAR : PUT form -> RoleController::update()
-// RISIKO      : Guard isLastUserManageHolder di sini HANYA gating tampilan —
+// RISIKO      : Guard isLastRoleManageHolder di sini HANYA gating tampilan —
 //               penegakan asli tetap Role::wouldLeaveNoHolderOfPermission() di
 //               server (RoleController::update()), supaya tidak lomba dengan
 //               role lain yang diedit bersamaan di tab lain.
@@ -45,7 +46,7 @@ interface RoleEditProps {
     role: RoleData;
     permissionIds: number[];
     permissions: PermissionOption[];
-    isLastUserManageHolder: boolean;
+    isLastRoleManageHolder: boolean;
 }
 
 // Permintaan Boss: lihat catatan sama di roles/create.tsx -- node 'Role' dihapus
@@ -62,7 +63,7 @@ function groupByModule(permissions: PermissionOption[]): Record<string, Permissi
     }, {});
 }
 
-export default function RoleEdit({ role, permissionIds, permissions, isLastUserManageHolder }: RoleEditProps) {
+export default function RoleEdit({ role, permissionIds, permissions, isLastRoleManageHolder }: RoleEditProps) {
     const permissionsByModule = groupByModule(permissions);
 
     const { data, setData, put, processing, errors } = useForm({
@@ -99,7 +100,7 @@ export default function RoleEdit({ role, permissionIds, permissions, isLastUserM
                                     disabled={role.is_system}
                                     required={!role.is_system}
                                 />
-                                {role.is_system && <p className="text-xs text-muted-foreground">Role sistem tidak bisa di-rename.</p>}
+                                {role.is_system && <p className="text-muted-foreground text-xs">Role sistem tidak bisa di-rename.</p>}
                                 <InputError message={errors.role_name} />
                             </div>
 
@@ -108,21 +109,21 @@ export default function RoleEdit({ role, permissionIds, permissions, isLastUserM
                                 <div className="grid max-h-96 gap-4 overflow-y-auto rounded-md border p-3">
                                     {Object.entries(permissionsByModule).map(([module, perms]) => (
                                         <div key={module} className="grid gap-1">
-                                            <span className="text-xs font-semibold tracking-wide text-muted-foreground uppercase">{module}</span>
+                                            <span className="text-muted-foreground text-xs font-semibold tracking-wide uppercase">{module}</span>
                                             {perms.map((permission) => {
-                                                const isLockedUserManage = isLastUserManageHolder && permission.permission_name === 'user.manage';
+                                                const isLockedRoleManage = isLastRoleManageHolder && permission.permission_name === 'role.manage';
 
                                                 return (
                                                     <label key={permission.id} className="flex items-center gap-2 text-sm">
                                                         <Checkbox
                                                             checked={data.permissions.includes(permission.id)}
-                                                            disabled={isLockedUserManage}
+                                                            disabled={isLockedRoleManage}
                                                             onCheckedChange={(checked) => togglePermission(permission.id, checked === true)}
                                                         />
                                                         {permission.permission_name}
-                                                        {isLockedUserManage && (
-                                                            <span className="text-xs text-muted-foreground">
-                                                                (tidak bisa dilepas — satu-satunya role pengelola user/role)
+                                                        {isLockedRoleManage && (
+                                                            <span className="text-muted-foreground text-xs">
+                                                                (tidak bisa dilepas — satu-satunya role pengelola role)
                                                             </span>
                                                         )}
                                                     </label>

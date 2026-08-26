@@ -9,8 +9,17 @@
  *               task belum-selesai tidak pernah masuk). Kolom konteks (Rating/
  *               Revisi/Ditolak/On-time%/KPI) dihitung TERPISAH, TIDAK dibaur ke
  *               Point (F-62/F-168 — konteks bukan hukuman tersembunyi, kpi_total
- *               KOLOM TERPISAH bukan pengganti Point). Skor di sini PROVISIONAL
- *               (F-2) — kalibrasi final v1.5 dari data nyata, bukan tugas service ini.
+ *               KOLOM TERPISAH bukan pengganti Point SEBAGAI NILAI). Skor di sini
+ *               PROVISIONAL (F-2) — kalibrasi final v1.5 dari data nyata, bukan
+ *               tugas service ini.
+ *               F-177 (permintaan Boss 2026-08-27): BASIS RANKING (urutan array
+ *               hasil) dipindah dari Point ke kpi_total — "jangan poin dulu".
+ *               INI BEDA dari F-168: F-168 soal NILAI (kpi_total tidak boleh
+ *               dicampur ke rumus Point), F-177 soal URUTAN TAMPIL saja — Point
+ *               TETAP dihitung & dikirim utuh sebagai kolom terpisah (F-168 tetap
+ *               berlaku penuh), cuma tidak lagi jadi kunci sortByDesc(). Sifatnya
+ *               PROVISIONAL juga ("dulu") — kalau Boss minta balik ke Point nanti,
+ *               tinggal tukar kunci sortByDesc() lagi, nol perubahan rumus lain.
  * DIPANGGIL   : LeaderboardController::index()
  * MEMANGGIL   : Task (isOnTime(), F-109), User (Collection, sudah difilter organisasi
  *               oleh caller — F-15)
@@ -18,7 +27,8 @@
  * DATA KELUAR : array per user: point/rating/revisi/ditolak/on_time_percent/kpi_total
  *               (angka MENTAH — pemetaan rupiah/skor-kinerja lain TIDAK PERNAH terjadi
  *               di sini atau di mana pun, F-4/F-134). kpi_total = Σ kpi_score task
- *               disetujui periode ini, KOLOM TERPISAH dari point (F-168).
+ *               disetujui periode ini, KOLOM TERPISAH dari point (F-168). Array hasil
+ *               SEKARANG terurut kpi_total DESC (F-177, dulu point DESC).
  * RISIKO      : SUMBER on-time — logika (revisi KEDUA 2026-08-10: GABUNGAN due_date
  *               (F-47, original_due_date??due_date vs submitted_at??approved_at) DAN
  *               actual_minutes<=estimated_minutes, keduanya WAJIB terpenuhi) hidup
@@ -130,6 +140,10 @@ class LeaderboardService
                 // F-168: kolom TERPISAH dari 'point' -- lihat catatan kpi_total di atas.
                 'kpi_total' => $row['kpi_total'],
             ];
-        })->sortByDesc('point')->values()->all();
+        })
+            // F-177 (permintaan Boss 2026-08-27): ranking SEKARANG berbasis kpi_total,
+            // BUKAN point lagi ("jangan poin dulu") -- point TETAP dihitung & dikirim
+            // utuh di atas (F-168 nilai tidak berubah), cuma bukan kunci urut lagi.
+            ->sortByDesc('kpi_total')->values()->all();
     }
 }

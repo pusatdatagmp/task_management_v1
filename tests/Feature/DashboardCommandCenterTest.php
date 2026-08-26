@@ -27,6 +27,7 @@ use App\Models\Holiday;
 use App\Models\Permission;
 use App\Models\Project;
 use App\Models\Role;
+use App\Models\Tag;
 use App\Models\Task;
 use App\Models\TaskStatus;
 use App\Models\TaskTemplate;
@@ -1429,4 +1430,46 @@ test('member_category_chart: viewer terbatas cuma lihat baris dirinya sendiri, k
     expect($chart)->toHaveCount(1)
         ->and($chart[0]['id'])->toBe($viewer->id)
         ->and($chart[0]['todo_minutes'])->toBe(60);
+});
+
+test('tags_chart: total per tag terpecah todo/selesai berbasis flag is_completed (F-44), permintaan Boss 2026-08-27', function () {
+    $admin = User::factory()->admin()->create();
+    $member = User::factory()->create(['organization_id' => $admin->organization_id]);
+    $project = createCcProject($admin, [$member->id]);
+    $todo = TaskStatus::where('project_id', $project->id)->where('position', 0)->firstOrFail();
+    $done = TaskStatus::where('project_id', $project->id)->where('is_completed', true)->firstOrFail();
+    $anchor = ccAnchor();
+    seedCcSchedule($admin, $anchor);
+    $this->travelTo($anchor);
+
+    $urgent = Tag::create(['organization_id' => $admin->organization_id, 'name' => 'Urgent', 'color' => '#ff0000']);
+    $bug = Tag::create(['organization_id' => $admin->organization_id, 'name' => 'Bug', 'color' => '#00ff00']);
+
+    $t1 = createCcTask($project, $todo, $admin, [$member->id], 60, $anchor->copy()->addDays(5));
+    $t2 = createCcTask($project, $done, $admin, [$member->id], 60, $anchor->copy()->addDays(5));
+    $t1->tags()->attach($urgent->id);
+    $t2->tags()->attach($urgent->id);
+    // GUARD: tag "Bug" TIDAK dipakai task manapun -- WAJIB tetap tampil di
+    // chart dengan total=0 (katalog Tag, bukan cuma yang sudah dipakai).
+    $bug->fresh();
+
+    $response = $this->actingAs($admin)->getJson(route('dashboard.command-center'));
+
+    $response->assertOk();
+    $chart = collect($response->json('tags_chart'))->keyBy('id');
+
+    expect($chart[$urgent->id]['total'])->toBe(2)
+        ->and($chart[$urgent->id]['todo'])->toBe(1)
+        ->and($chart[$urgent->id]['selesai'])->toBe(1)
+        ->and($chart[$bug->id]['total'])->toBe(0);
+});
+
+test('tags_chart: kosong untuk viewer terbatas (restricted_to_self, pola sama status_projects)', function () {
+    $admin = User::factory()->admin()->create();
+    $viewer = ccRestrictedViewer($admin);
+    Tag::create(['organization_id' => $admin->organization_id, 'name' => 'Urgent', 'color' => '#ff0000']);
+
+    $response = $this->actingAs($viewer)->getJson(route('dashboard.command-center'));
+
+    $response->assertOk()->assertJsonPath('tags_chart', []);
 });

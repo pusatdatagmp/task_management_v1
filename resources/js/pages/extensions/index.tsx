@@ -32,7 +32,11 @@ interface AttachmentRef {
 interface ExtensionRow {
     id: number;
     task_id: number;
-    task: { id: number; title: string; project: { id: number; name: string } };
+    // F-181 (audit Boss 2026-08-27): NULLABLE -- sama seperti extensions/my-extensions.tsx,
+    // task ber-soft-delete (F-16) dikecualikan otomatis dari eager load
+    // DeadlineExtensionController::index() (task:id,... TANPA withTrashed()).
+    // WAJIB null-check di render (dulu crash blank putih kalau task dihapus).
+    task: { id: number; title: string; project: { id: number; name: string } } | null;
     requested_by: { id: number; name: string };
     requested_due_date: string;
     additional_minutes: number;
@@ -45,7 +49,8 @@ const breadcrumbs: BreadcrumbItem[] = [{ title: 'Perpanjangan', href: '/pengatur
 
 export default function ExtensionsIndex({ extensions }: { extensions: ExtensionRow[] }) {
     const approve = async (ext: ExtensionRow) => {
-        if (!(await confirmAction(`Setujui perpanjangan task "${ext.task.title}" untuk ${ext.requested_by.name}?`))) return;
+        const taskLabel = ext.task ? ext.task.title : 'task yang sudah dihapus';
+        if (!(await confirmAction(`Setujui perpanjangan ${ext.task ? `task "${taskLabel}"` : taskLabel} untuk ${ext.requested_by.name}?`))) return;
 
         router.patch(route('extensions.approve', ext.id), {}, { preserveScroll: true });
     };
@@ -77,7 +82,7 @@ export default function ExtensionsIndex({ extensions }: { extensions: ExtensionR
                                 <div key={ext.id} className="rounded-md border p-3 text-sm">
                                     <div className="flex flex-wrap items-center justify-between gap-2">
                                         <span className="font-medium">
-                                            {ext.task.project.name} — {ext.task.title}
+                                            {ext.task ? `${ext.task.project.name} — ${ext.task.title}` : 'Task telah dihapus'}
                                         </span>
                                         <span className="text-xs text-muted-foreground">Diajukan oleh {ext.requested_by.name}</span>
                                     </div>
@@ -90,13 +95,18 @@ export default function ExtensionsIndex({ extensions }: { extensions: ExtensionR
                                         <div className="mt-2 flex flex-col gap-1">
                                             {ext.attachments.map((a) => (
                                                 <div key={a.id} className="text-xs">
-                                                    {a.content_type === 'file' && (
+                                                    {/* F-181: link download BUTUH project.id -- kalau task sudah
+                                                        dihapus, tampil sebagai label statis alih-alih crash. */}
+                                                    {a.content_type === 'file' && ext.task && (
                                                         <a
                                                             href={route('attachments.download', [ext.task.project.id, ext.task_id, a.id])}
                                                             className="text-primary hover:underline"
                                                         >
                                                             Lihat bukti: {a.file_name}
                                                         </a>
+                                                    )}
+                                                    {a.content_type === 'file' && !ext.task && (
+                                                        <span className="text-muted-foreground">Bukti: {a.file_name} (task terhapus)</span>
                                                     )}
                                                     {a.content_type === 'link' && (
                                                         <a href={a.url ?? '#'} target="_blank" rel="noopener noreferrer" className="text-primary hover:underline">
