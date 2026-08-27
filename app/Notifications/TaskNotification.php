@@ -7,10 +7,13 @@
  * TUJUAN      : SATU class untuk seluruh 10 trigger notifikasi task (F-35, genap
  *               sejak v0.8 H6 — trigger #9/#10 extension) — dibedakan lewat $type,
  *               bukan 10 class terpisah, karena bentuk datanya identik (task, pesan,
- *               tujuan). Channel database saja (F-6 — Firebase ditunda v3.0).
+ *               tujuan). Channel database (F-6) TETAP SELALU jalan — F-185
+ *               (permintaan Boss) menyupersede "Firebase ditunda v3.0": FcmChannel
+ *               ditambah ke via() KALAU config('services.fcm.enabled') true, channel
+ *               database TIDAK PERNAH dicabut/diganti (F-6 baseline tetap hidup).
  * DIPANGGIL   : TaskObserver, TaskUserObserver, NotifyDueSoonCommand, NotifyOverdueCommand,
  *               DeadlineExtensionObserver (trigger #9/#10, v0.8 H6)
- * MEMANGGIL   : Task (baca title/project/due_date untuk susun pesan)
+ * MEMANGGIL   : Task (baca title/project/due_date untuk susun pesan), FcmChannel (F-185)
  * DATA MASUK  : Task + tipe trigger + data tambahan (mis. reason untuk REJECTED)
  * DATA KELUAR : notifications.data (JSON) — dibaca NotificationController & bell dropdown
  * RISIKO      : type dipakai NotifyDueSoonCommand/NotifyOverdueCommand untuk guard
@@ -23,6 +26,7 @@
 namespace App\Notifications;
 
 use App\Models\Task;
+use App\Notifications\Channels\FcmChannel;
 use Illuminate\Notifications\DatabaseNotification;
 use Illuminate\Notifications\Notification;
 
@@ -63,7 +67,16 @@ class TaskNotification extends Notification
      */
     public function via(object $notifiable): array
     {
-        return ['database'];
+        $channels = ['database'];
+
+        // F-185: FCM TAMBAHAN, bukan pengganti -- default config('services.fcm.
+        // enabled') FALSE sampai Boss pasang kredensial, jadi baris ini no-op
+        // (via() balik SAMA seperti sebelumnya) sampai eksplisit dinyalakan.
+        if (config('services.fcm.enabled')) {
+            $channels[] = FcmChannel::class;
+        }
+
+        return $channels;
     }
 
     /**
@@ -79,6 +92,29 @@ class TaskNotification extends Notification
             'message' => $this->message(),
             'reason' => $this->reason,
             'extension_outcome' => $this->extensionOutcome,
+        ];
+    }
+
+    /**
+     * KONTRAK: payload FCM (F-185) -- judul APLIKASI (bukan judul task, biar
+     * konsisten kayak notifikasi WA/Telegram: nama app di judul, isi pesan di
+     * body), body REUSE message() (SATU sumber teks, sama persis yang tampil
+     * di bell dropdown). `data` dipakai frontend (use-fcm.ts) buat nentuin
+     * prop Inertia mana yang di-reload -- SEMUA value HARUS string (batasan
+     * payload data FCM, lihat FcmService).
+     *
+     * @return array{title: string, body: string, data: array<string, string>}
+     */
+    public function toFcm(object $notifiable): array
+    {
+        return [
+            'title' => config('app.name'),
+            'body' => $this->message(),
+            'data' => [
+                'type' => $this->type,
+                'task_id' => (string) $this->task->id,
+                'project_id' => (string) $this->task->project_id,
+            ],
         ];
     }
 
@@ -103,8 +139,10 @@ class TaskNotification extends Notification
      * BUSINESS RULE: pesan dalam Bahasa Indonesia (§0 CLAUDE.md — UI Bahasa Indonesia).
      * F-44 TIDAK relevan di sini — $type di kelas ini adalah nama TRIGGER notifikasi,
      * bukan nama status task, jadi aman di-switch langsung.
+     * F-185: public (sebelumnya private) -- dipanggil toFcm() di atas, SATU
+     * sumber teks buat channel database & FCM (nol pesan ganda yang bisa beda).
      */
-    private function message(): string
+    public function message(): string
     {
         return match ($this->type) {
             self::ASSIGNED => "Kamu di-assign ke task \"{$this->task->title}\".",

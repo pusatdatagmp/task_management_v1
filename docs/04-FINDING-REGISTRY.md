@@ -1240,3 +1240,17 @@ Laporan KPI Claude Code (9 Agu) AKURAT soal state: formula FINAL ditunda v1.5 (F
 **F-168 DIREVISI:** kpi_score = kolom terpisah (bukan ganti Σpts); F-62 dipertahankan penuh. Boss pilih ini setelah paham pemisahan timeliness disengaja.
 
 **Boss: LANJUT bangun KPI-1 sekarang** (schema kpi_score + config + SimpleTimelinessStrategy + freeze at approve).
+
+---
+
+## CATATAN — 2026-08-27 — F-183/184/185: realtime notifications (FCM + Reverb), supersede F-6
+
+**Konteks:** Boss minta 5 permukaan update tanpa refresh manual — bell notifikasi, indikator Review, halaman Perpanjangan, badge Tugas Saya, komentar di halaman task. Nomor finding tertinggi yang BENAR-BENAR terpakai di kode ternyata F-182 (bukan F-63/F-64 seperti default lama CLAUDE.md, dan bukan F-169 seperti dugaan awal) — dokumen ini sendiri baru ke-update terakhir 2026-08-09 sementara kode sudah jalan sampai F-182, jadi ada backlog pencatatan yang tidak diusahakan diratakan di sini (di luar scope kerja ini). Finding baru mulai **F-183**.
+
+**F-183** — Bug lama (bukan dari kerja realtime ini): `MEMBER_CATEGORY_CONFIG.longgar_minutes.color` di `command-center.tsx` sebelumnya `'#ffff'` (putih solid, invisible di atas card putih) — komentar header widget SUDAH bilang "grey" sejak awal, jadi ini typo bukan keputusan desain. Diperbaiki ke `#64748b` (slate-500, sama gradient BarChart di sebelahnya). Catatan tambahan: komentar fix ini sempat SALAH ditandai `F-170` (bentrok dengan F-170 asli — permission `extension.approve`, dipakai 29 file) — dikoreksi ke F-183 ini.
+
+**F-184** — Laravel Reverb (WebSocket, self-hosted, bawaan Laravel 12) untuk komentar realtime: siapa pun yang lagi buka halaman detail task yang sama otomatis lihat komentar baru muncul tanpa refresh, gerbang otorisasi channel `task.{taskId}` mereplikasi PERSIS aturan `TaskController::show()` (`project.viewAll` ATAU member proyek). Dipilih di atas FCM untuk kasus ini karena FCM butuh izin notifikasi per-device yang tidak semua viewer tentu sudah kasih — tidak reliable untuk "semua orang di halaman yang sama".
+
+**F-185 — SUPERSEDE F-6:** F-6 ("Notifikasi = database, Firebase ditunda v3.0") dimajukan sekarang atas instruksi eksplisit Boss ("mau lewat FCM dari awal"). FCM (`kreait/firebase-php`) dipakai untuk 4 permukaan device-level (bell/review/perpanjangan/tugas saya) — TIDAK mengganti channel `database` yang sudah ada (F-6 tetap berlaku sebagai baseline; FCM cuma channel TAMBAHAN, `config('services.fcm.enabled')` default `false` sampai kredensial Boss terpasang). F-6 di baris registry atas TIDAK diedit (log historis immutable, F-23) — supersede-nya dicatat di sini.
+
+Rencana kerja 4 fase (Fase 0 koreksi F-170→F-183 di atas, Fase 1 = F-184 Reverb, Fase 2 = infrastruktur backend FCM, Fase 3 = F-185 sambung FCM ke 3 class Notification + frontend). Detail lihat plan file sesi kerja ini.

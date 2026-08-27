@@ -6,6 +6,7 @@ use App\Http\Controllers\CommentController;
 use App\Http\Controllers\DeadlineExtensionController;
 use App\Http\Controllers\NotificationController;
 use App\Http\Controllers\ProjectController;
+use App\Http\Controllers\PushSubscriptionController;
 use App\Http\Controllers\TaskChecklistItemController;
 use App\Http\Controllers\TaskController;
 use Illuminate\Support\Facades\Route;
@@ -14,6 +15,17 @@ use Inertia\Inertia;
 Route::get('/', function () {
     return Inertia::render('welcome');
 })->name('home');
+
+// F-184/F-185: service worker FCM -- DI LUAR middleware auth (service worker
+// fetch tanpa cookie session) DAN WAJIB di root domain (bukan /js/...), lihat
+// header resources/views/firebase-messaging-sw.blade.php kenapa. Closure
+// (pola SAMA route '/' di atas) -- satu response Blade sederhana, nol logic
+// yang butuh Controller terpisah.
+Route::get('/firebase-messaging-sw.js', function () {
+    return response()
+        ->view('firebase-messaging-sw')
+        ->header('Content-Type', 'application/javascript');
+})->name('firebase-messaging-sw');
 
 // F-76: scopeBindings() -> {task} di URL WAJIB anak dari {project} di URL yang
 // sama (Laravel otomatis pakai relasi Project::tasks() untuk itu). URL
@@ -44,6 +56,12 @@ Route::middleware(['auth'])->scopeBindings()->group(function () {
     Route::get('notifications', [NotificationController::class, 'index'])->name('notifications.index');
     Route::post('notifications/read-all', [NotificationController::class, 'markAllRead'])->name('notifications.read-all');
     Route::patch('notifications/{notification}/read', [NotificationController::class, 'markRead'])->name('notifications.read');
+
+    // F-184/F-185: daftar/hapus token FCM device -- dipanggil resources/js/hooks/
+    // use-fcm.ts setelah user klik "Aktifkan notifikasi" (izin browser + token
+    // dari Firebase Web SDK). JSON, pola sama notifications di atas.
+    Route::post('push-subscriptions', [PushSubscriptionController::class, 'store'])->name('push-subscriptions.store');
+    Route::delete('push-subscriptions', [PushSubscriptionController::class, 'destroy'])->name('push-subscriptions.destroy');
 
     // Permintaan Boss (2026-08-22): dropdown ikon "Review" header -- pola SAMA
     // notifications di atas (JSON, dropdown butuh fetch async). Gate permission

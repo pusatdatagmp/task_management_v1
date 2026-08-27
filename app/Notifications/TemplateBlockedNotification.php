@@ -22,12 +22,16 @@
  *               yang ada adalah SELURUH instance periode sebelumnya yang belum
  *               selesai). project_id tetap diisi supaya bell dropdown bisa
  *               menaut ke halaman project yang relevan.
+ *               F-185: FcmChannel ditambah ke via() KALAU config('services.fcm.
+ *               enabled') true -- channel database TETAP hidup, F-185 TAMBAHAN
+ *               bukan pengganti (pola SAMA TaskNotification/MentionNotification).
  * ==========================================================
  */
 
 namespace App\Notifications;
 
 use App\Models\TaskTemplate;
+use App\Notifications\Channels\FcmChannel;
 use Illuminate\Notifications\Notification;
 
 class TemplateBlockedNotification extends Notification
@@ -43,7 +47,13 @@ class TemplateBlockedNotification extends Notification
      */
     public function via(object $notifiable): array
     {
-        return ['database'];
+        $channels = ['database'];
+
+        if (config('services.fcm.enabled')) {
+            $channels[] = FcmChannel::class;
+        }
+
+        return $channels;
     }
 
     /**
@@ -56,7 +66,33 @@ class TemplateBlockedNotification extends Notification
             'task_id' => null,
             'project_id' => $this->template->project_id,
             'task_title' => $this->template->title,
-            'message' => "Template \"{$this->template->title}\" ter-block: instance periode sebelumnya belum selesai.",
+            'message' => $this->message(),
         ];
+    }
+
+    /**
+     * F-185: payload FCM -- body REUSE message(). `task_id` string kosong
+     * (BUKAN null) di data -- batasan payload data FCM (semua value HARUS
+     * string), '' tetap menyampaikan "level template, bukan task spesifik"
+     * sama seperti null di toArray().
+     *
+     * @return array{title: string, body: string, data: array<string, string>}
+     */
+    public function toFcm(object $notifiable): array
+    {
+        return [
+            'title' => config('app.name'),
+            'body' => $this->message(),
+            'data' => [
+                'type' => self::BLOCKED,
+                'task_id' => '',
+                'project_id' => (string) $this->template->project_id,
+            ],
+        ];
+    }
+
+    private function message(): string
+    {
+        return "Template \"{$this->template->title}\" ter-block: instance periode sebelumnya belum selesai.";
     }
 }

@@ -1,6 +1,7 @@
 import { Breadcrumbs } from '@/components/breadcrumbs';
 import { GlobalSearch } from '@/components/global-search';
 import { NotificationBell } from '@/components/notification-bell';
+import { PushPermissionPrompt } from '@/components/push-permission-prompt';
 import { ReviewNotice } from '@/components/review-notice';
 import { SidebarTrigger } from '@/components/ui/sidebar';
 import { type BreadcrumbItem as BreadcrumbItemType } from '@/types';
@@ -22,6 +23,9 @@ export function AppSidebarHeader({ breadcrumbs = [] }: { breadcrumbs?: Breadcrum
                     (sebelum) bell notifikasi, lihat review-notice.tsx. */}
                 <ReviewNotice />
                 <NotificationBell />
+                {/* F-184/F-185 (permintaan Boss): ajakan aktifkan FCM -- dekat bell/review,
+                    render null sendiri kalau tidak relevan (lihat guard di komponennya). */}
+                <PushPermissionPrompt />
             </div>
         </header>
     );

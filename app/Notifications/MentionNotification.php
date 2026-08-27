@@ -20,12 +20,16 @@
  * RISIKO      : type SELALU 'mentioned' — TIDAK dipakai guard idempotency F-80
  *               (itu urusan trigger #4/#5 due/overdue via cron, mention murni
  *               event-driven satu kali per aksi user, tidak ada risiko duplikat cron).
+ *               F-185: FcmChannel ditambah ke via() KALAU config('services.fcm.
+ *               enabled') true -- channel database TETAP hidup, F-185 TAMBAHAN
+ *               bukan pengganti (pola SAMA TaskNotification).
  * ==========================================================
  */
 
 namespace App\Notifications;
 
 use App\Models\Comment;
+use App\Notifications\Channels\FcmChannel;
 use Illuminate\Notifications\Notification;
 
 class MentionNotification extends Notification
@@ -41,7 +45,13 @@ class MentionNotification extends Notification
      */
     public function via(object $notifiable): array
     {
-        return ['database'];
+        $channels = ['database'];
+
+        if (config('services.fcm.enabled')) {
+            $channels[] = FcmChannel::class;
+        }
+
+        return $channels;
     }
 
     /**
@@ -54,7 +64,31 @@ class MentionNotification extends Notification
             'task_id' => $this->comment->task_id,
             'project_id' => $this->comment->task->project_id,
             'task_title' => $this->comment->task->title,
-            'message' => "{$this->comment->user->name} menyebut kamu di komentar task \"{$this->comment->task->title}\".",
+            'message' => $this->message(),
         ];
+    }
+
+    /**
+     * F-185: payload FCM -- body REUSE message() (SATU sumber teks, sama pola
+     * TaskNotification::toFcm()).
+     *
+     * @return array{title: string, body: string, data: array<string, string>}
+     */
+    public function toFcm(object $notifiable): array
+    {
+        return [
+            'title' => config('app.name'),
+            'body' => $this->message(),
+            'data' => [
+                'type' => self::MENTIONED,
+                'task_id' => (string) $this->comment->task_id,
+                'project_id' => (string) $this->comment->task->project_id,
+            ],
+        ];
+    }
+
+    private function message(): string
+    {
+        return "{$this->comment->user->name} menyebut kamu di komentar task \"{$this->comment->task->title}\".";
     }
 }

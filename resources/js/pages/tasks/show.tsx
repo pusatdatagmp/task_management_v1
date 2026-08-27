@@ -22,6 +22,12 @@
 //               backend (TaskController::show()) sudah sanitasi pakai Symfony
 //               HtmlSanitizer sebelum sampai ke props ini. JANGAN render field HTML
 //               lain lewat pola yang sama tanpa sanitasi server yang setara.
+//               F-184: `useEcho` (channel privat `task.{id}`, routes/channels.php)
+//               dengar event `comment.posted` (App\Events\CommentPosted) — komentar
+//               dari user LAIN muncul live di sini TANPA refresh. `liveComments`
+//               MURNI overlay tampilan (di-reset tiap prop `task.comments` refresh),
+//               nol data KPI/bisnis baru — komentar tetap satu-satunya sumber
+//               kebenaran di tabel `comments`, ini cuma jalur presentasi lebih cepat.
 // ==========================================================
 
 import TagBadges from '@/components/tag-badges';
@@ -39,6 +45,8 @@ import { PRIORITY_QUADRANT_COLOR, PRIORITY_QUADRANT_LABEL, type PriorityQuadrant
 import { confirmAction } from '@/lib/swal';
 import { type BreadcrumbItem, type SharedData } from '@/types';
 import { Head, Link, router, usePage } from '@inertiajs/react';
+import { useEcho } from '@laravel/echo-react';
+import { useEffect, useState } from 'react';
 
 interface UserOption {
     id: number;
@@ -149,6 +157,62 @@ export default function TaskShow({ project, task, statuses, projectMembers }: Ta
     // H7/F-95: tombol Mulai/Jeda/Lanjut/Submit HANYA assignee -- dihitung dari
     // daftar assignee yang SUDAH dikirim server, nol permission baru (F-95).
     const isAssignee = task.assignees.some((a) => a.id === auth.user.id);
+
+    // F-184: komentar realtime (Reverb) -- `liveComments` NAMPUNG komentar dari
+    // broadcast yang BELUM ada di prop `task.comments`. Direset tiap prop
+    // `task.comments` berubah (itu terjadi saat SI PENGIRIM sendiri submit --
+    // router.post() full-reload me-refresh prop ini utuh) supaya overlay tidak
+    // pernah numpuk/dobel dengan versi final dari server -- dedup MURNI by id,
+    // nol logic "punya siapa" (itu beda urusan, lihat is_mine di bawah).
+    const [liveComments, setLiveComments] = useState<CommentData[]>([]);
+    useEffect(() => setLiveComments([]), [task.comments]);
+
+    useEcho<{
+        id: number;
+        task_id: number;
+        body: string | null;
+        user: { id: number; name: string };
+        created_at: string;
+        is_edited: boolean;
+        is_deleted: boolean;
+    }>(
+        `task.${task.id}`,
+        // SUMBER: titik di depan WAJIB -- CommentPosted::broadcastAs() (backend)
+        // kirim wire event PERSIS "comment.posted" (custom name, bukan class
+        // path). Tanpa titik, Echo mengira ini "nama class" dan diam-diam
+        // dengar "App.Events.comment.posted" (auto-namespaced) -- listener
+        // TIDAK PERNAH cocok, payload masuk tapi handler tidak pernah terpanggil,
+        // nol error di console (gagal senyap). Konvensi Laravel Echo baku,
+        // BUKAN F-38-style larangan.
+        '.comment.posted',
+        (payload) => {
+            setLiveComments((prev) => {
+                const alreadyKnown = task.comments.some((c) => c.id === payload.id) || prev.some((c) => c.id === payload.id);
+                if (alreadyKnown) return prev;
+
+                return [
+                    ...prev,
+                    {
+                        id: payload.id,
+                        body: payload.body,
+                        // SUMBER: display_name TIDAK dikirim payload broadcast (CommentPosted::
+                        // broadcastWith(), backend) -- fallback ke `name` apa adanya, field ini
+                        // toh tidak dirender TaskComments (lihat tipe lokalnya di sana).
+                        user: { id: payload.user.id, name: payload.user.name, display_name: payload.user.name },
+                        created_at: payload.created_at,
+                        is_edited: payload.is_edited,
+                        is_deleted: payload.is_deleted,
+                        // is_mine RELATIF ke VIEWER -- dihitung LOKAL di sini (bukan dikirim
+                        // server, beda per orang yang nonton), lihat header CommentPosted.php.
+                        is_mine: payload.user.id === auth.user.id,
+                    },
+                ];
+            });
+        },
+        [task.id],
+    );
+
+    const allComments = [...task.comments, ...liveComments];
 
     const breadcrumbs: BreadcrumbItem[] = [
         { title: 'Project', href: '/projects' },
@@ -389,7 +453,7 @@ export default function TaskShow({ project, task, statuses, projectMembers }: Ta
                     </div>
                 </div>
 
-                <TaskComments projectId={project.id} taskId={task.id} comments={task.comments} projectMembers={projectMembers} />
+                <TaskComments projectId={project.id} taskId={task.id} comments={allComments} projectMembers={projectMembers} />
             </div>
         </AppLayout>
     );

@@ -64,6 +64,7 @@ import { Dialog, DialogContent, DialogHeader, DialogTitle } from '@/components/u
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
 import { Separator } from '@/components/ui/separator';
 import { Skeleton } from '@/components/ui/skeleton';
+import { useCountUp } from '@/hooks/use-count-up';
 import { formatLiveMinutes } from '@/hooks/use-live-counter';
 import AppLayout from '@/layouts/app-layout';
 import { formatMenitPair, shiftMonth } from '@/lib/command-center-format';
@@ -72,9 +73,23 @@ import { PRIORITY_QUADRANT_COLOR } from '@/lib/priority-quadrant';
 import { SELECT_ALL_VALUE } from '@/lib/utils';
 import { type BreadcrumbItem, type SharedData } from '@/types';
 import { Head, Link, router, usePage } from '@inertiajs/react';
-import { AlertTriangle, Briefcase, CheckCircle2, ChevronLeft, ChevronRight, Clock, Eye, ListTodo, PlayCircle, Star, X } from 'lucide-react';
+import { motion } from 'framer-motion';
+import {
+    AlertTriangle,
+    Briefcase,
+    CheckCircle2,
+    ChevronLeft,
+    ChevronRight,
+    Clock,
+    Eye,
+    ListTodo,
+    type LucideIcon,
+    PlayCircle,
+    Star,
+    X,
+} from 'lucide-react';
 import { useEffect, useState } from 'react';
-import { Bar, BarChart, CartesianGrid, PolarRadiusAxis, RadialBar, RadialBarChart, XAxis, YAxis } from 'recharts';
+import { Area, AreaChart, Bar, BarChart, CartesianGrid, PolarRadiusAxis, RadialBar, RadialBarChart, ResponsiveContainer, XAxis, YAxis } from 'recharts';
 
 interface SummaryCards {
     beban_harian: { used_minutes: number; capacity_minutes: number };
@@ -307,7 +322,16 @@ const MEMBER_CATEGORY_CONFIG = {
 
     longgar_minutes: {
         label: 'Jatah Harian',
-        color: '#ffff',
+        // F-183 (bug lama, ditemukan lewat verifikasi browser): sebelumnya '#ffff'
+        // (putih solid) -- resolve TRANSPARAN/invisible di atas card putih,
+        // bikin ring "Jatah Harian" widget "Beban Tim" (RadialBarChart) tidak
+        // kelihatan sama sekali kalau achievement/todo kebetulan 0 (cuma ring
+        // longgar yang harusnya tampil). Komentar header widget di atas SUDAH
+        // bilang "Jatah Harian = grey" sejak awal -- '#ffff' adalah typo, bukan
+        // keputusan desain. Diganti slate-500 (#64748b), SAMA dengan stop warna
+        // gelap gradient "mcat-longgar" punya BarChart "Beban per Kategori" di
+        // bawah (nol palet baru, konsisten satu widget).
+        color: '#64748b',
     },
 } satisfies ChartConfig;
 
@@ -544,6 +568,178 @@ function TableSkeletonRows({ rows, cols }: { rows: number; cols: number }) {
     );
 }
 
+// Permintaan Boss (revisi 2x): "grafik kecil di dalam card" untuk 6 kartu
+// ringkasan -- LINE CHART bergradasi (recharts AreaChart), bentuk gelombang
+// menyesuaikan docs/card-desain.jpeg. PENTING: backend TIDAK mengirim data
+// harian/tren historis untuk widget ini (cuma angka snapshot SAAT INI, lihat
+// SummaryCards) -- jadi garis di sini BUKAN tren N hari. WAVE_SHAPE adalah
+// pola bentuk TETAP (bukan data acak/fabrikasi harian), cuma diskalakan ke
+// `percent` biar visualnya menyerupai sparkline referensi -- titik TERAKHIR
+// (endpoint) SATU-SATUNYA yang punya arti (proporsi asli, F-109, nol KPI
+// baru). Kalau nanti Boss mau tren historis asli, itu butuh endpoint baru di
+// backend (perubahan kontrak API, approval terpisah).
+const WAVE_SHAPE = [0, 0.32, 0.18, 0.58, 0.38, 0.78, 1];
+
+// Permintaan Boss: SEMUA chart di halaman ini (line/bar/radial/donut) pakai
+// durasi animasi "keluar" (reveal saat render) yang SAMA -- 3 detik, satu
+// angka dipakai ulang di line/radial recharts di bawah + keyframes CSS donut
+// (lihat className "animate-donut-reveal", app.css) supaya nol inkonsistensi
+// kalau nanti Boss minta ubah durasinya lagi.
+const CHART_ANIMATION_MS = 3000;
+
+// Permintaan Boss (revisi): animasi Bar (stacked bar "Beban per Kategori"/
+// "Tag") DIBUAT LEBIH LAMBAT dari chart lain -- batang yang lebih tinggi
+// kelihatan "kaku" kalau durasinya sama dengan line/radial, angka lebih besar
+// bikin transisi tinggi batang terasa lebih smooth/mengalir.
+const BAR_ANIMATION_MS = 4500;
+
+// Permintaan Boss: animasi "masuk" per komponen (framer-motion) SETIAP
+// halaman Command Center dibuka -- fade + slide-up bertahap top-down (banner
+// welcome -> 6 kartu ringkasan -> widget chart di bawahnya). Animasi ini
+// HANYA jalan sekali saat komponen di-mount (buka halaman/navigasi Inertia
+// penuh) -- applyFilters() di bawah pakai preserveState:true (re-render, BUKAN
+// remount), jadi klik filter/ganti bulan TIDAK memicu ulang animasi ini,
+// cuma count-up angka/reveal chart recharts yang replay (itu memang dikontrol
+// terpisah, lihat CHART_ANIMATION_MS/useCountUp).
+const ENTRANCE_DURATION_S = 0.6;
+const CARD_STAGGER_S = 0.08; // jeda antar 6 kartu ringkasan
+const CARD_BASE_DELAY_S = 0.2; // kartu pertama mulai SETELAH banner welcome (delay 0) selesai muncul
+// Widget chart (Beban per Kategori dst, 6 section) mulai SETELAH kartu
+// terakhir (index 5) selesai animasi -- 0.2 + 5*0.08 = 0.6, ditambah sedikit
+// buffer durasi supaya tidak tabrakan, dibulatkan ke 0.9.
+const SECTION_STAGGER_S = 0.15;
+const SECTION_BASE_DELAY_S = 0.9;
+
+/** KONTRAK: props fade+slide-up framer-motion SATU sumber dipakai banner/kartu/widget -- delay beda per pemanggil, bentuk animasi & durasi SAMA (F-109, konsistensi visual). */
+function fadeUpMotion(delay: number) {
+    return {
+        initial: { opacity: 0, y: 24 },
+        animate: { opacity: 1, y: 0 },
+        transition: { duration: ENTRANCE_DURATION_S, delay, ease: 'easeOut' },
+    } as const;
+}
+
+/** KONTRAK: delay widget section ke-`index` (0-based, urutan TOP-DOWN sesuai DOM) -- dipakai 6 wrapper grid widget di bawah kartu ringkasan (Beban per Kategori s/d Top-10 Task). */
+function sectionDelay(index: number): number {
+    return SECTION_BASE_DELAY_S + index * SECTION_STAGGER_S;
+}
+
+// motion.create() DI LUAR komponen (module scope) -- WAJIB, kalau dipanggil di
+// dalam SummaryStatCard() akan membuat TYPE komponen baru tiap render, React
+// mengira itu elemen berbeda dan me-remount Card (flicker + animasi masuk
+// replay terus-menerus, bukan cuma sekali saat mount).
+const MotionCard = motion.create(Card);
+
+function MiniLineGauge({ percent, color, gradientId, className = 'h-10 w-20 shrink-0' }: { percent: number; color: string; gradientId: string; className?: string }) {
+    const clamped = Math.max(0, Math.min(100, percent));
+    const data = WAVE_SHAPE.map((t, i) => ({ x: i, y: t * clamped }));
+
+    return (
+        <div className={className}>
+            <ResponsiveContainer width="100%" height="100%">
+                <AreaChart data={data} margin={{ top: 4, right: 1, bottom: 1, left: 1 }}>
+                    <defs>
+                        <linearGradient id={gradientId} x1="0" y1="0" x2="0" y2="1">
+                            <stop offset="0%" stopColor={color} stopOpacity={0.55} />
+                            <stop offset="100%" stopColor={color} stopOpacity={0} />
+                        </linearGradient>
+                    </defs>
+                    <Area
+                        type="monotone"
+                        dataKey="y"
+                        stroke={color}
+                        strokeWidth={2}
+                        fill={`url(#${gradientId})`}
+                        isAnimationActive={true}
+                        animationDuration={CHART_ANIMATION_MS}
+                    />
+                </AreaChart>
+            </ResponsiveContainer>
+        </div>
+    );
+}
+
+// Permintaan Boss (docs/card-desain.jpeg): 6 kartu ringkasan diganti konsep
+// "dark gradient stat card" -- background gradasi warna PENUH per kartu
+// (bukan lagi bg-card netral), teks putih, chart menempel di bawah selebar
+// kartu. Warna TETAP semantik yang SUDAH established di halaman ini (bukan 4
+// warna acak dari foto referensi yang konteksnya beda produk) -- selesai=
+// hijau, overdue=merah, in_progress=biru, review=amber, todo=slate,
+// beban_harian=primary -- SAMA makna dengan SUMMARY_GAUGE_COLOR/STATUS_BADGE/
+// Distribusi Progress di widget lain, cuma direpresentasikan sebagai gradasi
+// solid bukan lagi warna garis tipis. `chart` dipilih HANYA supaya kontras
+// jalan di atas gradasi gelap (lebih terang dari base-nya), bukan palet baru.
+const SUMMARY_CARD_THEME: Record<'beban_harian' | 'todo' | 'in_progress' | 'review' | 'selesai' | 'overdue', { gradient: string; chart: string }> = {
+    beban_harian: { gradient: 'linear-gradient(135deg, #0b1330 0%, #1d3a6e 55%, #3762ad 100%)', chart: '#a8c8ff' },
+    todo: { gradient: 'linear-gradient(135deg, #14161c 0%, #2b323f 55%, #4a5568 100%)', chart: '#cbd5e1' },
+    in_progress: { gradient: 'linear-gradient(135deg, #07172e 0%, #123a6b 55%, #1f66c2 100%)', chart: '#bfe0ff' },
+    review: { gradient: 'linear-gradient(135deg, #2a1a04 0%, #6b3e08 55%, #c2790f 100%)', chart: '#ffe3a3' },
+    selesai: { gradient: 'linear-gradient(135deg, #062012 0%, #0f4a2a 55%, #22a85c 100%)', chart: '#b6f3cf' },
+    overdue: { gradient: 'linear-gradient(135deg, #2a0a0a 0%, #6b1414 55%, #d02b2b 100%)', chart: '#ffc4c4' },
+};
+
+// Kartu ringkasan reusable -- 6 pemanggilan di bawah IDENTIK strukturnya
+// (label, ikon, angka animasi, chart), cuma beda data & tema warna. Ekstraksi
+// di sini murni menghindari duplikasi markup 6x, bukan abstraksi spekulatif.
+function SummaryStatCard({
+    label,
+    icon: Icon,
+    value,
+    theme,
+    chartPercent,
+    gradientId,
+    loading,
+    index,
+}: {
+    label: string;
+    icon: LucideIcon;
+    value: React.ReactNode;
+    theme: { gradient: string; chart: string };
+    chartPercent: number;
+    gradientId: string;
+    loading: boolean;
+    /** Posisi kartu (0-based, kiri ke kanan) -- basis delay stagger animasi masuk, lihat CARD_STAGGER_S/fadeUpMotion(). */
+    index: number;
+}) {
+    return (
+        <MotionCard
+            className="relative gap-0 overflow-hidden border-none py-0 text-white shadow-md"
+            style={{ backgroundImage: theme.gradient }}
+            {...fadeUpMotion(CARD_BASE_DELAY_S + index * CARD_STAGGER_S)}
+        >
+            {/* Aksesori dekoratif -- pola SAMA blur circle banner welcome di atas, murni visual. */}
+            <div className="pointer-events-none absolute -right-4 -top-4 h-20 w-20 rounded-full bg-white/10 blur-2xl" />
+            <CardHeader className="relative z-10 flex flex-row items-center justify-between space-y-0 p-4 pb-1">
+                <CardTitle className="flex items-center gap-1.5 text-xs font-medium text-white/70">
+                    <Icon className="h-3.5 w-3.5 text-white/60" />
+                    {label}
+                </CardTitle>
+                {/* Permintaan Boss (docs/card-desain.jpeg): badge persentase --
+                ISINYA PROPORSI terhadap total (SAMA basis dengan chartPercent/
+                MiniLineGauge di bawah, F-109), BUKAN "naik/turun vs kemarin"
+                (backend tidak punya data pembanding periode untuk 6 kartu ini,
+                lihat header modul). Nol tanda +/- atau panah arah -- itu akan
+                menyiratkan tren yang datanya tidak ada (F-4). */}
+                {!loading && (
+                    <span className="rounded-full bg-white/15 px-2 py-0.5 text-[11px] font-semibold tabular-nums text-white/90">
+                        {Math.round(chartPercent)}%
+                    </span>
+                )}
+            </CardHeader>
+            <CardContent className="relative z-10 flex flex-col gap-1 p-4 pt-0">
+                {loading ? (
+                    <Skeleton className="h-7 w-20 bg-white/20" />
+                ) : (
+                    <span className="text-2xl font-semibold tabular-nums">{value}</span>
+                )}
+                {!loading && (
+                    <MiniLineGauge percent={chartPercent} color={theme.chart} gradientId={gradientId} className="-mx-1 mt-2 h-12 w-[calc(100%+0.5rem)]" />
+                )}
+            </CardContent>
+        </MotionCard>
+    );
+}
+
 export default function CommandCenter({
     restricted_to_self: restrictedToSelf,
     summary_cards: cards,
@@ -745,6 +941,27 @@ export default function CommandCenter({
     const donutChart = buildDonutGradient(donut);
     const progressTotal = progress.selesai + progress.review + progress.progress + progress.todo;
 
+    // Permintaan Boss: gauge kecil di 5 kartu status (To Do/In Progress/Review/
+    // Selesai/Overdue) -- proporsi MURNI presentasi terhadap total 5 status itu
+    // sendiri (denominator lokal, F-109, BUKAN angka KPI baru yang dikirim
+    // balik/disimpan). Beban Harian gauge pakai used/capacity yang memang SUDAH
+    // ada di cards.beban_harian, bukan basis yang sama.
+    const summaryStatusTotal = cards.todo + cards.in_progress + cards.review + cards.selesai + cards.overdue;
+    const summaryPct = (value: number) => (summaryStatusTotal > 0 ? (value / summaryStatusTotal) * 100 : 0);
+    const bebanHarianPct =
+        cards.beban_harian.capacity_minutes > 0
+            ? Math.min(100, (cards.beban_harian.used_minutes / cards.beban_harian.capacity_minutes) * 100)
+            : 0;
+
+    // F-38: counter yang dianimasikan HANYA angka final yang sudah dihitung
+    // backend -- hook cuma menginterpolasi tampilan 0->nilai, nol hitungan baru.
+    const animatedBebanHarian = useCountUp(cards.beban_harian.used_minutes);
+    const animatedTodo = useCountUp(cards.todo);
+    const animatedInProgress = useCountUp(cards.in_progress);
+    const animatedReview = useCountUp(cards.review);
+    const animatedSelesai = useCountUp(cards.selesai);
+    const animatedOverdue = useCountUp(cards.overdue);
+
     // A6: grid bulan -- padding sel kosong di depan supaya kolom hari (Sen..Min)
     // sejajar (MURNI layout tampilan, bukan hitungan beban/level).
     const firstDate = new Date(`${heatmap.days[0]?.date ?? heatmap.month + '-01'}T00:00:00`);
@@ -758,7 +975,10 @@ export default function CommandCenter({
                 {/* Permintaan Boss (2026-08-27): banner welcome + sapaan waktu (WIB,
                     F-69) -- murni presentasi, dihitung SEKALI saat render (nol interval,
                     halaman ini biasa dibuka fresh via navigasi/reload, bukan SPA lama). */}
-                <div className="relative overflow-hidden rounded-2xl border border-primary/20 bg-gradient-to-r from-primary/15 via-primary/5 to-background p-6 shadow-sm backdrop-blur-sm transition-all hover:shadow-md">
+                <motion.div
+                    className="relative overflow-hidden rounded-2xl border border-primary/20 bg-gradient-to-r from-primary/15 via-primary/5 to-background p-6 shadow-sm backdrop-blur-sm transition-all hover:shadow-md"
+                    {...fadeUpMotion(0)}
+                >
                     {/* Aksesori dekoratif lingkaran halus di latar belakang */}
                     <div className="absolute -right-6 -top-6 h-24 w-24 rounded-full bg-primary/10 blur-xl" />
 
@@ -774,7 +994,7 @@ export default function CommandCenter({
 
 
                     </div>
-                </div>
+                </motion.div>
 
                 <div className="flex flex-wrap items-center justify-between gap-2">
                     <div>
@@ -846,66 +1066,78 @@ export default function CommandCenter({
                 {/* A2: 6 kartu ringkas -- statis (nol klik-filter, keputusan Boss
                     2026-07-29: halaman "Semua Tugas" lintas-project belum ada, DAN
                     §12.5 tak menyebut kartu ini di daftar 7 widget berfilter).
-                    Kartu "Selesai" ditambah 2026-08-08 (permintaan Boss). */}
+                    Kartu "Selesai" ditambah 2026-08-08 (permintaan Boss). Revisi
+                    2026-08-27 (permintaan Boss, docs/card-desain.jpeg): konsep
+                    "dark gradient stat card" -- angka dianimasikan naik dari 0
+                    (useCountUp) + line chart gradasi + badge persentase (lihat
+                    SUMMARY_CARD_THEME/SummaryStatCard di atas) -- MURNI
+                    presentasi, angka final SAMA seperti sebelumnya, nol KPI
+                    baru. Badge SENGAJA menampilkan PROPORSI terhadap total
+                    (basis SAMA dengan chartPercent), BUKAN "naik/turun vs
+                    kemarin" seperti foto referensi -- backend tidak punya data
+                    pembanding periode sebelumnya untuk 6 kartu ini, badge tren
+                    asli akan jadi angka fabrikasi (keputusan Boss). */}
                 <div className="grid grid-cols-2 gap-3 md:grid-cols-3 lg:grid-cols-6">
-                    <Card>
-                        <CardHeader className="flex flex-row items-center justify-between space-y-0 p-4 pb-2">
-                            <CardTitle className="text-muted-foreground text-sm font-medium">{scopeLabel('Beban Harian')}</CardTitle>
-                            <Clock className="text-muted-foreground h-4 w-4" />
-                        </CardHeader>
-                        <CardContent className="p-4 pt-0 text-2xl font-semibold">
-                            {navigating ? (
-                                <Skeleton className="h-7 w-24" />
-                            ) : (
-                                formatMenitPair(cards.beban_harian.used_minutes, cards.beban_harian.capacity_minutes)
-                            )}
-                        </CardContent>
-                    </Card>
-                    <Card>
-                        <CardHeader className="flex flex-row items-center justify-between space-y-0 p-4 pb-2">
-                            <CardTitle className="text-muted-foreground text-sm font-medium">{scopeLabel('To Do')}</CardTitle>
-                            <ListTodo className="text-muted-foreground h-4 w-4" />
-                        </CardHeader>
-                        <CardContent className="p-4 pt-0 text-2xl font-semibold">
-                            {navigating ? <Skeleton className="h-7 w-10" /> : cards.todo}
-                        </CardContent>
-                    </Card>
-                    <Card>
-                        <CardHeader className="flex flex-row items-center justify-between space-y-0 p-4 pb-2">
-                            <CardTitle className="text-muted-foreground text-sm font-medium">{scopeLabel('In Progress')}</CardTitle>
-                            <PlayCircle className="text-muted-foreground h-4 w-4" />
-                        </CardHeader>
-                        <CardContent className="p-4 pt-0 text-2xl font-semibold">
-                            {navigating ? <Skeleton className="h-7 w-10" /> : cards.in_progress}
-                        </CardContent>
-                    </Card>
-                    <Card>
-                        <CardHeader className="flex flex-row items-center justify-between space-y-0 p-4 pb-2">
-                            <CardTitle className="text-muted-foreground text-sm font-medium">{scopeLabel('Review')}</CardTitle>
-                            <Eye className="text-muted-foreground h-4 w-4" />
-                        </CardHeader>
-                        <CardContent className="p-4 pt-0 text-2xl font-semibold">
-                            {navigating ? <Skeleton className="h-7 w-10" /> : cards.review}
-                        </CardContent>
-                    </Card>
-                    <Card>
-                        <CardHeader className="flex flex-row items-center justify-between space-y-0 p-4 pb-2">
-                            <CardTitle className="text-muted-foreground text-sm font-medium">{scopeLabel('Selesai')}</CardTitle>
-                            <CheckCircle2 className="text-muted-foreground h-4 w-4" />
-                        </CardHeader>
-                        <CardContent className="p-4 pt-0 text-2xl font-semibold">
-                            {navigating ? <Skeleton className="h-7 w-10" /> : cards.selesai}
-                        </CardContent>
-                    </Card>
-                    <Card>
-                        <CardHeader className="flex flex-row items-center justify-between space-y-0 p-4 pb-2">
-                            <CardTitle className="text-muted-foreground text-sm font-medium">{scopeLabel('Overdue')}</CardTitle>
-                            <AlertTriangle className="text-muted-foreground h-4 w-4" />
-                        </CardHeader>
-                        <CardContent className="p-4 pt-0 text-2xl font-semibold">
-                            {navigating ? <Skeleton className="h-7 w-10" /> : cards.overdue}
-                        </CardContent>
-                    </Card>
+                    <SummaryStatCard
+                        label={scopeLabel('Beban Harian')}
+                        icon={Clock}
+                        value={formatMenitPair(animatedBebanHarian, cards.beban_harian.capacity_minutes)}
+                        theme={SUMMARY_CARD_THEME.beban_harian}
+                        chartPercent={bebanHarianPct}
+                        gradientId="mini-beban-harian"
+                        loading={navigating}
+                        index={0}
+                    />
+                    <SummaryStatCard
+                        label={scopeLabel('To Do')}
+                        icon={ListTodo}
+                        value={animatedTodo}
+                        theme={SUMMARY_CARD_THEME.todo}
+                        chartPercent={summaryPct(cards.todo)}
+                        gradientId="mini-todo"
+                        loading={navigating}
+                        index={1}
+                    />
+                    <SummaryStatCard
+                        label={scopeLabel('In Progress')}
+                        icon={PlayCircle}
+                        value={animatedInProgress}
+                        theme={SUMMARY_CARD_THEME.in_progress}
+                        chartPercent={summaryPct(cards.in_progress)}
+                        gradientId="mini-in-progress"
+                        loading={navigating}
+                        index={2}
+                    />
+                    <SummaryStatCard
+                        label={scopeLabel('Review')}
+                        icon={Eye}
+                        value={animatedReview}
+                        theme={SUMMARY_CARD_THEME.review}
+                        chartPercent={summaryPct(cards.review)}
+                        gradientId="mini-review"
+                        loading={navigating}
+                        index={3}
+                    />
+                    <SummaryStatCard
+                        label={scopeLabel('Selesai')}
+                        icon={CheckCircle2}
+                        value={animatedSelesai}
+                        theme={SUMMARY_CARD_THEME.selesai}
+                        chartPercent={summaryPct(cards.selesai)}
+                        gradientId="mini-selesai"
+                        loading={navigating}
+                        index={4}
+                    />
+                    <SummaryStatCard
+                        label={scopeLabel('Overdue')}
+                        icon={AlertTriangle}
+                        value={animatedOverdue}
+                        theme={SUMMARY_CARD_THEME.overdue}
+                        chartPercent={summaryPct(cards.overdue)}
+                        gradientId="mini-overdue"
+                        loading={navigating}
+                        index={5}
+                    />
                 </div>
 
                 {/* Permintaan Boss: widget "Beban per Kategori" -- stacked bar
@@ -915,7 +1147,7 @@ export default function CommandCenter({
         DIPINDAH ke ATAS widget "Prioritas Tugas"/"Distribusi Progress"
         (permintaan Boss 2026-08-22, murni urutan tampilan -- data/filter TIDAK
         berubah). */}
-                <div className="grid grid-cols-1 gap-4">
+                <motion.div className="grid grid-cols-1 gap-4" {...fadeUpMotion(sectionDelay(0))}>
                     <Card>
                         <CardHeader>
                             <CardTitle className="text-base">
@@ -994,9 +1226,28 @@ export default function CommandCenter({
                                         />
                                         {/* Urutan tumpukan BAWAH->ATAS: Selesai, To Do, Jatah Harian --
                                         Jatah Harian di ATAS (sisa kapasitas belum terpakai), pola mockup Boss. */}
-                                        <Bar dataKey="achievement_minutes" stackId="beban" fill="url(#mcat-achievement)" />
-                                        <Bar dataKey="todo_minutes" stackId="beban" fill="url(#mcat-todo)" />
-                                        <Bar dataKey="longgar_minutes" stackId="beban" fill="url(#mcat-longgar)" radius={[4, 4, 0, 0]} />
+                                        <Bar
+                                            dataKey="achievement_minutes"
+                                            stackId="beban"
+                                            fill="url(#mcat-achievement)"
+                                            isAnimationActive
+                                            animationDuration={BAR_ANIMATION_MS}
+                                        />
+                                        <Bar
+                                            dataKey="todo_minutes"
+                                            stackId="beban"
+                                            fill="url(#mcat-todo)"
+                                            isAnimationActive
+                                            animationDuration={BAR_ANIMATION_MS}
+                                        />
+                                        <Bar
+                                            dataKey="longgar_minutes"
+                                            stackId="beban"
+                                            fill="url(#mcat-longgar)"
+                                            radius={[4, 4, 0, 0]}
+                                            isAnimationActive
+                                            animationDuration={BAR_ANIMATION_MS}
+                                        />
                                     </BarChart>
                                 </ChartContainer>
                             )}
@@ -1042,15 +1293,18 @@ export default function CommandCenter({
                             </div>
                         </CardContent>
                     </Card>
-                </div>
+                </motion.div>
 
                 {/* Revisi 2026-08-22 (permintaan Boss): layout dipecah rasio 2:1 (bukan
                 50/50 lagi) -- "Prioritas Tugas" LEBIH LEBAR (lg:col-span-2) karena
                 sekarang berisi 2 pie chart (donut Prioritas + radial Komposisi Beban
                 Tim), "Distribusi Progress" jadi 1/3 bagian (lg:col-span-1). */}
+                {/* Permintaan Boss (revisi): 2 card di section ini fade-in SENDIRI-SENDIRI
+                (micro-stagger), bukan sebagai satu blok -- pola SAMA 6 kartu ringkasan
+                (fadeUpMotion per Card, bukan per wrapper). Wrapper section jadi <div> polos. */}
                 <div className="grid grid-cols-1 gap-4 lg:grid-cols-3">
                     {/* A3: Donut prioritas */}
-                    <Card className="lg:col-span-2">
+                    <MotionCard className="lg:col-span-2" {...fadeUpMotion(sectionDelay(1))}>
                         <CardHeader className="flex flex-col gap-2">
                             <CardTitle className="text-base">{scopeLabel('Prioritas Tugas')}</CardTitle>
                             <RangeUserFilter
@@ -1084,7 +1338,10 @@ export default function CommandCenter({
                                     ) : donutChart.total === 0 ? (
                                         <p className="text-muted-foreground text-sm">Belum ada task untuk ditandai prioritas.</p>
                                     ) : (
-                                        <div className="relative h-40 w-40 shrink-0 rounded-full" style={{ background: donutChart.gradient }}>
+                                        <div
+                                            className="relative h-40 w-40 shrink-0 rounded-full"
+                                            style={{ background: donutChart.gradient, animation: 'donut-reveal 3s ease-out' }}
+                                        >
                                             <div className="bg-card absolute inset-4 flex items-center justify-center rounded-full text-base font-semibold">
                                                 {donutChart.total}
                                             </div>
@@ -1159,6 +1416,8 @@ export default function CommandCenter({
                                                         dataKey="value"
                                                         cornerRadius={4}
                                                         background={{ fill: 'var(--border)' }}
+                                                        isAnimationActive
+                                                        animationDuration={CHART_ANIMATION_MS}
                                                     />
                                                     <ChartTooltip
                                                         content={
@@ -1211,10 +1470,10 @@ export default function CommandCenter({
                                 </div>
                             </div>
                         </CardContent>
-                    </Card>
+                    </MotionCard>
 
                     {/* A4: distribusi progress */}
-                    <Card className="lg:col-span-1">
+                    <MotionCard className="lg:col-span-1" {...fadeUpMotion(sectionDelay(1) + CARD_STAGGER_S)}>
                         <CardHeader className="flex flex-col gap-2">
                             <CardTitle className="text-base">{scopeLabel('Distribusi Progress')}</CardTitle>
                             <RangeUserFilter
@@ -1267,7 +1526,7 @@ export default function CommandCenter({
                                 </div>
                             )}
                         </CardContent>
-                    </Card>
+                    </MotionCard>
                 </div>
 
                 {/* Permintaan Boss (2026-08-27): widget bar chart "Tag" -- sumbu X nama
@@ -1275,7 +1534,7 @@ export default function CommandCenter({
                 bar, pola SAMA "Beban per Kategori" di atas, cuma 2 kategori bukan 3 --
                 lihat KONTRAK DashboardController::tagsChart()). Kosong untuk viewer
                 terbatas (restricted_to_self, pola SAMA status_projects). */}
-                <div className="grid grid-cols-1 gap-4">
+                <motion.div className="grid grid-cols-1 gap-4" {...fadeUpMotion(sectionDelay(2))}>
                     <Card>
                         <CardHeader>
                             <CardTitle className="text-base">{scopeLabel('Tag')}</CardTitle>
@@ -1327,8 +1586,21 @@ export default function CommandCenter({
                                                 />
                                             }
                                         />
-                                        <Bar dataKey="selesai" stackId="tag" fill="url(#tagc-selesai)" />
-                                        <Bar dataKey="todo" stackId="tag" fill="url(#tagc-todo)" radius={[4, 4, 0, 0]} />
+                                        <Bar
+                                            dataKey="selesai"
+                                            stackId="tag"
+                                            fill="url(#tagc-selesai)"
+                                            isAnimationActive
+                                            animationDuration={BAR_ANIMATION_MS}
+                                        />
+                                        <Bar
+                                            dataKey="todo"
+                                            stackId="tag"
+                                            fill="url(#tagc-todo)"
+                                            radius={[4, 4, 0, 0]}
+                                            isAnimationActive
+                                            animationDuration={BAR_ANIMATION_MS}
+                                        />
                                     </BarChart>
                                 </ChartContainer>
                             )}
@@ -1342,9 +1614,9 @@ export default function CommandCenter({
                             </div>
                         </CardContent>
                     </Card>
-                </div>
+                </motion.div>
 
-                <div className="grid grid-cols-1 gap-4">
+                <motion.div className="grid grid-cols-1 gap-4" {...fadeUpMotion(sectionDelay(3))}>
                     {/* F-52/F-121: dashboard 3-angka lama DIPERTAHANKAN sebagai section "Beban
         Tim" -- Permintaan Boss: top-5 idle terbanyak + sort per kolom + modal
         "Detail & filter" (menggantikan Link ke halaman dashboard lama).
@@ -1541,11 +1813,14 @@ export default function CommandCenter({
                             </div>
                         </DialogContent>
                     </Dialog>
-                </div>
+                </motion.div>
 
+                {/* Permintaan Boss (revisi): 2 card di section ini fade-in SENDIRI-SENDIRI
+                (micro-stagger), bukan sebagai satu blok -- pola SAMA section Prioritas
+                Tugas/Distribusi Progress di atas. Wrapper section jadi <div> polos. */}
                 <div className="grid grid-cols-1 gap-4 lg:grid-cols-2">
                     {/* A6: master calendar heatmap */}
-                    <Card>
+                    <MotionCard {...fadeUpMotion(sectionDelay(4))}>
                         <CardHeader className="flex flex-row flex-wrap items-center justify-between gap-2 space-y-0">
                             <CardTitle className="text-base">
                                 {scopeLabel('Kalender Beban')} — {heatmap.month}
@@ -1639,7 +1914,7 @@ export default function CommandCenter({
                                 </p>
                             </div>
                         </CardContent>
-                    </Card>
+                    </MotionCard>
 
                     {/* Permintaan Boss: modal detail acara/peristiwa per tanggal -- MURNI
         render ulang data yang SUDAH ada di heatmap.days (holiday/meetings),
@@ -1802,7 +2077,7 @@ export default function CommandCenter({
                     </Dialog>
 
                     {/* A9: recent activity -- label APA ADANYA dari ActivityLogPresenter (F-106) */}
-                    <Card>
+                    <MotionCard {...fadeUpMotion(sectionDelay(4) + CARD_STAGGER_S)}>
                         <CardHeader className="flex flex-col gap-2">
                             <CardTitle className="text-base">{scopeLabel('Aktivitas Terbaru')}</CardTitle>
                             <RangeUserFilter
@@ -1844,10 +2119,10 @@ export default function CommandCenter({
                                 </ul>
                             )}
                         </CardContent>
-                    </Card>
+                    </MotionCard>
                 </div>
 
-                <div className="grid grid-cols-1 gap-4 lg:grid-cols-1">
+                <motion.div className="grid grid-cols-1 gap-4 lg:grid-cols-1" {...fadeUpMotion(sectionDelay(5))}>
                     {/* A7: top-10 task -- Permintaan Boss: tabel (bukan list) dengan kolom
         Tugas/Prioritas/Kategori/Status/Tim-Assign/Tgl Deadline, sort per kolom,
         + tombol Show more ke halaman "Semua Tugas" (tasks.all). */}
@@ -1973,7 +2248,7 @@ export default function CommandCenter({
                             </div>
                         </CardContent>
                     </Card>
-                </div>
+                </motion.div>
             </div>
         </AppLayout>
     );

@@ -7,6 +7,11 @@ import { route as routeFn } from 'ziggy-js';
 import { LoadingOverlay } from './components/loading-overlay';
 import { initializeTheme } from './hooks/use-appearance';
 import { applyThemeTokens, type ThemeConfig } from './lib/theme-tokens';
+import { configureEcho } from '@laravel/echo-react';
+
+configureEcho({
+    broadcaster: 'reverb',
+});
 
 declare global {
     const route: typeof routeFn;

@@ -22,6 +22,7 @@
 
 namespace App\Observers;
 
+use App\Events\CommentPosted;
 use App\Models\Comment;
 use App\Models\User;
 use App\Notifications\MentionNotification;
@@ -33,6 +34,12 @@ class CommentObserver
     public function created(Comment $comment): void
     {
         $this->notifyMentioned($comment, $comment->mentioned_user_ids ?? []);
+
+        // F-184: broadcast Reverb -- SEMUA viewer halaman task ini (bukan cuma
+        // yang di-mention) lihat komentar baru live. Dispatch lewat queue
+        // (ShouldBroadcast, bukan ShouldBroadcastNow) -- Reverb down TIDAK
+        // PERNAH membuat pembuatan komentar ini gagal.
+        broadcast(new CommentPosted($comment));
     }
 
     /**

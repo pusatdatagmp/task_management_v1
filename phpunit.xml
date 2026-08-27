@@ -31,6 +31,13 @@
         <env name="APP_ENV" value="testing"/>
         <env name="APP_MAINTENANCE_DRIVER" value="file"/>
         <env name="BCRYPT_ROUNDS" value="4"/>
+        <!-- F-184: broadcasting DIPAKSA "log" saat test, karena QUEUE_CONNECTION=sync
+             di bawah bikin ShouldBroadcast (CommentPosted) kirim LANGSUNG inline,
+             BUKAN lewat queue asinkron seperti produksi. Tanpa override ini, test
+             yang bikin comment akan coba HTTP request beneran ke Reverb (yang
+             tidak jalan saat test) dan gagal, pola SAMA MAIL_MAILER=array di
+             bawah: jangan pernah hit layanan luar beneran saat test. -->
+        <env name="BROADCAST_CONNECTION" value="log"/>
         <env name="CACHE_STORE" value="array"/>
         <!-- F-83 (Hari-7): MySQL, BUKAN sqlite. sqlite lenient (LIKE fallback,
              enum jadi TEXT, tanpa FULLTEXT) menyembunyikan bug yang cuma muncul di

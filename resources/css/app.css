@@ -265,3 +265,21 @@
         @apply bg-background text-foreground;
     }
 }
+
+/* Permintaan Boss: animasi "keluar" (reveal saat render) 3 detik untuk donut
+   "Prioritas Tugas" (command-center.tsx, CSS conic-gradient murni -- BUKAN
+   recharts, jadi tidak punya prop animationDuration bawaan seperti chart
+   line/bar/radial lain di halaman itu). Grow+fade dari tengah, BUKAN sweep
+   per-sektor -- conic-gradient-nya sudah 1 background statis multi-warna
+   (bukan progress tunggal), animasi sweep sudut per warna butuh @property
+   custom yang dukungan browsernya belum merata. */
+@keyframes donut-reveal {
+    from {
+        opacity: 0;
+        transform: scale(0.4) rotate(-90deg);
+    }
+    to {
+        opacity: 1;
+        transform: scale(1) rotate(0deg);
+    }
+}
