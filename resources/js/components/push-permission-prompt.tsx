@@ -11,16 +11,22 @@
  * DATA MASUK  : Notification.permission (browser)
  * DATA KELUAR : localStorage key 'fcmPromptDismissed' (murni state tampilan
  *               klien, BUKAN entitas KPI/DB — F-4, pola SAMA reviewTasksSeenCount)
- * RISIKO      : Komponen TIDAK RENDER apa pun kalau browser tidak dukung FCM,
- *               izin SUDAH ditolak permanen ('denied' — browser blokir prompt
- *               ulang, tombol tidak bisa apa-apa lagi), atau user sudah pernah
- *               dismiss ('Nanti'/gagal enable). Permission 'granted' TIDAK lagi
- *               menyembunyikan tombol (permintaan Boss 2026-08-28) — device baru
- *               / token FCM expired butuh cara re-trigger enable() tanpa hapus
- *               localStorage manual; re-klik aman krn PushSubscriptionController
- *               ::store() updateOrCreate() by fcm_token (idempotent). enable()
- *               HANYA dipanggil dari klik tombol di sini (gestur user), TIDAK
- *               OTOMATIS saat mount (lihat use-fcm.ts kenapa).
+ * RISIKO      : Komponen TIDAK RENDER apa pun kalau browser tidak dukung FCM
+ *               atau izin SUDAH ditolak permanen ('denied' — browser blokir
+ *               prompt ulang, tombol tidak bisa apa-apa lagi). Dismiss
+ *               ('Nanti'/gagal enable) HANYA menyembunyikan selama izin masih
+ *               'default' (belum diputuskan) — begitu izin 'granted', tombol
+ *               TETAP tampil TERLEPAS status dismiss lama (permintaan Boss
+ *               2026-08-28, ditemukan lewat audit production: localStorage
+ *               dismissed='1' dari percobaan gagal SEBELUM Firebase config
+ *               lengkap terus menyembunyikan tombol walau belakangan granted —
+ *               kalau guard cek dismissed TANPA syarat permission, bug ini
+ *               balik lagi). Device baru / token FCM expired butuh cara
+ *               re-trigger enable() tanpa hapus localStorage manual; re-klik
+ *               aman krn PushSubscriptionController::store() updateOrCreate()
+ *               by fcm_token (idempotent). enable() HANYA dipanggil dari klik
+ *               tombol di sini (gestur user), TIDAK OTOMATIS saat mount (lihat
+ *               use-fcm.ts kenapa).
  * ==========================================================
  */
 import { Tooltip, TooltipContent, TooltipProvider, TooltipTrigger } from '@/components/ui/tooltip';
@@ -88,13 +94,22 @@ export function PushPermissionPrompt() {
         }
     }
 
-    // GUARD: sembunyi kalau browser TIDAK DUKUNG, izin DITOLAK permanen ('denied'
-    // -- browser blokir prompt ulang, tombol tidak bisa apa-apa lagi), atau user
-    // sudah pernah dismiss. 'granted' SENGAJA TIDAK disembunyikan (beda dari
-    // sebelumnya) -- Boss minta tombol tetap tampil supaya bisa re-trigger
-    // enable() (mis. ganti device/browser, token FCM expired) tanpa perlu hapus
-    // localStorage manual dari devtools.
-    if (permission === 'unsupported' || permission === 'denied' || dismissed) {
+    // GUARD: sembunyi kalau browser TIDAK DUKUNG atau izin DITOLAK permanen
+    // ('denied' -- browser blokir prompt ulang, tombol tidak bisa apa-apa lagi).
+    // 'dismissed' HANYA berlaku selama izin masih 'default' (belum diputuskan)
+    // -- itu flag "jangan tawari lagi SESI INI", bukan "sembunyikan selamanya
+    // walau sudah granted". BUG SEBELUMNYA: dismissed dicek duluan tanpa syarat
+    // permission, jadi flag basi dari percobaan gagal SEBELUM Firebase config
+    // lengkap (enable() gagal -> dismiss() -> localStorage='1' permanen) terus
+    // menyembunyikan tombol walau user belakangan sukses granted di percobaan
+    // lain -- ditemukan lewat audit Boss di production (localStorage='1' TAPI
+    // Notification.permission sudah 'granted'). 'granted' SENGAJA TIDAK
+    // disembunyikan (permintaan Boss) -- device baru / token FCM expired butuh
+    // cara re-trigger enable() tanpa hapus localStorage manual dari devtools.
+    if (permission === 'unsupported' || permission === 'denied') {
+        return null;
+    }
+    if (permission === 'default' && dismissed) {
         return null;
     }
 
