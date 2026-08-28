@@ -12,10 +12,15 @@
  * DATA KELUAR : localStorage key 'fcmPromptDismissed' (murni state tampilan
  *               klien, BUKAN entitas KPI/DB — F-4, pola SAMA reviewTasksSeenCount)
  * RISIKO      : Komponen TIDAK RENDER apa pun kalau browser tidak dukung FCM,
- *               izin SUDAH diputuskan (granted/denied — bukan 'default'), atau
- *               user sudah pernah dismiss. enable() HANYA dipanggil dari klik
- *               tombol di sini (gestur user), TIDAK OTOMATIS saat mount (lihat
- *               use-fcm.ts kenapa).
+ *               izin SUDAH ditolak permanen ('denied' — browser blokir prompt
+ *               ulang, tombol tidak bisa apa-apa lagi), atau user sudah pernah
+ *               dismiss ('Nanti'/gagal enable). Permission 'granted' TIDAK lagi
+ *               menyembunyikan tombol (permintaan Boss 2026-08-28) — device baru
+ *               / token FCM expired butuh cara re-trigger enable() tanpa hapus
+ *               localStorage manual; re-klik aman krn PushSubscriptionController
+ *               ::store() updateOrCreate() by fcm_token (idempotent). enable()
+ *               HANYA dipanggil dari klik tombol di sini (gestur user), TIDAK
+ *               OTOMATIS saat mount (lihat use-fcm.ts kenapa).
  * ==========================================================
  */
 import { Tooltip, TooltipContent, TooltipProvider, TooltipTrigger } from '@/components/ui/tooltip';
@@ -83,9 +88,13 @@ export function PushPermissionPrompt() {
         }
     }
 
-    // GUARD: cuma tampil kalau browser DUKUNG (bukan 'unsupported') DAN belum
-    // diputuskan (bukan 'granted'/'denied') DAN belum pernah dismiss.
-    if (permission !== 'default' || dismissed) {
+    // GUARD: sembunyi kalau browser TIDAK DUKUNG, izin DITOLAK permanen ('denied'
+    // -- browser blokir prompt ulang, tombol tidak bisa apa-apa lagi), atau user
+    // sudah pernah dismiss. 'granted' SENGAJA TIDAK disembunyikan (beda dari
+    // sebelumnya) -- Boss minta tombol tetap tampil supaya bisa re-trigger
+    // enable() (mis. ganti device/browser, token FCM expired) tanpa perlu hapus
+    // localStorage manual dari devtools.
+    if (permission === 'unsupported' || permission === 'denied' || dismissed) {
         return null;
     }
 
