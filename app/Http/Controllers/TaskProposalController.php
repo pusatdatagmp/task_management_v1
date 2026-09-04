@@ -11,8 +11,10 @@
  *               tabel lain, lihat header migrasi kolom proposal_status.
  * DIPANGGIL   : routes/web.php (create/store/myProposals — can:task.proposeOwn),
  *               routes/admin.php (index/approve/reject — can:task.approve)
- * MEMANGGIL   : Task, TaskStatus, Project, TaskObserver (notifikasi/log, otomatis
- *               lewat Eloquent event, BUKAN dipanggil manual di sini — F-22)
+ * MEMANGGIL   : Task, TaskStatus, Project, TaskChecklistItem (via Task::checklistItems(),
+ *               F-123 "subtask" ringan — permintaan Boss 2026-09-04), TaskObserver
+ *               (notifikasi/log, otomatis lewat Eloquent event, BUKAN dipanggil
+ *               manual di sini — F-22)
  * DATA MASUK  : Form ajukan (task-proposals/create.tsx), form approve/reject
  *               (task-proposals/index.tsx)
  * DATA KELUAR : Baris tasks (proposal_status berubah), activity_logs, notifications
@@ -97,6 +99,17 @@ class TaskProposalController extends Controller
         // TaskController::store() (nol activity log per sync, murni kategorisasi
         // tampilan, lihat KONTRAK Task::tags()).
         $task->tags()->sync($request->validated('tags') ?? []);
+
+        // Permintaan Boss (2026-09-04): checklist ("subtask" ringan, F-123) diisi
+        // LANGSUNG saat mengajukan — pola IDENTIK TaskController::store(). Task
+        // BARU dijamin belum punya checklist apa pun, aman create langsung.
+        foreach (array_values($request->validated('checklist_items') ?? []) as $position => $text) {
+            $task->checklistItems()->create([
+                'organization_id' => $project->organization_id,
+                'text' => $text,
+                'position' => $position,
+            ]);
+        }
 
         return to_route('task-proposals.my');
     }

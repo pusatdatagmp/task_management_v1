@@ -2,10 +2,11 @@
 // MODUL       : task-proposals/create
 // KLASIFIKASI : UI
 // TUJUAN      : F-186 — form member mengajukan task baru untuk dirinya sendiri.
-//               Field SEPADAN tasks/create.tsx (form admin) TAPI tanpa
-//               assignee/checklist (scope-out sengaja) — assignee dikunci ke
-//               diri sendiri di server (TaskProposalController::store()). Tag
-//               DITAMBAH (permintaan Boss 2026-09-04).
+//               Field SEPADAN tasks/create.tsx (form admin) TAPI tanpa assignee
+//               (scope-out sengaja) — assignee dikunci ke diri sendiri di server
+//               (TaskProposalController::store()). Tag DITAMBAH (permintaan Boss
+//               2026-09-04). Checklist/subtask DITAMBAH (permintaan Boss
+//               2026-09-04, pola IDENTIK tasks/create.tsx, F-123).
 // DIPANGGIL   : TaskProposalController::create()
 // MEMANGGIL   : route('task-proposals.store')
 // DATA MASUK  : projects[] (project yang diikuti user login saja), availableTags[]
@@ -28,7 +29,7 @@ import AppLayout from '@/layouts/app-layout';
 import { PRIORITY_QUADRANT_OPTIONS, type PriorityQuadrant } from '@/lib/priority-quadrant';
 import { type BreadcrumbItem } from '@/types';
 import { Head, useForm } from '@inertiajs/react';
-import { FormEventHandler } from 'react';
+import { FormEventHandler, useState } from 'react';
 
 interface ProjectOption {
     id: number;
@@ -61,7 +62,25 @@ export default function TaskProposalCreate({ projects, availableTags }: TaskProp
         points: 0,
         due_date: defaultDueDate(),
         tags: [] as number[],
+        // Permintaan Boss (2026-09-04): checklist ("subtask" ringan, F-123) diisi
+        // LANGSUNG saat mengajukan — pola IDENTIK tasks/create.tsx.
+        checklist_items: [] as string[],
     });
+
+    const [newChecklistText, setNewChecklistText] = useState('');
+
+    const addChecklistItem = () => {
+        if (!newChecklistText.trim()) return;
+        setData('checklist_items', [...data.checklist_items, newChecklistText.trim()]);
+        setNewChecklistText('');
+    };
+
+    const removeChecklistItem = (index: number) => {
+        setData(
+            'checklist_items',
+            data.checklist_items.filter((_, i) => i !== index),
+        );
+    };
 
     const submit: FormEventHandler = (e) => {
         e.preventDefault();
@@ -197,6 +216,40 @@ export default function TaskProposalCreate({ projects, availableTags }: TaskProp
                                     />
                                     <TagPicker tags={availableTags} selected={data.tags} onChange={(ids) => setData('tags', ids)} />
                                     <InputError message={errors.tags} />
+                                </div>
+
+                                <div className="grid gap-2">
+                                    <HeadingSmall
+                                        title="Checklist / Subtask"
+                                        
+                                    />
+                                    <div className="flex flex-col gap-2">
+                                        {data.checklist_items.map((text, index) => (
+                                            <div key={index} className="flex items-center gap-2">
+                                                <span className="flex-1 rounded-md border px-3 py-1.5 text-sm">{text}</span>
+                                                <Button type="button" variant="outline" size="sm" onClick={() => removeChecklistItem(index)}>
+                                                    Hapus
+                                                </Button>
+                                            </div>
+                                        ))}
+                                        <div className="flex items-center gap-2">
+                                            <Input
+                                                placeholder="Tambah item checklist/subtask..."
+                                                value={newChecklistText}
+                                                onChange={(e) => setNewChecklistText(e.target.value)}
+                                                onKeyDown={(e) => {
+                                                    if (e.key === 'Enter') {
+                                                        e.preventDefault();
+                                                        addChecklistItem();
+                                                    }
+                                                }}
+                                            />
+                                            <Button type="button" size="sm" onClick={addChecklistItem} className="shrink-0">
+                                                Tambah
+                                            </Button>
+                                        </div>
+                                    </div>
+                                    <InputError message={errors.checklist_items} />
                                 </div>
 
                                 <HeadingSmall

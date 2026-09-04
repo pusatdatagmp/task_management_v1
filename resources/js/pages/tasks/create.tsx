@@ -235,7 +235,7 @@ export default function TaskCreate({ project, members, availableTags }: TaskCrea
                             <div className="grid gap-2">
                                 <HeadingSmall
                                     title="Checklist / Subtask"
-                                    description="Syarat kerja ringan (F-123) — gate transisi ->review menolak submit kalau ada item belum dicentang."
+                                    
                                 />
                                 <div className="flex flex-col gap-2">
                                     {data.checklist_items.map((text, index) => (

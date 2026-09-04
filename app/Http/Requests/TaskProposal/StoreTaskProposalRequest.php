@@ -6,9 +6,10 @@
  * KLASIFIKASI : DOMAIN
  * TUJUAN      : F-186 — validasi member mengajukan task baru untuk dirinya sendiri.
  *               Field SEPADAN StoreTaskRequest (form admin), TAPI tanpa assignees/
- *               parent_task_id/checklist — scope-out sengaja, di luar yang diminta
- *               Boss (bisa nyusul kalau diminta nanti). `tags` DITAMBAH (permintaan
- *               Boss 2026-09-04, F-189 dicabut sebagian).
+ *               parent_task_id — scope-out sengaja, assignee dikunci ke diri sendiri
+ *               di server. `tags` DITAMBAH (permintaan Boss 2026-09-04, F-189 dicabut
+ *               sebagian). `checklist_items` DITAMBAH (permintaan Boss 2026-09-04,
+ *               pola IDENTIK StoreTaskRequest — F-189 dicabut lagi sebagian).
  * DIPANGGIL   : TaskProposalController::store()
  * MEMANGGIL   : -
  * DATA MASUK  : Form "Ajukan Tugas" (project dipilih dari dropdown, dibatasi
@@ -55,6 +56,10 @@ class StoreTaskProposalRequest extends FormRequest
             // pilih tag organisasi lain).
             'tags' => ['nullable', 'array'],
             'tags.*' => [Rule::exists('tags', 'id')->where('organization_id', Auth::user()?->organization_id)],
+            // Permintaan Boss (2026-09-04): checklist ("subtask" ringan, F-123) bisa
+            // diisi LANGSUNG saat mengajukan, pola IDENTIK StoreTaskRequest.
+            'checklist_items' => ['sometimes', 'array'],
+            'checklist_items.*' => ['string', 'max:500'],
         ];
     }
 }
