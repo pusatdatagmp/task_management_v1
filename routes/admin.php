@@ -11,6 +11,7 @@ use App\Http\Controllers\RoleController;
 use App\Http\Controllers\SettingsController;
 use App\Http\Controllers\TagController;
 use App\Http\Controllers\TaskController;
+use App\Http\Controllers\TaskProposalController;
 use App\Http\Controllers\TaskStatusController;
 use App\Http\Controllers\TaskTemplateController;
 use App\Http\Controllers\UserController;
@@ -227,6 +228,17 @@ Route::middleware(['auth', 'can:tasktemplate.manage'])->scopeBindings()->group(f
 Route::middleware(['auth', 'can:task.approve'])->scopeBindings()->group(function () {
     Route::patch('projects/{project}/tasks/{task}/approve', [TaskController::class, 'approve'])->name('tasks.approve');
     Route::patch('projects/{project}/tasks/{task}/reject', [TaskController::class, 'reject'])->name('tasks.reject');
+});
+
+// F-186 (keputusan Boss 2026-09-04) — antrean & keputusan pengajuan task member.
+// Reuse permission task.approve (BUKAN permission baru — konsep sama "admin
+// putuskan nasib task", cuma beda trigger: penyelesaian kerja vs pembuatan
+// task baru). Flat (bukan nested project/task, pola sama extensions) — {task}
+// di URL SENGAJA bukan implicit binding, lihat RISIKO header TaskProposalController.
+Route::middleware(['auth', 'can:task.approve'])->group(function () {
+    Route::get('pengajuan-tugas', [TaskProposalController::class, 'index'])->name('task-proposals.index');
+    Route::patch('pengajuan-tugas/{task}/approve', [TaskProposalController::class, 'approve'])->name('task-proposals.approve');
+    Route::patch('pengajuan-tugas/{task}/reject', [TaskProposalController::class, 'reject'])->name('task-proposals.reject');
 });
 
 // v0.8 H5 (F-105) — hapus attachment ADMIN ONLY, member APPEND-ONLY (tidak ada

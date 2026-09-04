@@ -9,6 +9,7 @@ use App\Http\Controllers\ProjectController;
 use App\Http\Controllers\PushSubscriptionController;
 use App\Http\Controllers\TaskChecklistItemController;
 use App\Http\Controllers\TaskController;
+use App\Http\Controllers\TaskProposalController;
 use Illuminate\Support\Facades\Route;
 use Inertia\Inertia;
 
@@ -99,6 +100,18 @@ Route::middleware(['auth'])->scopeBindings()->group(function () {
     // Approve/reject (admin-only, can:task.approve) di routes/admin.php.
     Route::post('deadline-extensions', [DeadlineExtensionController::class, 'store'])->name('extensions.store');
     Route::get('my-extensions', [DeadlineExtensionController::class, 'myExtensions'])->name('extensions.my');
+
+    // F-186 (keputusan Boss 2026-09-04): member ajukan task baru untuk dirinya
+    // sendiri, permission task.proposeOwn (BUKAN blanket 'auth' seperti
+    // extensions.store — di sana gating assignee/admin di controller, di sini
+    // BENAR-BENAR permission RBAC karena "buat task baru" secara default
+    // dilarang F-29, jadi harus eksplisit siapa yang boleh). Flat (bukan nested
+    // project/task) — project dipilih dari BODY form, pola sama my-extensions.
+    Route::middleware('can:task.proposeOwn')->group(function () {
+        Route::get('task-proposals/create', [TaskProposalController::class, 'create'])->name('task-proposals.create');
+        Route::post('task-proposals', [TaskProposalController::class, 'store'])->name('task-proposals.store');
+        Route::get('my-task-proposals', [TaskProposalController::class, 'myProposals'])->name('task-proposals.my');
+    });
 
     // v1.0 H3 (F-113/F-114/F-115): komentar per task — mixed access (project
     // member ATAU admin buat komentar; edit/hapus HANYA penulis, dicek DI

@@ -24,7 +24,6 @@
 //               tertutup dan menabrak fokus-trap Dialog yang baru terbuka.
 // ==========================================================
 
-import DeleteUser from '@/components/delete-user';
 import HeadingSmall from '@/components/heading-small';
 import InputError from '@/components/input-error';
 import AppearanceTabs from '@/components/appearance-tabs';
@@ -140,8 +139,6 @@ function ProfileTab() {
                     </Transition>
                 </div>
             </form>
-
-            <DeleteUser />
         </div>
     );
 }

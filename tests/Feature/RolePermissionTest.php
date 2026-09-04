@@ -28,7 +28,12 @@ use Database\Seeders\RolePermissionSeeder;
 // mengubah perilaku itu, SATU pengecualian: leaderboard.view (management-only,
 // Boss assign manual). Cakupan setara: admin dapat SEMUA KECUALI pengecualian
 // itu, member tetap nol, DITAMBAH assert eksplisit leaderboard.view TIDAK ikut.
-test('seeding system roles gives admin ALL default-admin catalog permissions and member NONE (D2/F-134)', function () {
+//
+// F-78 (diperbarui LAGI, F-186 2026-09-04): member SEKARANG dapat TEPAT SATU
+// permission (task.proposeOwn) — keputusan Boss membalik sebagian D2 secara
+// sadar, bukan regresi. Cakupan setara: assert eksplisit member dapat PERSIS
+// 1, bukan 0.
+test('seeding system roles gives admin ALL default-admin catalog permissions and member ONLY task.proposeOwn (D2/F-134/F-186)', function () {
     $admin = User::factory()->admin()->create();
     $roles = RolePermissionSeeder::seedSystemRolesForOrganization($admin->organization);
 
@@ -37,7 +42,8 @@ test('seeding system roles gives admin ALL default-admin catalog permissions and
         ->count();
 
     expect($roles['admin']->permissions()->count())->toBe($expectedAdminCount)
-        ->and($roles['member']->permissions()->count())->toBe(0)
+        ->and($roles['member']->permissions()->count())->toBe(1)
+        ->and($roles['member']->hasPermission('task.proposeOwn'))->toBeTrue()
         ->and($roles['admin']->hasPermission('leaderboard.view'))->toBeFalse();
 });
 
@@ -73,15 +79,21 @@ test('Role::hasPermission reflects the pivot, not a guess', function () {
 // F-78: diperbarui -- v1.2 (F-134) leaderboard.view SATU-SATUNYA baris katalog
 // yang admin TIDAK otomatis punya (default_admin=false). Loop tetap cek SEMUA
 // baris katalog (cakupan setara), ekspektasi admin per baris ikut flag itu.
-test('User::can() (Gate::before -> hasPermission) is true for admin (kecuali default_admin=false) and false for member, per permission (F-134)', function () {
+//
+// F-78 (diperbarui LAGI, F-186 2026-09-04): task.proposeOwn SATU-SATUNYA baris
+// katalog yang member JUSTRU punya (keputusan Boss, lihat RolePermissionSeeder
+// header) — loop tetap cek SEMUA baris (cakupan setara), ekspektasi member per
+// baris ikut pengecualian itu.
+test('User::can() (Gate::before -> hasPermission) is true for admin (kecuali default_admin=false) and false for member kecuali task.proposeOwn, per permission (F-134/F-186)', function () {
     $admin = User::factory()->admin()->create();
     $member = User::factory()->create(['organization_id' => $admin->organization_id]);
 
     foreach (RolePermissionSeeder::catalog() as $permission) {
         $adminExpected = ($permission['default_admin'] ?? true) !== false;
+        $memberExpected = $permission['permission_name'] === 'task.proposeOwn';
 
         expect($admin->can($permission['permission_name']))->toBe($adminExpected, 'admin diharapkan '.($adminExpected ? 'punya' : 'TIDAK punya')." {$permission['permission_name']}")
-            ->and($member->can($permission['permission_name']))->toBeFalse("member diharapkan TIDAK punya {$permission['permission_name']}");
+            ->and($member->can($permission['permission_name']))->toBe($memberExpected, 'member diharapkan '.($memberExpected ? 'punya' : 'TIDAK punya')." {$permission['permission_name']}");
     }
 });
 

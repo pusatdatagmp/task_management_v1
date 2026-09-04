@@ -4,6 +4,7 @@ namespace App\Http\Middleware;
 
 use App\Models\DeadlineExtension;
 use App\Models\Organization;
+use App\Models\Scopes\PendingProposalScope;
 use App\Models\Task;
 use Illuminate\Foundation\Inspiring;
 use Illuminate\Http\Request;
@@ -144,6 +145,14 @@ class HandleInertiaRequests extends Middleware
             // tidak relevan di sini).
             'pendingExtensionsCount' => $request->user()?->can('extension.approve')
                 ? DeadlineExtension::where('status', 'pending')->count()
+                : 0,
+            // F-186 (keputusan Boss 2026-09-04): badge sidebar "Pengajuan Tugas"
+            // (admin) -- SATU SUMBER dengan TaskProposalController::index(),
+            // pola SAMA pendingExtensionsCount. withoutGlobalScope WAJIB --
+            // PendingProposalScope (Task::booted()) menyembunyikan baris
+            // 'pending' dari query default, badge ini JUSTRU perlu menghitungnya.
+            'pendingTaskProposalsCount' => $request->user()?->can('task.approve')
+                ? Task::withoutGlobalScope(PendingProposalScope::class)->where('proposal_status', 'pending')->count()
                 : 0,
         ]);
     }

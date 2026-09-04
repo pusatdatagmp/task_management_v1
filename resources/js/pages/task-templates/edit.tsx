@@ -16,6 +16,10 @@
 //               anchor_day_type (F-74) DITURUNKAN dari anchor_config existing --
 //               ada day_of_month -> 'month', selain itu default 'week' (termasuk
 //               anchor_config kosong, mis. template belum pernah dikonfigurasi C).
+//               Permintaan Boss (2026-09-04): input "Batasi hari boleh generate"/
+//               "Kuota maks instance" DICABUT — pola sama create.tsx, lihat
+//               header modul itu untuk alasan lengkap (Guard tetap ada, cuma
+//               nol jalan UI mengisinya).
 // ==========================================================
 
 import HeadingSmall from '@/components/heading-small';
@@ -56,8 +60,6 @@ interface TemplateData {
     interval_value: number | null;
     interval_unit: 'day' | 'week' | 'month' | null;
     anchor_config: { day_of_week?: number; day_of_month?: number } | null;
-    date_window_config: { weekdays?: number[]; dom_min?: number; dom_max?: number } | null;
-    max_active_instances: number | null;
 }
 
 interface TaskTemplateEditProps {
@@ -135,10 +137,6 @@ export default function TaskTemplateEdit({ project, template, members }: TaskTem
         anchor_day_type: (template.anchor_config?.day_of_month !== undefined ? 'month' : 'week') as 'week' | 'month',
         anchor_day_of_week: template.anchor_config?.day_of_week ?? 1,
         anchor_day_of_month: template.anchor_config?.day_of_month ?? 1,
-        date_window_weekdays: template.date_window_config?.weekdays ?? ([] as number[]),
-        date_window_dom_min: (template.date_window_config?.dom_min ?? '') as number | '',
-        date_window_dom_max: (template.date_window_config?.dom_max ?? '') as number | '',
-        max_active_instances: (template.max_active_instances ?? '') as number | '',
     });
 
     const [newChecklistText, setNewChecklistText] = useState('');
@@ -173,12 +171,6 @@ export default function TaskTemplateEdit({ project, template, members }: TaskTem
                     ? { day_of_week: formData.anchor_day_of_week }
                     : { day_of_month: formData.anchor_day_of_month }
                 : {},
-        date_window_config: {
-            weekdays: formData.date_window_weekdays,
-            dom_min: formData.date_window_dom_min === '' ? undefined : formData.date_window_dom_min,
-            dom_max: formData.date_window_dom_max === '' ? undefined : formData.date_window_dom_max,
-        },
-        max_active_instances: formData.max_active_instances === '' ? undefined : formData.max_active_instances,
         due_offset_days: formData.due_offset_days === '' ? undefined : formData.due_offset_days, // revisi 2026-08-06 item 7
     }));
 
@@ -220,7 +212,7 @@ export default function TaskTemplateEdit({ project, template, members }: TaskTem
                                 {/* F-175: Eisenhower quadrant GANTIKAN enum priority lama di UI —
                                     pola identik create.tsx (F-122/F-126). Enum lama tetap ada di
                                     DB (legacy, tersembunyi), tidak dihapus. */}
-                                <Label htmlFor="priority_quadrant">Prioritas (Eisenhower)</Label>
+                                <Label htmlFor="priority_quadrant">Prioritas</Label>
                                 <Select
                                     value={data.priority_quadrant || '__none'}
                                     onValueChange={(value) => setData('priority_quadrant', value === '__none' ? '' : (value as PriorityQuadrant))}
@@ -243,7 +235,7 @@ export default function TaskTemplateEdit({ project, template, members }: TaskTem
                             <div className="grid gap-4 rounded-md border p-4">
                                 <HeadingSmall
                                     title="Konfigurasi Automation Engine"
-                                    description="Atur KAPAN & SEBERAPA SERING template ini melahirkan task -- interval bebas (mis. tiap 3 hari, tiap 2 minggu) atau hari tetap."
+                                    description="Atur KAPAN & SEBERAPA SERING template ini melahirkan task"
                                 />
 
                                 <div className="grid gap-2">
@@ -379,71 +371,6 @@ export default function TaskTemplateEdit({ project, template, members }: TaskTem
                                     )}
                                 </p>
 
-                                <div className="grid gap-2">
-                                    <Label>Batasi hari boleh generate (opsional)</Label>
-                                    <div className="flex flex-wrap gap-3">
-                                        {DAY_OPTIONS.map((day) => (
-                                            <label key={day.value} className="flex items-center gap-1.5 text-sm">
-                                                <Checkbox
-                                                    checked={data.date_window_weekdays.includes(Number(day.value))}
-                                                    onCheckedChange={(checked) =>
-                                                        setData(
-                                                            'date_window_weekdays',
-                                                            checked === true
-                                                                ? [...data.date_window_weekdays, Number(day.value)]
-                                                                : data.date_window_weekdays.filter((d) => d !== Number(day.value)),
-                                                        )
-                                                    }
-                                                />
-                                                {day.label}
-                                            </label>
-                                        ))}
-                                    </div>
-                                    <p className="text-xs text-muted-foreground">Kosong = tak ada batasan hari.</p>
-                                </div>
-
-                                <div className="grid grid-cols-1 gap-4 sm:grid-cols-2">
-                                    <div className="grid gap-2">
-                                        <Label htmlFor="date_window_dom_min">Tanggal minimum (opsional)</Label>
-                                        <Input
-                                            id="date_window_dom_min"
-                                            type="number"
-                                            min={1}
-                                            max={31}
-                                            value={data.date_window_dom_min}
-                                            onChange={(e) => setData('date_window_dom_min', e.target.value === '' ? '' : Number(e.target.value))}
-                                        />
-                                        <InputError message={errorBag['date_window_config.dom_min']} />
-                                    </div>
-                                    <div className="grid gap-2">
-                                        <Label htmlFor="date_window_dom_max">Tanggal maksimum (opsional)</Label>
-                                        <Input
-                                            id="date_window_dom_max"
-                                            type="number"
-                                            min={1}
-                                            max={31}
-                                            value={data.date_window_dom_max}
-                                            onChange={(e) => setData('date_window_dom_max', e.target.value === '' ? '' : Number(e.target.value))}
-                                        />
-                                        <InputError message={errorBag['date_window_config.dom_max']} />
-                                    </div>
-                                </div>
-
-                                <div className="grid gap-2">
-                                    <Label htmlFor="max_active_instances">Kuota maks instance belum-selesai (opsional)</Label>
-                                    <Input
-                                        id="max_active_instances"
-                                        type="number"
-                                        min={1}
-                                        value={data.max_active_instances}
-                                        onChange={(e) => setData('max_active_instances', e.target.value === '' ? '' : Number(e.target.value))}
-                                    />
-                                    <p className="text-xs text-muted-foreground">
-                                        Kosong = tak terbatas. Kalau instance belum-selesai sudah mencapai batas ini, generate berikutnya
-                                        di-skip sampai ada yang selesai.
-                                    </p>
-                                    <InputError message={errors.max_active_instances} />
-                                </div>
                             </div>
 
                             <div className="grid grid-cols-1 gap-4 sm:grid-cols-2">
@@ -475,7 +402,7 @@ export default function TaskTemplateEdit({ project, template, members }: TaskTem
                             </div>
 
                             <div className="grid gap-2">
-                                <Label htmlFor="due_offset_days">Tenggat (hari kerja setelah muncul)</Label>
+                                <Label htmlFor="due_offset_days">Tenggat (Optional)</Label>
                                 <Input
                                     id="due_offset_days"
                                     type="number"
@@ -485,10 +412,6 @@ export default function TaskTemplateEdit({ project, template, members }: TaskTem
                                     value={data.due_offset_days}
                                     onChange={(e) => setData('due_offset_days', e.target.value === '' ? '' : Number(e.target.value))}
                                 />
-                                <p className="text-xs text-muted-foreground">
-                                    Berapa hari KERJA (lewati akhir pekan/libur) setelah task ini muncul, sampai jatuh tempo. Kosong = task
-                                    langsung jatuh tempo di hari yang sama saat lahir.
-                                </p>
                                 <InputError message={errors.due_offset_days} />
                             </div>
 
@@ -500,7 +423,7 @@ export default function TaskTemplateEdit({ project, template, members }: TaskTem
                             <div className="grid gap-2">
                                 <HeadingSmall
                                     title="Default assignee"
-                                    description="Opsional, multi-select dari member project. Divalidasi ulang saat generate (F-86)."
+                                    description="Opsional"
                                 />
                                 <div className="grid max-h-48 grid-cols-1 gap-2 overflow-y-auto rounded-md border p-3 sm:grid-cols-2">
                                     {members.map((user) => (

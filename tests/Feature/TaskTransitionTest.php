@@ -126,7 +126,13 @@ test('rejecting a task in review increments rejection_count and sends it back to
         'reason' => 'Belum sesuai spesifikasi.',
     ]);
 
-    $response->assertRedirect(route('tasks.index', $project));
+    // F-78 (permintaan Boss 2026-09-04): back() (BUKAN to_route('tasks.index'))
+    // -- tombol Approve/Reject dipakai dari 3 halaman beda (index/all/my-tasks),
+    // redirect hardcode ke tasks.index memaksa user pindah dari halaman manapun
+    // dia lagi buka. assertRedirect() TANPA argumen (pola sama tasks.start/hold/
+    // resume/submit di TaskWorkActionsTest) -- target back() tergantung header
+    // Referer runtime, bukan URL tetap yang bisa dicek di test.
+    $response->assertRedirect();
     $task->refresh();
     expect($task->rejection_count)->toBe(1)
         ->and($task->task_status_id)->toBe($todo->id)
@@ -164,7 +170,8 @@ test('approving a task in review freezes actual_minutes and fills completed_at (
         'quality_rating' => 4,
     ]);
 
-    $response->assertRedirect(route('tasks.index', $project));
+    // F-78: back(), lihat komentar test reject di atas untuk alasan lengkap.
+    $response->assertRedirect();
     $task->refresh();
     expect($task->task_status_id)->toBe(TaskStatus::where('project_id', $project->id)->where('is_completed', true)->value('id'))
         ->and($task->completed_at)->not->toBeNull()
@@ -284,10 +291,11 @@ test('actual_minutes accumulates across multiple work/reject/rework segments end
     $this->travelTo($anchor->copy()->addMinutes(30)->addMinutes(45));
     $this->actingAs($member)->patch(route('tasks.submit', [$project, $task]))->assertSessionDoesntHaveErrors();
 
-    // Admin approve -> FREEZE actual_minutes (F-39).
+    // Admin approve -> FREEZE actual_minutes (F-39). F-78: back(), lihat komentar
+    // test reject di atas file ini untuk alasan lengkap.
     $this->actingAs($admin)->patch(route('tasks.approve', [$project, $task]), [
         'quality_rating' => 5,
-    ])->assertRedirect(route('tasks.index', $project));
+    ])->assertRedirect();
 
     $task->refresh();
 

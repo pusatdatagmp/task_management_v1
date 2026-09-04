@@ -157,7 +157,7 @@ export default function TaskEdit({ project, task, assigneeIds, tagIds, members, 
                                 </div>
 
                                 <div className="grid gap-2">
-                                    <Label htmlFor="priority_quadrant">Prioritas (Eisenhower)</Label>
+                                    <Label htmlFor="priority_quadrant">Prioritas</Label>
                                     <Select
                                         value={data.priority_quadrant || '__none'}
                                         onValueChange={(value) => setData('priority_quadrant', value === '__none' ? '' : (value as PriorityQuadrant))}
@@ -238,7 +238,7 @@ export default function TaskEdit({ project, task, assigneeIds, tagIds, members, 
                             <div className="grid gap-2">
                                 <HeadingSmall
                                     title="Tag"
-                                    description="Opsional, multi-select dari katalog tag organisasi (kelola di Pengaturan > Setelan)"
+                                    description="Optional"
                                 />
                                 <TagPicker tags={availableTags} selected={data.tags} onChange={(ids) => setData('tags', ids)} />
                                 <InputError message={errors.tags} />

@@ -383,7 +383,7 @@ function ThemeTab({ theme }: { theme: ThemeConfig | null }) {
                 <form onSubmit={submit} className="space-y-6">
                     <HeadingSmall
                         title="Token warna"
-                        description="Ubah nilai token inti — semua komponen bersama (tombol, kartu, sidebar) otomatis mewarisi, bukan diedit satu-satu (F-144)."
+                        
                     />
 
                     <div className="grid grid-cols-1 gap-4 sm:grid-cols-2">
@@ -519,7 +519,7 @@ function KpiTab({ kpi }: { kpi: KpiConfig }) {
                 <form onSubmit={submit} className="space-y-6">
                     <HeadingSmall
                         title="Indikator ketepatan-waktu"
-                        description="Poin dihitung saat task disetujui, lalu DIBEKUKAN permanen — ubah nilai di sini tidak mengubah skor task yang sudah disetujui (F-167)."
+                        
                     />
 
                     <label className="flex items-center gap-2 text-sm">
@@ -576,11 +576,6 @@ function KpiTab({ kpi }: { kpi: KpiConfig }) {
                             <p className="text-muted-foreground text-sm">Tersimpan</p>
                         </Transition>
                     </div>
-
-                    {/* F-2: catatan provisional WAJIB tetap ada sampai v1.5 kalibrasi. */}
-                    <p className="text-muted-foreground text-xs">
-                        Indikator sementara (provisional) — formula final dikalibrasi dari data nyata di v1.5.
-                    </p>
                 </form>
             </CardContent>
         </Card>
@@ -609,10 +604,6 @@ function TagTab({ tags }: { tags: TagRow[] }) {
                 <CardTitle>Tag</CardTitle>
             </CardHeader>
             <CardContent className="space-y-6">
-                <HeadingSmall
-                    title="Kelola Tag"
-                    description="Tag dipilih (multi) saat buat/edit Task. Hapus tag akan otomatis melepasnya dari semua task yang memakai, bukan ditolak."
-                />
 
                 {/* SUMBER: key ganti tiap target edit berubah -- lihat KONTRAK TagForm
                     di bawah, tanpa ini useForm() internal "nyangkut" data tag lama

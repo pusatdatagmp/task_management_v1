@@ -280,13 +280,7 @@ export default function LeaderboardIndex({ from, to, rows, kpi_enabled }: Leader
                         </table>
                     </CardContent>
                 </Card>
-
-                {/* F-2/F-134: catatan provisional WAJIB tetap ada -- ini bukan skor final. */}
-                <p className="text-muted-foreground text-xs">
-                    Skor provisional — kalibrasi final v1.5. Peringkat saat ini berdasarkan nilai KPI (bukan Point, F-177). Point tetap dihitung
-                    dari task yang sudah disetujui pada periode terpilih; kolom Rating/Revisi/Ditolak/On-time% adalah konteks tampilan dan tidak
-                    memengaruhi peringkat.
-                </p>
+                
             </div>
         </AppLayout>
     );

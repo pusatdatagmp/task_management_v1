@@ -52,6 +52,13 @@ class TaskNotification extends Notification
 
     public const EXTENSION_DECIDED = 'extension_decided';
 
+    // F-186 (keputusan Boss 2026-09-04): pengajuan task oleh member.
+    public const PROPOSAL_SUBMITTED = 'proposal_submitted';
+
+    public const PROPOSAL_APPROVED = 'proposal_approved';
+
+    public const PROPOSAL_REJECTED = 'proposal_rejected';
+
     public function __construct(
         public Task $task,
         public string $type,
@@ -157,6 +164,9 @@ class TaskNotification extends Notification
             self::EXTENSION_DECIDED => $this->extensionOutcome === 'approved'
                 ? "Pengajuan perpanjangan deadline task \"{$this->task->title}\" DISETUJUI."
                 : "Pengajuan perpanjangan deadline task \"{$this->task->title}\" DITOLAK".($this->reason ? ": {$this->reason}" : '.'),
+            self::PROPOSAL_SUBMITTED => "Ada pengajuan task baru \"{$this->task->title}\" menunggu persetujuan.",
+            self::PROPOSAL_APPROVED => "Pengajuan task \"{$this->task->title}\" DISETUJUI, sudah aktif.",
+            self::PROPOSAL_REJECTED => "Pengajuan task \"{$this->task->title}\" DITOLAK".($this->reason ? ": {$this->reason}" : '.'),
             default => "Ada perubahan pada task \"{$this->task->title}\".",
         };
     }

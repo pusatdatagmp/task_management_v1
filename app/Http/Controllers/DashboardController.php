@@ -42,6 +42,13 @@
  *               total task per Tag + breakdown todo/selesai (tagsChart(), F-85
  *               nol N+1) — di commandCenterPayload() (BUKAN page-only), pola SAMA
  *               status_projects (oversight, kosong untuk viewer terbatas).
+ *               Widget baru `task_proposals_chart` (F-186, permintaan Boss
+ *               2026-09-04): bar chart pengajuan task per pengaju, stacked
+ *               Disetujui/Menunggu/Ditolak (taskProposalsChart()) — di
+ *               commandCenterPayload(), TAPI BEDA dari tags_chart/status_projects:
+ *               $users yang SUDAH disempit $restrictToSelf dikirim APA ADANYA
+ *               (bukan digerbangi ke array kosong), jadi otomatis personal untuk
+ *               viewer terbatas (member lihat riwayat pengajuannya sendiri).
  * DIPANGGIL   : routes/admin.php (gated can:dashboard.view)
  * MEMANGGIL   : DashboardService, User, Task, Project, ActivityLog, ActivityLogPresenter
  * DATA MASUK  : query string ?date=Y-m-d (opsional, default hari ini WIB) +
@@ -82,6 +89,7 @@ use App\Models\DeadlineExtension;
 use App\Models\Holiday;
 use App\Models\Meeting;
 use App\Models\Project;
+use App\Models\Scopes\PendingProposalScope;
 use App\Models\Tag;
 use App\Models\Task;
 use App\Models\TaskTemplate;
@@ -329,6 +337,12 @@ class DashboardController extends Controller
             // status_projects (oversight lintas-tenant, kosong untuk viewer
             // terbatas, bukan di-scope per-user).
             'tags_chart' => $restrictToSelf ? [] : $this->tagsChart(),
+            // F-186 (permintaan Boss 2026-09-04): widget bar chart "Pengajuan
+            // Tugas" per pengaju -- BEDA dari tags_chart/status_projects, $users
+            // yang SUDAH disempit $restrictToSelf DIKIRIM APA ADANYA (bukan
+            // digerbangi ke array kosong), lihat KONTRAK taskProposalsChart()
+            // kenapa widget ini otomatis personal untuk viewer terbatas.
+            'task_proposals_chart' => $this->taskProposalsChart($users),
             // F-109: filter aktif dikirim balik supaya frontend bisa render
             // selector ter-isi (pola SAMA ActivityLogController::index() -- state
             // datang dari URL lewat backend, bukan disimpan di localStorage FE).
@@ -552,6 +566,80 @@ class DashboardController extends Controller
                 'todo' => $t->todo_count,
                 'selesai' => $t->selesai_count,
             ])
+            ->all();
+    }
+
+    /**
+     * KONTRAK: F-186 (permintaan Boss 2026-09-04) — widget bar chart "Pengajuan
+     * Tugas" per pengaju, stacked Disetujui/Menunggu/Ditolak. Pola SAMA
+     * tagsChart() (agregasi 3 kategori per baris) TAPI dipanggil dengan $users
+     * yang SUDAH disempit $restrictToSelf di commandCenterPayload() — BUKAN
+     * digerbangi ke array kosong seperti tagsChart()/statusProjects(). Alasan:
+     * "siapa yang mengajukan task" PUNYA makna personal (member lihat riwayat
+     * pengajuannya sendiri), beda dari Tag/Project yang murni data organisasi
+     * tanpa sisi personal — otomatis jadi "chart 1 bar = diri sendiri" untuk
+     * member TANPA logic tambahan, karena $users yang dikirim sudah 1 orang.
+     *
+     * SUMBER (lihat header migrasi add_proposal_fields_to_tasks_table):
+     * proposal_status='pending' -> Menunggu. proposal_status='rejected' (SELALU
+     * dipasangkan soft-delete, F-186 TaskProposalController::reject()) -> Ditolak,
+     * WAJIB withTrashed() atau baris ini nol ketemu. proposal_status NULL DENGAN
+     * proposal_reviewed_at TERISI -> Disetujui (approve() mengosongkan
+     * proposal_status balik ke NULL supaya task itu jadi task biasa 100%, TIDAK
+     * ada nilai enum 'approved' yang harus terus dijaga — reviewed_at yang jadi
+     * penanda "task ini PERNAH melalui alur approval"). Task NORMAL (bukan hasil
+     * pengajuan sama sekali, admin-created) proposal_status DAN reviewed_at
+     * SAMA-SAMA NULL -> otomatis TIDAK match filter di bawah, tidak ikut terhitung.
+     *
+     * Bucketing PHP (bukan groupBy SQL, pola sama anomalies()) karena "approved"
+     * butuh 2 kolom sekaligus (proposal_status NULL + reviewed_at NOT NULL),
+     * lebih jelas dibaca sebagai match() daripada 3 subquery withCount terpisah.
+     * Top-10 by total DESC (pola sama workload_top5/statusProjects()) — user
+     * TANPA pengajuan sama sekali dikecualikan (beda dari tagsChart() yang
+     * sengaja tampilkan katalog kosong) supaya chart tidak dipenuhi bar nol
+     * kalau baru sebagian kecil tim yang pakai fitur ini.
+     *
+     * @param  Collection<int, User>  $users  SUDAH disempit $restrictToSelf oleh pemanggil.
+     * @return array<int, array{id:int, name:string, approved:int, pending:int, rejected:int}>
+     */
+    private function taskProposalsChart(Collection $users): array
+    {
+        $userIds = $users->pluck('id')->all();
+
+        if ($userIds === []) {
+            return [];
+        }
+
+        $rows = Task::withoutGlobalScope(PendingProposalScope::class)
+            ->withTrashed()
+            ->whereIn('created_by', $userIds)
+            ->where(fn ($q) => $q->whereNotNull('proposal_status')->orWhereNotNull('proposal_reviewed_at'))
+            ->get(['created_by', 'proposal_status', 'proposal_reviewed_at']);
+
+        $buckets = [];
+
+        foreach ($rows as $row) {
+            $key = match (true) {
+                $row->proposal_status === 'pending' => 'pending',
+                $row->proposal_status === 'rejected' => 'rejected',
+                default => 'approved',
+            };
+
+            $buckets[$row->created_by][$key] = ($buckets[$row->created_by][$key] ?? 0) + 1;
+        }
+
+        return $users
+            ->map(fn (User $u) => [
+                'id' => $u->id,
+                'name' => $u->name,
+                'approved' => $buckets[$u->id]['approved'] ?? 0,
+                'pending' => $buckets[$u->id]['pending'] ?? 0,
+                'rejected' => $buckets[$u->id]['rejected'] ?? 0,
+            ])
+            ->filter(fn (array $row) => $row['approved'] + $row['pending'] + $row['rejected'] > 0)
+            ->sortByDesc(fn (array $row) => $row['approved'] + $row['pending'] + $row['rejected'])
+            ->take(10)
+            ->values()
             ->all();
     }
 

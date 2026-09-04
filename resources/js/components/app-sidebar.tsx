@@ -8,8 +8,10 @@ import {
     CalendarClock,
     CalendarOff,
     CheckSquare,
+    ClipboardList,
     Clock,
     Facebook,
+    FilePlus2,
     Folder,
     History,
     Hourglass,
@@ -30,7 +32,7 @@ export function AppSidebar() {
     // isAdmin — role custom dengan user.manage tapi bukan workschedule.manage
     // (mis.) akan lihat menu User tapi bukan Jam Kerja. Ini HANYA gating
     // tampilan — penegakan sebenarnya di middleware `can:xxx` server-side.
-    const { auth, branding, version, myTasksCount, pendingExtensionsCount } = usePage<SharedData>().props;
+    const { auth, branding, version, myTasksCount, pendingExtensionsCount, pendingTaskProposalsCount } = usePage<SharedData>().props;
     const can = (permission: string) => auth.permissions.includes(permission);
 
     // F-142 (v1.2 DS-2): link sosmed/wa Branding org -- reuse NavFooter (sudah
@@ -82,6 +84,22 @@ export function AppSidebar() {
         // link ini SELALU tampil, tidak digerbangi permission (F-95 — gating
         // assignee, bukan RBAC).
         { title: 'Perpanjangan Saya', url: '/my-extensions', icon: Hourglass },
+        // F-186 (keputusan Boss 2026-09-04): antrean pengajuan task member —
+        // permission task.approve (reuse, sama gerbang route-nya).
+        ...(can('task.approve')
+            ? [{ title: 'Pengajuan Tugas', url: '/pengajuan-tugas', icon: ClipboardList, badge: pendingTaskProposalsCount }]
+            : []),
+        // BUG FIX (audit Boss 2026-09-04): task.proposeOwn TIDAK BOLEH cuma
+        // ada di kerjaSayaItems -- role custom (atau role 'member' yang, di
+        // DB Boss, SUDAH pernah dikasih dashboard.view manual lewat Role
+        // Management) bisa masuk cabang isAdminNav TAPI tetap punya
+        // task.proposeOwn tanpa task.manage. Gating F-90 WAJIB murni per-
+        // permission, bukan "cuma tampil di cabang nav tertentu" -- duplikasi
+        // sengaja di KEDUA array (di sini + kerjaSayaItems di bawah) supaya
+        // siapa pun yang punya izin ini SELALU lihat menunya, cabang nav
+        // mana pun yang dirender untuknya.
+        ...(can('task.proposeOwn') ? [{ title: 'Ajukan Tugas', url: '/task-proposals/create', icon: FilePlus2 }] : []),
+        ...(can('task.proposeOwn') ? [{ title: 'Pengajuan Saya', url: '/my-task-proposals', icon: ClipboardList }] : []),
     ];
 
     const organisasiItems: NavItem[] = [
@@ -107,6 +125,13 @@ export function AppSidebar() {
         { title: 'Tugas Saya', url: '/my-tasks', icon: CheckSquare, badge: myTasksCount },
         { title: 'Proyek Saya', url: '/projects', icon: Folder },
         { title: 'Perpanjangan Saya', url: '/my-extensions', icon: Hourglass },
+        // F-186 (keputusan Boss 2026-09-04): member ajukan task baru untuk
+        // dirinya sendiri — digerbangi permission task.proposeOwn (F-90), BUKAN
+        // selalu tampil seperti Perpanjangan Saya (itu F-95 assignee-gating,
+        // ini RBAC beneran karena "buat task baru" defaultnya dilarang F-29).
+        // DUPLIKAT SENGAJA di kerjaItems di atas — lihat komentar BUG FIX di sana.
+        ...(can('task.proposeOwn') ? [{ title: 'Ajukan Tugas', url: '/task-proposals/create', icon: FilePlus2 }] : []),
+        ...(can('task.proposeOwn') ? [{ title: 'Pengajuan Saya', url: '/my-task-proposals', icon: ClipboardList }] : []),
     ];
 
     // SUMBER: klik logo = "pulang" ke landing masing-masing role, sama seperti

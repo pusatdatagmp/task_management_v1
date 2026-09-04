@@ -70,6 +70,10 @@ export interface SharedData {
     // dengan DeadlineExtensionController::index() (status='pending'), dishare
     // GLOBAL (pola sama myTasksCount) karena sidebar dirender di setiap halaman.
     pendingExtensionsCount: number;
+    // F-186 (keputusan Boss 2026-09-04): badge sidebar "Pengajuan Tugas" (admin)
+    // -- SATU SUMBER dengan TaskProposalController::index() (proposal_status=
+    // 'pending'), pola sama pendingExtensionsCount.
+    pendingTaskProposalsCount: number;
     branding: Branding | null;
     // F-143 (v1.2 DS-3): null = org belum kustom tema -- CSS default TEMPO
     // (app.css) yang berlaku, F-145 fallback aman.

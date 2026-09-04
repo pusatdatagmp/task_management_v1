@@ -304,7 +304,7 @@ export default function AllTasks({ tasks, projects, members, filters }: AllTasks
                     </div>
 
                     <div className="flex flex-col gap-1">
-                        <span className="font-medium">Prioritas (Eisenhower)</span>
+                        <span className="font-medium">Prioritas</span>
                         {QUADRANTS.map((q) => (
                             <label key={q} className="flex items-center gap-2">
                                 <input type="checkbox" checked={filters.priority_quadrant.includes(q)} onChange={() => toggleQuadrant(q)} />
@@ -514,10 +514,13 @@ export default function AllTasks({ tasks, projects, members, filters }: AllTasks
                 {tasks.last_page > 1 && (
                     <div className="flex items-center justify-center gap-1">
                         {tasks.links.map((link, i) => (
+                            // Permintaan Boss (2026-09-04): TANPA preserveScroll di sini --
+                            // pindah halaman paginasi WAJIB scroll ke atas (default Inertia),
+                            // supaya user langsung lihat baris pertama halaman baru, bukan
+                            // nyangkut di posisi scroll bawah halaman lama.
                             <Link
                                 key={i}
                                 href={link.url ?? '#'}
-                                preserveScroll
                                 className={`rounded-md border px-3 py-1 text-sm ${
                                     link.active ? 'bg-primary text-primary-foreground' : 'text-muted-foreground'
                                 } ${!link.url ? 'pointer-events-none opacity-50' : ''}`}

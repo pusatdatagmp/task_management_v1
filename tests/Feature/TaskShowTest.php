@@ -20,6 +20,10 @@
  *               auth.permissions yang di-share GLOBAL lewat HandleInertiaRequests).
  *               Assertion di sini menyesuaikan ke `auth.permissions`, cakupan
  *               SETARA (masih membuktikan admin vs member dibedakan).
+ *               F-78 (diperbarui LAGI, F-186 2026-09-04): member sekarang punya
+ *               task.proposeOwn (satu-satunya permission default-nya, keputusan
+ *               Boss) — assertion disesuaikan dari array kosong ke array berisi
+ *               permission itu.
  * ==========================================================
  */
 
@@ -69,7 +73,7 @@ test('a member can view the detail page of a task assigned to them, with sanitiz
     $response->assertOk();
     $response->assertInertia(fn (AssertableInertia $page) => $page
         ->component('tasks/show')
-        ->where('auth.permissions', [])
+        ->where('auth.permissions', ['task.proposeOwn'])
         ->where('task.description_html', fn (?string $html) => str_contains($html, '<strong>laporan</strong>')
             && ! str_contains($html, '<script>')
             && ! str_contains($html, 'alert(1)'))

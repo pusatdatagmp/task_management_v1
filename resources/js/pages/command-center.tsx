@@ -196,6 +196,18 @@ interface TagChartRow {
     selesai: number;
 }
 
+// F-186 (permintaan Boss 2026-09-04): widget bar chart "Pengajuan Tugas" per
+// pengaju (DashboardController::taskProposalsChart()) — SATU baris = SATU
+// member yang PERNAH mengajukan task lewat fitur "Ajukan Tugas" (member yang
+// belum pernah mengajukan tidak ikut terkirim, lihat KONTRAK backend).
+interface TaskProposalChartRow {
+    id: number;
+    name: string;
+    approved: number;
+    pending: number;
+    rejected: number;
+}
+
 // F-109/§12.5: SATU sumber bentuk filter, dikirim balik oleh backend (SELALU 19
 // key terisi, null kalau tak difilter) supaya <input>/<Select> di bawah selalu
 // controlled (nol undefined->controlled warning React).
@@ -243,6 +255,10 @@ interface CommandCenterProps {
     // Permintaan Boss (2026-08-27): widget bar chart "Tag" -- pola SAMA
     // status_projects (kosong untuk viewer terbatas, lihat KONTRAK tagsChart()).
     tags_chart: TagChartRow[];
+    // F-186: widget bar chart "Pengajuan Tugas" per pengaju -- BEDA dari
+    // tags_chart, TIDAK kosong untuk viewer terbatas (otomatis personal, lihat
+    // KONTRAK taskProposalsChart()).
+    task_proposals_chart: TaskProposalChartRow[];
     filters: Filters;
     filter_users: FilterUser[];
 }
@@ -341,6 +357,16 @@ const MEMBER_CATEGORY_CONFIG = {
 const TAG_CHART_CONFIG = {
     todo: { label: 'To Do', color: '#2563eb' }, // blue-600
     selesai: { label: 'Selesai', color: '#65a30d' }, // lime-600
+} satisfies ChartConfig;
+
+// F-186 (permintaan Boss 2026-09-04): widget "Pengajuan Tugas" -- warna REUSE
+// bahasa semantik yang SUDAH established di halaman ini (statusBadge Menunggu=
+// amber/Ditolak=merah di extensions/*.tsx, Selesai=hijau di widget lain di sini),
+// bukan palet baru.
+const TASK_PROPOSAL_CHART_CONFIG = {
+    approved: { label: 'Disetujui', color: '#65a30d' }, // lime-600
+    pending: { label: 'Menunggu', color: '#f59e0b' }, // amber-500
+    rejected: { label: 'Ditolak', color: '#dc2626' }, // red-600
 } satisfies ChartConfig;
 
 // Permintaan Boss: card "Team Work Load" & modal "Detail & filter"-nya BUTUH
@@ -751,6 +777,7 @@ export default function CommandCenter({
     team,
     member_category_chart: memberCategoryChart,
     tags_chart: tagsChart,
+    task_proposals_chart: taskProposalsChart,
     filters,
     filter_users: filterUsers,
 }: CommandCenterProps) {
@@ -1609,6 +1636,112 @@ export default function CommandCenter({
                                     <div key={key} className="flex items-center gap-1.5">
                                         <span className="h-2.5 w-2.5 rounded-[2px]" style={{ backgroundColor: TAG_CHART_CONFIG[key].color }} />
                                         <span>{TAG_CHART_CONFIG[key].label}</span>
+                                    </div>
+                                ))}
+                            </div>
+                        </CardContent>
+                    </Card>
+                </motion.div>
+
+                {/* F-186 (permintaan Boss 2026-09-04): widget bar chart "Pengajuan Tugas"
+                per pengaju -- pola SAMA widget "Tag" di atas (stacked bar, ChartContainer
+                shadcn), cuma 3 kategori bukan 2. Ditaruh berdampingan (bukan digerbangi
+                kosong utk viewer terbatas, lihat KONTRAK DashboardController::
+                taskProposalsChart()) -- member yang belum pernah mengajukan lihat "Belum
+                ada pengajuan", BUKAN widget hilang total, supaya dia tahu fitur "Ajukan
+                Tugas" itu ada. */}
+                <motion.div className="grid grid-cols-1 gap-4" {...fadeUpMotion(sectionDelay(2) + CARD_STAGGER_S)}>
+                    <Card>
+                        <CardHeader>
+                            <CardTitle className="text-base">{scopeLabel('Pengajuan Tugas')}</CardTitle>
+                        </CardHeader>
+                        <CardContent>
+                            {navigating ? (
+                                <Skeleton className="h-64 w-full" />
+                            ) : taskProposalsChart.length === 0 ? (
+                                <p className="text-muted-foreground text-sm">
+                                    Belum ada pengajuan tugas
+                                    {restrictedToSelf ? ' — coba ajukan lewat menu "Ajukan Tugas".' : '.'}
+                                </p>
+                            ) : (
+                                <ChartContainer config={TASK_PROPOSAL_CHART_CONFIG} className="aspect-auto h-64 w-full">
+                                    <BarChart data={taskProposalsChart} margin={{ left: 4, right: 4 }}>
+                                        {/* id di-prefix "propc-" supaya tidak tabrakan sama id "tagc-"/"mcat-*"
+                                        di widget lain (pola SAMA komentar widget Tag). */}
+                                        <defs>
+                                            <linearGradient id="propc-approved" x1="0" y1="0" x2="0" y2="1">
+                                                <stop offset="0%" stopColor="#bef264" />
+                                                <stop offset="100%" stopColor="#65a30d" />
+                                            </linearGradient>
+                                            <linearGradient id="propc-pending" x1="0" y1="0" x2="0" y2="1">
+                                                <stop offset="0%" stopColor="#fcd34d" />
+                                                <stop offset="100%" stopColor="#f59e0b" />
+                                            </linearGradient>
+                                            <linearGradient id="propc-rejected" x1="0" y1="0" x2="0" y2="1">
+                                                <stop offset="0%" stopColor="#fca5a5" />
+                                                <stop offset="100%" stopColor="#dc2626" />
+                                            </linearGradient>
+                                        </defs>
+                                        <CartesianGrid vertical={false} />
+                                        <XAxis dataKey="name" tickLine={false} axisLine={false} tickMargin={8} />
+                                        <YAxis tickLine={false} axisLine={false} width={40} allowDecimals={false} />
+                                        <ChartTooltip
+                                            content={
+                                                <ChartTooltipContent
+                                                    formatter={(value, name) => {
+                                                        const key = name as keyof typeof TASK_PROPOSAL_CHART_CONFIG;
+
+                                                        return (
+                                                            <div className="flex w-full items-center gap-2">
+                                                                <span
+                                                                    className="h-2.5 w-2.5 shrink-0 rounded-[2px]"
+                                                                    style={{ backgroundColor: TASK_PROPOSAL_CHART_CONFIG[key].color }}
+                                                                />
+                                                                <span className="text-muted-foreground flex-1">
+                                                                    {TASK_PROPOSAL_CHART_CONFIG[key].label}
+                                                                </span>
+                                                                <span className="text-foreground font-mono font-medium tabular-nums">
+                                                                    {value as number}
+                                                                </span>
+                                                            </div>
+                                                        );
+                                                    }}
+                                                />
+                                            }
+                                        />
+                                        <Bar
+                                            dataKey="approved"
+                                            stackId="proposal"
+                                            fill="url(#propc-approved)"
+                                            isAnimationActive
+                                            animationDuration={BAR_ANIMATION_MS}
+                                        />
+                                        <Bar
+                                            dataKey="pending"
+                                            stackId="proposal"
+                                            fill="url(#propc-pending)"
+                                            isAnimationActive
+                                            animationDuration={BAR_ANIMATION_MS}
+                                        />
+                                        <Bar
+                                            dataKey="rejected"
+                                            stackId="proposal"
+                                            fill="url(#propc-rejected)"
+                                            radius={[4, 4, 0, 0]}
+                                            isAnimationActive
+                                            animationDuration={BAR_ANIMATION_MS}
+                                        />
+                                    </BarChart>
+                                </ChartContainer>
+                            )}
+                            <div className="text-muted-foreground mt-3 flex flex-wrap items-center gap-4 text-xs">
+                                {(Object.keys(TASK_PROPOSAL_CHART_CONFIG) as (keyof typeof TASK_PROPOSAL_CHART_CONFIG)[]).map((key) => (
+                                    <div key={key} className="flex items-center gap-1.5">
+                                        <span
+                                            className="h-2.5 w-2.5 rounded-[2px]"
+                                            style={{ backgroundColor: TASK_PROPOSAL_CHART_CONFIG[key].color }}
+                                        />
+                                        <span>{TASK_PROPOSAL_CHART_CONFIG[key].label}</span>
                                     </div>
                                 ))}
                             </div>

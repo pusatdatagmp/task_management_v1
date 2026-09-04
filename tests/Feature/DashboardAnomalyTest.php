@@ -101,9 +101,12 @@ test('realisasi > 3x estimasi ditandai anomali setelah approve (F-53)', function
 
     $this->travelTo($anchor->copy()->addMinutes(250));
 
+    // F-78 (permintaan Boss 2026-09-04): back() (BUKAN to_route('tasks.index'))
+    // -- lihat komentar TaskController::approve() untuk alasan lengkap.
+    // assertRedirect() TANPA argumen, pola sama TaskWorkActionsTest.
     $this->actingAs($admin)->patch(route('tasks.approve', [$project, $task]), [
         'quality_rating' => 3,
-    ])->assertRedirect(route('tasks.index', $project));
+    ])->assertRedirect();
 
     $task->refresh();
     expect($task->actual_minutes)->toBe(250);
@@ -138,9 +141,10 @@ test('realisasi di bawah 3x estimasi TIDAK ditandai anomali', function () {
 
     $this->travelTo($anchor->copy()->addMinutes(170));
 
+    // F-78: back(), lihat komentar test di atas file ini untuk alasan lengkap.
     $this->actingAs($admin)->patch(route('tasks.approve', [$project, $task]), [
         'quality_rating' => 4,
-    ])->assertRedirect(route('tasks.index', $project));
+    ])->assertRedirect();
 
     $task->refresh();
 

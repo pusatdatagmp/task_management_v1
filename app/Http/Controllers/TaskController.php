@@ -721,18 +721,29 @@ class TaskController extends Controller
     /**
      * BUSINESS RULE: E4/F-28 — approve, admin only (dijaga middleware 'admin' di
      * routes/admin.php + ApproveTaskRequest::authorize()).
+     *
+     * BUG FIX (permintaan Boss 2026-09-04): `back()` (BUKAN `to_route('tasks.index')`)
+     * -- tombol Approve/Reject ini dipakai lewat TaskStatusCell dari 3 halaman
+     * BEDA (tasks/index.tsx per-project, tasks/all.tsx "Semua Tugas" lintas
+     * project, my-tasks/index.tsx). Redirect hardcode ke tasks.index memaksa
+     * SEMUA pemanggil pindah ke halaman per-project itu walau lagi buka "Semua
+     * Tugas"/"Tugas Saya" -- back() (pola sama start()/hold()/resume()/submit()
+     * di atas) menjaga user tetap di halaman asal, apa pun itu.
      */
     public function approve(ApproveTaskRequest $request, Project $project, Task $task, TaskTransitionService $service): RedirectResponse
     {
         $service->approve($task, $request->user(), $request->validated('quality_rating'));
 
-        return to_route('tasks.index', $project);
+        return back();
     }
 
     /**
      * BUSINESS RULE: F-35 trigger #8 — alasan WAJIB diisi, dipakai TaskObserver
      * susun notifikasi "ditolak + alasan" ke assignee. Bukan kolom DB (lihat
      * Task::$rejectionReasonTransient), jadi validasi inline di sini cukup.
+     *
+     * BUG FIX (permintaan Boss 2026-09-04): `back()` — lihat komentar approve()
+     * di atas, alasan IDENTIK.
      */
     public function reject(Request $request, Project $project, Task $task, TaskTransitionService $service): RedirectResponse
     {
@@ -740,7 +751,7 @@ class TaskController extends Controller
         $validated = $request->validate(['reason' => ['required', 'string', 'max:500']]);
         $service->reject($task, $validated['reason']);
 
-        return to_route('tasks.index', $project);
+        return back();
     }
 
     /**

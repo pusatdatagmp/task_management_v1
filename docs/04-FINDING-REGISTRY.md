@@ -1254,3 +1254,17 @@ Laporan KPI Claude Code (9 Agu) AKURAT soal state: formula FINAL ditunda v1.5 (F
 **F-185 — SUPERSEDE F-6:** F-6 ("Notifikasi = database, Firebase ditunda v3.0") dimajukan sekarang atas instruksi eksplisit Boss ("mau lewat FCM dari awal"). FCM (`kreait/firebase-php`) dipakai untuk 4 permukaan device-level (bell/review/perpanjangan/tugas saya) — TIDAK mengganti channel `database` yang sudah ada (F-6 tetap berlaku sebagai baseline; FCM cuma channel TAMBAHAN, `config('services.fcm.enabled')` default `false` sampai kredensial Boss terpasang). F-6 di baris registry atas TIDAK diedit (log historis immutable, F-23) — supersede-nya dicatat di sini.
 
 Rencana kerja 4 fase (Fase 0 koreksi F-170→F-183 di atas, Fase 1 = F-184 Reverb, Fase 2 = infrastruktur backend FCM, Fase 3 = F-185 sambung FCM ke 3 class Notification + frontend). Detail lihat plan file sesi kerja ini.
+
+---
+
+## CATATAN — 2026-09-04 — F-186..F-189: member ajukan task baru + approval admin
+
+**Konteks:** Boss minta halaman member bisa mengajukan task baru untuk dirinya sendiri, admin approve/reject. Ini MEMBALIK SEBAGIAN F-29 ("member tidak boleh buat task") secara sadar — dikonfirmasi eksplisit oleh Boss setelah audit menemukan F-29 sebagai penghalang, bukan diakali diam-diam (protokol §7 poin 7).
+
+**F-186** — Skema: kolom `proposal_status`/`proposal_reviewed_by`/`proposal_reviewed_at`/`proposal_review_note` NEMPEL di `tasks` (bukan tabel terpisah seperti `deadline_extensions`) — baris pengajuan DAN baris task hasil approve adalah ENTITAS YANG SAMA, task tidak "lahir ulang" saat disetujui. `proposal_status` NULL = task normal (termasuk proposal yang sudah di-approve — kembali NULL, bukan nilai enum 'approved' ketiga). Pending disembunyikan TOTAL dari semua listing/dashboard/leaderboard/search lewat **global scope baru** `PendingProposalScope` (pola F-15/OrganizationScope) — dipilih di atas `->where()` manual di tiap query supaya nol titik lupa pasang filter.
+
+**F-187** — Permission baru `task.proposeOwn`, **default di-assign ke role member** (satu-satunya pengecualian dari D2 "member nol permission RBAC", `RolePermissionSeeder`). Backfill migration terpisah untuk organisasi yang sudah ada (pola sama `2026_08_26_120000_split_menu_permissions_backfill`).
+
+**F-188** — Reject = tandai `rejected` + alasan wajib, LALU soft-delete (F-16, keputusan Boss: ada jejak audit, bukan hapus permanen). Approve = admin **WAJIB mengisi ulang** `due_date`/`estimated_minutes`/`points` (bukan re-post nilai member apa adanya) — cegah member menulis estimasi longgar untuk aman dari penalti KPI (`Task::isOnTime()`, F-109). Admin approve/reject reuse permission `task.approve` yang sudah ada (bukan permission approve baru terpisah).
+
+**F-189** — Scope-out sengaja dari v1 fitur ini (di luar yang diminta Boss, bisa nyusul kalau diminta): member tidak bisa assign rekan lain (assignee dikunci ke diri sendiri di server), tanpa parent_task_id/tags/checklist di form pengajuan.

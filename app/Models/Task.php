@@ -22,6 +22,7 @@ namespace App\Models;
 use App\Models\Concerns\BelongsToOrganization;
 use App\Models\Concerns\SerializesDatesInAppTimezone;
 use App\Models\Scopes\OrganizationScope;
+use App\Models\Scopes\PendingProposalScope;
 use App\Observers\TaskObserver;
 use App\Services\BusinessHoursCalculator;
 use Illuminate\Database\Eloquent\Attributes\ObservedBy;
@@ -81,6 +82,12 @@ class Task extends Model
         'approved_by',
         'position',
         'created_by',
+        // F-186: pengajuan task oleh member — lihat header migrasi
+        // add_proposal_fields_to_tasks_table untuk makna tiap kolom.
+        'proposal_status',
+        'proposal_reviewed_by',
+        'proposal_reviewed_at',
+        'proposal_review_note',
     ];
 
     protected function casts(): array
@@ -92,11 +99,18 @@ class Task extends Model
             'submitted_at' => 'datetime',
             'completed_at' => 'datetime',
             'approved_at' => 'datetime',
+            'proposal_reviewed_at' => 'datetime',
         ];
     }
 
     protected static function booted(): void
     {
+        // F-186: pending proposal disembunyikan dari SEMUA query secara default
+        // (lihat header PendingProposalScope). Dipasang di sini (bukan trait),
+        // beda dari OrganizationScope — scope ini KHUSUS Task, bukan konsep
+        // lintas-model seperti tenant isolation.
+        static::addGlobalScope(new PendingProposalScope);
+
         // BUSINESS RULE: F-20 — subtask maksimal 1 level. Parent yang sudah jadi
         // subtask (punya parent_task_id sendiri) TIDAK BOLEH dijadikan parent lagi.
         static::saving(function (Task $task) {
@@ -166,6 +180,15 @@ class Task extends Model
     public function createdBy(): BelongsTo
     {
         return $this->belongsTo(User::class, 'created_by');
+    }
+
+    /**
+     * F-186: admin yang memutuskan pengajuan task ini (approve ATAU reject).
+     * NULL untuk task normal (bukan hasil pengajuan member).
+     */
+    public function proposalReviewedBy(): BelongsTo
+    {
+        return $this->belongsTo(User::class, 'proposal_reviewed_by');
     }
 
     public function approvedBy(): BelongsTo

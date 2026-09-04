@@ -145,7 +145,7 @@ export default function TaskCreate({ project, members, availableTags }: TaskCrea
                                 <div className="grid gap-2">
                                     {/* F-122/F-126: Eisenhower quadrant GANTIKAN enum priority lama di UI —
                                         enum lama tetap ada di DB (legacy, tersembunyi), tidak dihapus. */}
-                                    <Label htmlFor="priority_quadrant">Prioritas (Eisenhower)</Label>
+                                    <Label htmlFor="priority_quadrant">Prioritas</Label>
                                     <Select
                                         value={data.priority_quadrant || '__none'}
                                         onValueChange={(value) => setData('priority_quadrant', value === '__none' ? '' : (value as PriorityQuadrant))}

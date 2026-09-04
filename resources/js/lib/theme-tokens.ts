@@ -63,15 +63,15 @@ export interface ThemeConfig {
 // SUMBER: daftar + default hex HARUS sama persis dengan :root di app.css --
 // dipakai juga sebagai nilai awal color-picker sebelum org pernah kustom.
 export const TEMPO_TOKENS: ThemeToken[] = [
-    { key: 'sidebar_bg', cssVar: '--tempo-sidebar-bg', label: 'Latar Sidebar', defaultHex: '#0f1523', hint: 'Background sidebar kiri saja (F-143 — dipisah dari warna teks, DS-3).' },
-    { key: 'ink', cssVar: '--tempo-ink', label: 'Warna Teks Utama', defaultHex: '#0f1523', hint: 'Teks di seluruh halaman terang (BUKAN lagi teks tombol -- lihat token "Warna Teks Button").' },
-    { key: 'ink2', cssVar: '--tempo-ink2', label: 'Aksen Sidebar', defaultHex: '#161d30', hint: 'Warna hover/border item sidebar.' },
-    { key: 'paper', cssVar: '--tempo-paper', label: 'Latar Workspace', defaultHex: '#f5f6f9', hint: 'Background area kerja di kanan sidebar.' },
-    { key: 'card', cssVar: '--tempo-card', label: 'Latar Kartu', defaultHex: '#ffffff', hint: 'Background card/panel di seluruh halaman.' },
-    { key: 'amber', cssVar: '--tempo-amber', label: 'Warna Aksi (Primary)', defaultHex: '#e0a012', hint: 'Tombol utama + aksen sidebar aktif (F-145 default amber).' },
-    { key: 'button_text', cssVar: '--tempo-button-text', label: 'Warna Teks Button', defaultHex: '#0f1523', hint: 'Teks di atas tombol primary/amber SAJA -- dipisah dari "Warna Teks Utama" supaya ganti warna teks halaman tidak ikut mengubah teks tombol.' },
-    { key: 'tx', cssVar: '--tempo-tx', label: 'Teks Sidebar (aktif)', defaultHex: '#f8fafc', hint: 'Warna teks sidebar saat item di-hover/aktif.' },
-    { key: 'tx2', cssVar: '--tempo-tx2', label: 'Teks Sidebar (default)', defaultHex: '#cbd5e1', hint: 'Warna teks sidebar dalam keadaan biasa.' },
+    { key: 'sidebar_bg', cssVar: '--tempo-sidebar-bg', label: 'Latar Sidebar', defaultHex: '#0f1523', hint: '' },
+    { key: 'ink', cssVar: '--tempo-ink', label: 'Warna Teks Utama', defaultHex: '#0f1523', hint: '' },
+    { key: 'ink2', cssVar: '--tempo-ink2', label: 'Aksen Sidebar', defaultHex: '#161d30', hint: '' },
+    { key: 'paper', cssVar: '--tempo-paper', label: 'Latar Workspace', defaultHex: '#f5f6f9', hint: '' },
+    { key: 'card', cssVar: '--tempo-card', label: 'Latar Kartu', defaultHex: '#ffffff', hint: '' },
+    { key: 'amber', cssVar: '--tempo-amber', label: 'Warna Aksi (Primary)', defaultHex: '#e0a012', hint: '' },
+    { key: 'button_text', cssVar: '--tempo-button-text', label: 'Warna Teks Button', defaultHex: '#0f1523', hint: '' },
+    { key: 'tx', cssVar: '--tempo-tx', label: 'Teks Sidebar (aktif)', defaultHex: '#f8fafc', hint: '' },
+    { key: 'tx2', cssVar: '--tempo-tx2', label: 'Teks Sidebar (default)', defaultHex: '#cbd5e1', hint: '' },
 ];
 
 export const GRADIENT_DIRECTIONS: { value: GradientDirection; label: string }[] = [

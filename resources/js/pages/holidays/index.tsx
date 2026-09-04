@@ -124,7 +124,7 @@ export default function HolidaysIndex({ holidays }: { holidays: HolidayRow[] }) 
 
                 <Card>
                     <CardHeader>
-                        <HeadingSmall title="Daftar Hari Libur" description="Urut tanggal — dipakai BusinessHoursCalculator untuk skip realisasi (F-43)" />
+                        <HeadingSmall title="Daftar Hari Libur" />
                     </CardHeader>
                     <CardContent>
                         <div className="overflow-x-auto">

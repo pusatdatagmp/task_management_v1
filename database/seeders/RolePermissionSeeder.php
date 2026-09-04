@@ -77,6 +77,14 @@ class RolePermissionSeeder extends Seeder
             ['permission_name' => 'status.manage', 'module' => 'status'],
             ['permission_name' => 'task.manage', 'module' => 'task'],
             ['permission_name' => 'task.approve', 'module' => 'task'],
+            // F-186 (keputusan Boss 2026-09-04): member ajukan task baru untuk
+            // dirinya sendiri, admin approve/reject via task.approve (reuse,
+            // bukan permission approve baru). default_admin TRUE (baris biasa,
+            // pola sama task.manage) — TAPI beda dari SEMUA baris lain di sini,
+            // permission ini JUGA di-assign eksplisit ke role member di
+            // seedSystemRolesForOrganization() di bawah, sengaja membalik default
+            // D2 "member nol permission". Lihat RISIKO header file.
+            ['permission_name' => 'task.proposeOwn', 'module' => 'task'],
             ['permission_name' => 'project.viewAll', 'module' => 'project'],
             // F-170 (audit permission per-menu, permintaan Boss 2026-08-26): SEBELUMNYA
             // 4 pasang menu berbagi 1 permission dengan menu lain (F-46 "template
@@ -166,9 +174,18 @@ class RolePermissionSeeder extends Seeder
             ['organization_id' => $organization->id, 'role_name' => 'member'],
             ['is_system' => true, 'is_default' => true],
         );
-        // SUMBER: D2 — member TIDAK dapat permission RBAC apa pun. Perilaku
-        // Hari-3 miliknya (ubah status task sendiri, dst) dijaga cek
+        // SUMBER: D2 — member TIDAK dapat permission RBAC apa pun SECARA UMUM.
+        // Perilaku Hari-3 miliknya (ubah status task sendiri, dst) dijaga cek
         // assignee/keanggotaan project di service/controller, bukan RBAC.
+        //
+        // F-186 SATU pengecualian sadar (keputusan Boss 2026-09-04): task.proposeOwn
+        // -- member BOLEH mengajukan task baru untuk dirinya sendiri (admin yang
+        // approve/reject). syncWithoutDetaching aman dipanggil berkali-kali
+        // (idempotent) dan TIDAK mencabut kalau Boss sudah cabut manual lewat UI
+        // Role Management, pola sama admin di atas.
+        $member->permissions()->syncWithoutDetaching(
+            Permission::where('permission_name', 'task.proposeOwn')->pluck('id')
+        );
 
         return ['admin' => $admin, 'member' => $member];
     }

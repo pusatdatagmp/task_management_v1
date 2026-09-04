@@ -9,9 +9,10 @@
  *               BUKA segmen DIPINDAH ke TaskTransitionService::start()/resume(),
  *               observer ini TIDAK PERNAH membuka segmen lagi), rejection_count++
  *               saat ditolak, F-39 (freeze actual_minutes saat approve), F-79
- *               (description_plain untuk FULLTEXT search), dan trigger notifikasi
- *               #3/#6/#7/#8 (F-35) — SEMUA otomatis dari perubahan atribut Task,
- *               BUKAN dipanggil manual di controller.
+ *               (description_plain untuk FULLTEXT search), trigger notifikasi
+ *               #3/#6/#7/#8 (F-35), DAN (F-186) notifikasi submit/approve/reject
+ *               pengajuan task member (TaskProposalController) — SEMUA otomatis
+ *               dari perubahan atribut Task, BUKAN dipanggil manual di controller.
  * DIPANGGIL   : Laravel (event Eloquent) via #[ObservedBy] di App\Models\Task
  * MEMANGGIL   : ActivityLog, TaskStatus, TaskTimeSegment, TaskNotification
  * DATA MASUK  : Perubahan atribut Task (khususnya task_status_id, description)
@@ -57,6 +58,16 @@ class TaskObserver
         $this->logActivity($task, 'created', null, $task->only([
             'title', 'task_type', 'task_status_id', 'due_date', 'points', 'estimated_minutes',
         ]));
+
+        // F-186 (keputusan Boss 2026-09-04): task hasil pengajuan member -> notif
+        // SEMUA admin org (pola sama trigger #6 notifyAdmins ENTERED_REVIEW).
+        // notifyAdmins() sudah exclude Auth::id() (F-36) -- di sini pelakunya
+        // SELALU member (proposer), jadi guard itu no-op praktis, dipertahankan
+        // untuk konsistensi pola saja.
+        if ($task->proposal_status === 'pending') {
+            $this->logActivity($task, 'proposal_submitted', null, ['proposal_status' => 'pending']);
+            $this->notifyAdmins($task, TaskNotification::PROPOSAL_SUBMITTED);
+        }
     }
 
     /**
@@ -122,6 +133,22 @@ class TaskObserver
     public function updated(Task $task): void
     {
         $this->logActivity($task, 'updated', array_intersect_key($task->getOriginal(), $task->getChanges()), $task->getChanges());
+
+        // F-186: proposal pengajuan diputuskan admin. TaskProposalController::
+        // approve() set proposal_status pending->NULL (task jadi normal 100%),
+        // reject() set pending->'rejected' LALU soft-delete di panggilan
+        // TERPISAH setelah update() ini (lihat RISIKO controller). Dicek DI SINI
+        // (bukan digabung blok task_status_id di bawah) karena approve/reject
+        // proposal TIDAK PERNAH mengubah task_status_id sama sekali.
+        if ($task->wasChanged('proposal_status') && $task->getOriginal('proposal_status') === 'pending') {
+            if (is_null($task->proposal_status)) {
+                $this->logActivity($task, 'proposal_approved', null, ['proposal_reviewed_by' => $task->proposal_reviewed_by]);
+                $this->notifyAssignees($task, TaskNotification::PROPOSAL_APPROVED);
+            } elseif ($task->proposal_status === 'rejected') {
+                $this->logActivity($task, 'proposal_rejected', null, ['proposal_review_note' => $task->proposal_review_note]);
+                $this->notifyAssignees($task, TaskNotification::PROPOSAL_REJECTED, $task->proposal_review_note);
+            }
+        }
 
         if (! $task->wasChanged('task_status_id')) {
             return;
