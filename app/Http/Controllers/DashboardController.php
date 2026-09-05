@@ -49,6 +49,16 @@
  *               $users yang SUDAH disempit $restrictToSelf dikirim APA ADANYA
  *               (bukan digerbangi ke array kosong), jadi otomatis personal untuk
  *               viewer terbatas (member lihat riwayat pengajuannya sendiri).
+ *               `member_category_chart` diperluas (permintaan Boss 2026-09-05):
+ *               2 field baru per baris — weekly_achievement_minutes/
+ *               monthly_achievement_minutes (realisasi/Selesai per-member,
+ *               Mingguan & Bulanan yang memuat $teamDate) — dirender sebagai 2
+ *               garis OVERLAY di chart bar YANG SAMA (frontend), BUKAN
+ *               chart/card terpisah. Sempat dibuat sbg tren per-hari TOTAL TIM
+ *               terpisah (method memberCategoryTrend(), widget baru
+ *               member_category_trend_week/_month) lalu DIBATALKAN Boss hari
+ *               yang sama sebelum sempat dipakai — jangan bingung kalau nemu
+ *               jejak istilah itu di git history/komentar lama.
  * DIPANGGIL   : routes/admin.php (gated can:dashboard.view)
  * MEMANGGIL   : DashboardService, User, Task, Project, ActivityLog, ActivityLogPresenter
  * DATA MASUK  : query string ?date=Y-m-d (opsional, default hari ini WIB) +
@@ -185,6 +195,10 @@ class DashboardController extends Controller
             // Permintaan Boss: widget "Beban per Kategori" (stacked bar chart
             // per member) -- REUSE $teamRows/$teamDate yang SAMA (nol query
             // forUsers() dobel), lihat KONTRAK memberCategoryChart().
+            // Permintaan Boss (2026-09-05): garis Mingguan/Bulanan SEKARANG
+            // OVERLAY di dalam array yang SAMA (weekly_achievement_minutes/
+            // monthly_achievement_minutes per baris) -- lihat KONTRAK
+            // memberCategoryChart() (revisi terbaru).
             'member_category_chart' => $this->memberCategoryChart($teamRows, $teamDate),
         ]);
     }
@@ -749,8 +763,19 @@ class DashboardController extends Controller
      * KEMBALI ke menit mentah (revisi Boss 2026-08-22), F-38 tetap: nol angka
      * turunan disimpan/dikirim kalau bisa dihitung ulang di titik pakai.
      *
+     * Revisi 2026-09-05 (permintaan Boss, GANTIKAN pendekatan tren per-hari
+     * total-tim yang sempat dibuat & dibatalkan hari yang sama): 2 garis
+     * REALISASI (Selesai) per-MEMBER — Mingguan (Senin-Minggu yang memuat
+     * $date) & Bulanan (1 bulan kalender yang memuat $date) — DIGABUNG jadi
+     * OVERLAY di chart bar YANG SAMA (bukan chart/card terpisah), sumbu-X TETAP
+     * nama member (SAMA dengan bar Harian) supaya benar-benar 1 komponen chart,
+     * BUKAN tren per-tanggal. REUSE assigneeMinutes() apa adanya (scope generik
+     * sudah ada sejak awal) — cuma ganti closure whereDate jadi whereBetween,
+     * NOL helper baru, NOL query bertambah dgn lebar rentang (F-85: TETAP 4
+     * query total apa pun ukuran tim/rentang tanggal).
+     *
      * @param  array<int, array<string, mixed>>  $teamRows  hasil loadRows() — WAJIB baris ber-`id`/`name`/`kapasitas` (idle_real TIDAK lagi dipakai formula ini).
-     * @return array<int, array{id:int, name:string, kapasitas:int, longgar_minutes:int, todo_minutes:int, achievement_minutes:int}>
+     * @return array<int, array{id:int, name:string, kapasitas:int, longgar_minutes:int, todo_minutes:int, achievement_minutes:int, weekly_achievement_minutes:int, monthly_achievement_minutes:int}>
      */
     private function memberCategoryChart(array $teamRows, Carbon $date): array
     {
@@ -766,7 +791,23 @@ class DashboardController extends Controller
             ->whereDate('due_date', $date)
             ->whereHas('taskStatus', fn ($s) => $s->where('is_completed', true)));
 
-        return array_map(function (array $row) use ($assignedMinutes, $completedMinutes) {
+        // F-131 konvensi: Senin = awal minggu (SAMA dgn heatmap/presetThisWeek
+        // frontend) — jendela Mingguan/Bulanan MEMUAT $date, bukan tanggal hari
+        // ini, supaya konsisten kalau admin navigasi ke tanggal lampau/depan.
+        $weekStart = $date->copy()->startOfWeek(Carbon::MONDAY)->startOfDay();
+        $weekEnd = $weekStart->copy()->addDays(6)->endOfDay();
+        $monthStart = $date->copy()->startOfMonth()->startOfDay();
+        $monthEnd = $date->copy()->copy()->endOfMonth()->endOfDay();
+
+        $weeklyAchievement = $this->assigneeMinutes($userIds, fn ($q) => $q
+            ->whereBetween('due_date', [$weekStart, $weekEnd])
+            ->whereHas('taskStatus', fn ($s) => $s->where('is_completed', true)));
+
+        $monthlyAchievement = $this->assigneeMinutes($userIds, fn ($q) => $q
+            ->whereBetween('due_date', [$monthStart, $monthEnd])
+            ->whereHas('taskStatus', fn ($s) => $s->where('is_completed', true)));
+
+        return array_map(function (array $row) use ($assignedMinutes, $completedMinutes, $weeklyAchievement, $monthlyAchievement) {
             $assigned = $assignedMinutes[$row['id']] ?? 0;
             $completed = $completedMinutes[$row['id']] ?? 0;
 
@@ -777,6 +818,8 @@ class DashboardController extends Controller
                 'longgar_minutes' => max(0, $row['kapasitas'] - $assigned),
                 'todo_minutes' => $assigned - $completed,
                 'achievement_minutes' => $completed,
+                'weekly_achievement_minutes' => $weeklyAchievement[$row['id']] ?? 0,
+                'monthly_achievement_minutes' => $monthlyAchievement[$row['id']] ?? 0,
             ];
         }, $teamRows);
     }

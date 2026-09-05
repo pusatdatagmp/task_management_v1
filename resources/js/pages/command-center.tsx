@@ -89,7 +89,21 @@ import {
     X,
 } from 'lucide-react';
 import { useEffect, useState } from 'react';
-import { Area, AreaChart, Bar, BarChart, CartesianGrid, PolarRadiusAxis, RadialBar, RadialBarChart, ResponsiveContainer, XAxis, YAxis } from 'recharts';
+import {
+    Area,
+    AreaChart,
+    Bar,
+    BarChart,
+    CartesianGrid,
+    ComposedChart,
+    Line,
+    PolarRadiusAxis,
+    RadialBar,
+    RadialBarChart,
+    ResponsiveContainer,
+    XAxis,
+    YAxis,
+} from 'recharts';
 
 interface SummaryCards {
     beban_harian: { used_minutes: number; capacity_minutes: number };
@@ -172,6 +186,10 @@ interface TeamRow {
 // rata assignee (F-96a) tugas due_date/completed_at jatuh di tanggal itu.
 // `kapasitas` (permintaan Boss 2026-08-21): basis pembagi PERSENTASE chart --
 // "Jatah Harian" jadi 100%, lihat toMemberCategoryChartPct().
+// weekly_achievement_minutes/monthly_achievement_minutes (permintaan Boss
+// 2026-09-05): realisasi (Selesai) per-member Mingguan/Bulanan -- DIRENDER
+// sebagai 2 garis OVERLAY di chart bar YANG SAMA (BUKAN chart/card terpisah),
+// lihat JSX "Beban per Kategori" kenapa 1 komponen.
 interface MemberCategoryRow {
     id: number;
     name: string;
@@ -179,6 +197,8 @@ interface MemberCategoryRow {
     longgar_minutes: number;
     todo_minutes: number;
     achievement_minutes: number;
+    weekly_achievement_minutes: number;
+    monthly_achievement_minutes: number;
 }
 
 // Permintaan Boss (2026-08-27): widget bar chart "Tag" -- total task per Tag
@@ -349,6 +369,24 @@ const MEMBER_CATEGORY_CONFIG = {
         // bawah (nol palet baru, konsisten satu widget).
         color: '#64748b',
     },
+} satisfies ChartConfig;
+
+// Permintaan Boss (2026-09-05): 2 garis OVERLAY "Beban per Kategori" -- realisasi
+// (Selesai) per-member Mingguan & Bulanan, DIGABUNG ke chart bar Harian YANG SAMA
+// (BUKAN chart/card terpisah — sempat dibuat lalu dibatalkan Boss hari yang sama).
+// Config TERPISAH dari MEMBER_CATEGORY_CONFIG karena radial "Komposisi Beban Tim"
+// di bawah TETAP cuma pakai 3 kategori asli, tidak perlu tahu soal 2 garis ini.
+const MEMBER_CATEGORY_TREND_CONFIG = {
+    weekly_achievement_minutes: { label: 'Realisasi Mingguan', color: '#0ea5e9' }, // sky-500
+    monthly_achievement_minutes: { label: 'Realisasi Bulanan', color: '#a855f7' }, // purple-500
+} satisfies ChartConfig;
+
+// Gabungan 3 kategori bar + 2 garis tren -- SATU-SATUNYA dipakai chart "Beban
+// per Kategori" Harian (ChartContainer config + tooltip + legend chart itu),
+// supaya recharts ChartTooltipContent bisa resolve warna/label kelima dataKey.
+const MEMBER_CATEGORY_CHART_CONFIG = {
+    ...MEMBER_CATEGORY_CONFIG,
+    ...MEMBER_CATEGORY_TREND_CONFIG,
 } satisfies ChartConfig;
 
 // Permintaan Boss (2026-08-27): widget "Tag" -- 2 kategori tetap (todo/selesai),
@@ -1187,8 +1225,8 @@ export default function CommandCenter({
                             ) : memberCategoryChartData.length === 0 ? (
                                 <p className="text-muted-foreground text-sm">Tidak ada user aktif untuk ditampilkan.</p>
                             ) : (
-                                <ChartContainer config={MEMBER_CATEGORY_CONFIG} className="aspect-auto h-64 w-full">
-                                    <BarChart data={pagedMemberCategoryChartData} margin={{ left: 4, right: 4 }}>
+                                <ChartContainer config={MEMBER_CATEGORY_CHART_CONFIG} className="aspect-auto h-64 w-full">
+                                    <ComposedChart data={pagedMemberCategoryChartData} margin={{ left: 4, right: 4 }}>
                                         {/* Permintaan Boss (2026-08-22): tiap kategori pakai GRADASI warna
                                         (bukan flat) -- linearGradient vertikal, terang di atas ke warna
                                         dasar MEMBER_CATEGORY_CONFIG di bawah. id di-prefix "mcat-" supaya
@@ -1221,26 +1259,40 @@ export default function CommandCenter({
                                         di-clamp non-negatif di DashboardController::memberCategoryChart()
                                         (backend) jadi sumbu TIDAK PERNAH turun di bawah 0. */}
                                         <YAxis
+                                            yAxisId="harian"
                                             tickLine={false}
                                             axisLine={false}
                                             width={56}
                                             domain={[0, 480]}
                                             tickFormatter={(v: number) => formatLiveMinutes(v)}
                                         />
+                                        {/* Permintaan Boss (2026-09-05): sumbu KANAN terpisah, skala OTOMATIS
+                                        (bukan dikunci [0,480] seperti sumbu kiri) -- 2 garis di bawah adalah
+                                        TOTAL realisasi 1 member sepanjang minggu/bulan, basisnya beda dari
+                                        bar Harian (kapasitas 1 hari) jadi bisa jauh lebih besar. Kalau
+                                        dipaksa sumbu kiri yang sama, garis akan rata di plafon 480. */}
+                                        <YAxis
+                                            yAxisId="tren"
+                                            orientation="right"
+                                            tickLine={false}
+                                            axisLine={false}
+                                            width={56}
+                                            tickFormatter={(v: number) => formatLiveMinutes(v)}
+                                        />
                                         <ChartTooltip
                                             content={
                                                 <ChartTooltipContent
                                                     formatter={(value, name) => {
-                                                        const key = name as keyof typeof MEMBER_CATEGORY_CONFIG;
+                                                        const key = name as keyof typeof MEMBER_CATEGORY_CHART_CONFIG;
 
                                                         return (
                                                             <div className="flex w-full items-center gap-2">
                                                                 <span
                                                                     className="h-2.5 w-2.5 shrink-0 rounded-[2px]"
-                                                                    style={{ backgroundColor: MEMBER_CATEGORY_CONFIG[key].color }}
+                                                                    style={{ backgroundColor: MEMBER_CATEGORY_CHART_CONFIG[key].color }}
                                                                 />
                                                                 <span className="text-muted-foreground flex-1">
-                                                                    {MEMBER_CATEGORY_CONFIG[key].label}
+                                                                    {MEMBER_CATEGORY_CHART_CONFIG[key].label}
                                                                 </span>
                                                                 <span className="text-foreground font-mono font-medium tabular-nums">
                                                                     {formatLiveMinutes(value as number)}
@@ -1254,6 +1306,7 @@ export default function CommandCenter({
                                         {/* Urutan tumpukan BAWAH->ATAS: Selesai, To Do, Jatah Harian --
                                         Jatah Harian di ATAS (sisa kapasitas belum terpakai), pola mockup Boss. */}
                                         <Bar
+                                            yAxisId="harian"
                                             dataKey="achievement_minutes"
                                             stackId="beban"
                                             fill="url(#mcat-achievement)"
@@ -1261,6 +1314,7 @@ export default function CommandCenter({
                                             animationDuration={BAR_ANIMATION_MS}
                                         />
                                         <Bar
+                                            yAxisId="harian"
                                             dataKey="todo_minutes"
                                             stackId="beban"
                                             fill="url(#mcat-todo)"
@@ -1268,6 +1322,7 @@ export default function CommandCenter({
                                             animationDuration={BAR_ANIMATION_MS}
                                         />
                                         <Bar
+                                            yAxisId="harian"
                                             dataKey="longgar_minutes"
                                             stackId="beban"
                                             fill="url(#mcat-longgar)"
@@ -1275,7 +1330,29 @@ export default function CommandCenter({
                                             isAnimationActive
                                             animationDuration={BAR_ANIMATION_MS}
                                         />
-                                    </BarChart>
+                                        {/* Permintaan Boss (2026-09-05): 2 garis realisasi Mingguan/Bulanan
+                                        PER MEMBER, overlay di chart bar YANG SAMA (bukan chart terpisah). */}
+                                        <Line
+                                            yAxisId="tren"
+                                            type="monotone"
+                                            dataKey="weekly_achievement_minutes"
+                                            stroke={MEMBER_CATEGORY_TREND_CONFIG.weekly_achievement_minutes.color}
+                                            strokeWidth={2}
+                                            dot={{ r: 3 }}
+                                            isAnimationActive
+                                            animationDuration={CHART_ANIMATION_MS}
+                                        />
+                                        <Line
+                                            yAxisId="tren"
+                                            type="monotone"
+                                            dataKey="monthly_achievement_minutes"
+                                            stroke={MEMBER_CATEGORY_TREND_CONFIG.monthly_achievement_minutes.color}
+                                            strokeWidth={2}
+                                            dot={{ r: 3 }}
+                                            isAnimationActive
+                                            animationDuration={CHART_ANIMATION_MS}
+                                        />
+                                    </ComposedChart>
                                 </ChartContainer>
                             )}
                             {/* Permintaan Boss (2026-08-22): kontrol paginasi -- cuma tampil
@@ -1307,14 +1384,14 @@ export default function CommandCenter({
                                     </Button>
                                 </div>
                             )}
-                            {/* Legend manual (bukan ChartLegend/recharts) -- 3 kategori TETAP
-                            (bukan dari payload dinamis), pola sederhana SAMA legend heatmap
-                            di bawah (span warna + label). */}
+                            {/* Legend manual (bukan ChartLegend/recharts) -- 3 kategori bar + 2
+                            garis tren (permintaan Boss 2026-09-05), pola sederhana SAMA legend
+                            heatmap di bawah (span warna + label). */}
                             <div className="text-muted-foreground mt-3 flex flex-wrap items-center gap-4 text-xs">
-                                {(Object.keys(MEMBER_CATEGORY_CONFIG) as (keyof typeof MEMBER_CATEGORY_CONFIG)[]).map((key) => (
+                                {(Object.keys(MEMBER_CATEGORY_CHART_CONFIG) as (keyof typeof MEMBER_CATEGORY_CHART_CONFIG)[]).map((key) => (
                                     <div key={key} className="flex items-center gap-1.5">
-                                        <span className="h-2.5 w-2.5 rounded-[2px]" style={{ backgroundColor: MEMBER_CATEGORY_CONFIG[key].color }} />
-                                        <span>{MEMBER_CATEGORY_CONFIG[key].label}</span>
+                                        <span className="h-2.5 w-2.5 rounded-[2px]" style={{ backgroundColor: MEMBER_CATEGORY_CHART_CONFIG[key].color }} />
+                                        <span>{MEMBER_CATEGORY_CHART_CONFIG[key].label}</span>
                                     </div>
                                 ))}
                             </div>

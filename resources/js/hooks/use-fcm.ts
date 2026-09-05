@@ -100,6 +100,39 @@ export function useFcm() {
         return true;
     }
 
+    /**
+     * KONTRAK (permintaan Boss 2026-09-05, toggle nonaktifkan notifikasi): hapus
+     * token FCM device ini dari `push_tokens` -- server BERHENTI kirim push ke
+     * device ini. TIDAK mencabut Notification.permission browser (JS tidak bisa
+     * melakukan itu sama sekali, itu wewenang user lewat pengaturan browser) --
+     * caller (push-permission-prompt.tsx) yang menyimpan status "OFF" di
+     * localStorage supaya toggle tetap kelihatan mati walau permission browser
+     * tetap 'granted' selamanya.
+     */
+    async function disable(): Promise<boolean> {
+        const messaging = await getFirebaseMessaging();
+        if (!messaging) return false;
+
+        // GUARD: belum pernah granted -> tidak ada token terdaftar sama sekali,
+        // nol yang perlu dihapus di server. Anggap sukses (state OFF tercapai).
+        if (Notification.permission !== 'granted') return true;
+
+        const token = await getToken(messaging, { vapidKey: import.meta.env.VITE_FIREBASE_VAPID_KEY });
+        if (!token) return true;
+
+        await fetch(route('push-subscriptions.destroy'), {
+            method: 'DELETE',
+            headers: {
+                'Content-Type': 'application/json',
+                Accept: 'application/json',
+                'X-XSRF-TOKEN': getXsrfToken(),
+            },
+            body: JSON.stringify({ fcm_token: token }),
+        });
+
+        return true;
+    }
+
     useEffect(() => {
         let unsubscribe: (() => void) | undefined;
         let cancelled = false;
@@ -137,6 +170,7 @@ export function useFcm() {
 
     return {
         enable,
+        disable,
         permission: typeof Notification === 'undefined' ? 'unsupported' : Notification.permission,
     };
 }
