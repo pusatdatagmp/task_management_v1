@@ -3,12 +3,13 @@
 // KLASIFIKASI : UI
 // TUJUAN      : Halaman "Tugas Berulang" (F-140/F-144/F-147, v1.2 H7b) — listing
 //               template recurring lintas SEMUA project (nav sebelumnya disabled).
-//               MURNI navigasi/listing baru — CRUD (create/edit/toggle-active) TETAP
-//               lewat route project-scoped yang sudah ada (F-46 utuh, nol endpoint baru).
+//               MURNI navigasi/listing baru — CRUD (create/edit/toggle-active/destroy)
+//               TETAP lewat route project-scoped yang sudah ada (F-46 utuh, nol
+//               endpoint baru selain destroy F-190).
 // DIPANGGIL   : TaskTemplateController::allProjects()
-// MEMANGGIL   : route('task-templates.create'/'edit'/'toggle-active', projectId, ...)
-// DATA MASUK  : templates[] (dengan relasi project), projects[] (untuk pilih target Buat Baru)
-// DATA KELUAR : navigasi create/edit, PATCH toggle-active (endpoint lama)
+// MEMANGGIL   : route('task-templates.create'/'edit'/'toggle-active'/'destroy', projectId, ...)
+// DATA MASUK  : templates[] (dengan relasi project + tasks_count), projects[] (untuk pilih target Buat Baru)
+// DATA KELUAR : navigasi create/edit, PATCH toggle-active, DELETE destroy (endpoint F-190)
 // RISIKO      : "Template Baru" WAJIB project dipilih dulu (F-46 — template selalu
 //               milik 1 project, tidak ada versi lintas-project) — tombol disabled
 //               sampai dropdown terisi, supaya tidak navigasi ke URL project undefined.
@@ -20,12 +21,17 @@
 //               F-171 (permintaan Boss): pagination 15/halaman JUGA sisi browser
 //               (slice array, bukan Laravel paginate()) -- konsisten dengan filter
 //               di atas, data sudah termuat penuh, nol round-trip tambahan.
+//               F-190 (permintaan Boss 2026-09-14): tombol Hapus HANYA aktif kalau
+//               tasks_count===0 (HINT UI saja -- guard sesungguhnya di server,
+//               tasks()->exists()). Template yang sudah pernah generate TETAP
+//               HANYA bisa Nonaktifkan, tombol Hapus disabled dengan tooltip.
 // ==========================================================
 
 import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
 import AppLayout from '@/layouts/app-layout';
+import { confirmAction, showError } from '@/lib/swal';
 import { PRIORITY_QUADRANT_COLOR, PRIORITY_QUADRANT_LABEL, type PriorityQuadrant } from '@/lib/priority-quadrant';
 import { SELECT_ALL_VALUE } from '@/lib/utils';
 import { type BreadcrumbItem } from '@/types';
@@ -47,6 +53,7 @@ interface TemplateRow {
     priority_quadrant: PriorityQuadrant | null;
     is_active: boolean;
     project: ProjectOption;
+    tasks_count: number;
 }
 
 const breadcrumbs: BreadcrumbItem[] = [{ title: 'Tugas Berulang', href: '/task-templates' }];
@@ -64,6 +71,21 @@ export default function AllTaskTemplates({ templates, projects }: { templates: T
 
     const toggleActive = (template: TemplateRow) => {
         router.patch(route('task-templates.toggle-active', [template.project.id, template.id]), {}, { preserveScroll: true });
+    };
+
+    // BUSINESS RULE F-190: tombol pemanggil sudah di-disable kalau tasks_count>0
+    // (lihat render tabel), confirmAction di sini murni jaring pengaman kedua --
+    // server (TaskTemplateController::destroy()) tetap re-check tasks()->exists()
+    // sendiri, INI BUKAN satu-satunya penjaga.
+    const destroyTemplate = async (template: TemplateRow) => {
+        if (!(await confirmAction(`Hapus template "${template.title}"? Aksi ini tidak bisa dibatalkan.`, { danger: true }))) return;
+
+        router.delete(route('task-templates.destroy', [template.project.id, template.id]), {
+            preserveScroll: true,
+            onError: (errors) => {
+                if (errors.template) showError(errors.template);
+            },
+        });
     };
 
     const filteredTemplates = templates.filter((t) => {
@@ -217,6 +239,19 @@ export default function AllTaskTemplates({ templates, projects }: { templates: T
                                             </Button>
                                             <Button variant="outline" size="sm" onClick={() => toggleActive(template)}>
                                                 {template.is_active ? 'Nonaktifkan' : 'Aktifkan'}
+                                            </Button>
+                                            <Button
+                                                variant="destructive"
+                                                size="sm"
+                                                disabled={template.tasks_count > 0}
+                                                title={
+                                                    template.tasks_count > 0
+                                                        ? 'Template sudah pernah melahirkan task, tidak bisa dihapus. Nonaktifkan saja.'
+                                                        : undefined
+                                                }
+                                                onClick={() => destroyTemplate(template)}
+                                            >
+                                                Hapus
                                             </Button>
                                         </div>
                                     </td>

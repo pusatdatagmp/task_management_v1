@@ -149,7 +149,12 @@ class TaskController extends Controller
             'project' => $project->only(['id', 'name', 'description']),
             'tasks' => $tasks,
             'statuses' => $project->taskStatuses,
-            'members' => $project->members()->select('users.id', 'users.name', 'users.nickname')->orderBy('users.name')->get(),
+            // KEPUTUSAN Boss (2026-09-14): Project::members() sengaja withTrashed()
+            // (histori KPI/F-16), tapi list "Anggota Project" + filter Assignee di
+            // halaman ini HANYA untuk akun aktif -- whereNull membatalkan withTrashed
+            // khusus di titik baca ini, TIDAK mengubah relasi members() itu sendiri.
+            'members' => $project->members()->whereNull('users.deleted_at')
+                ->select('users.id', 'users.name', 'users.nickname')->orderBy('users.name')->get(),
             'filters' => [
                 'status' => $filters['status'] ?? [],
                 'assignee' => $filters['assignee'] ?? [],

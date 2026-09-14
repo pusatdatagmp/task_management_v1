@@ -234,6 +234,9 @@ Route::middleware(['auth', 'can:tasktemplate.manage'])->scopeBindings()->group(f
     Route::get('projects/{project}/templates/{taskTemplate}/edit', [TaskTemplateController::class, 'edit'])->name('task-templates.edit');
     Route::put('projects/{project}/templates/{taskTemplate}', [TaskTemplateController::class, 'update'])->name('task-templates.update');
     Route::patch('projects/{project}/templates/{taskTemplate}/toggle-active', [TaskTemplateController::class, 'toggleActive'])->name('task-templates.toggle-active');
+    // F-190 (permintaan Boss 2026-09-14): hard delete, TAPI HANYA untuk template yang
+    // belum pernah melahirkan task (lihat guard di TaskTemplateController::destroy()).
+    Route::delete('projects/{project}/templates/{taskTemplate}', [TaskTemplateController::class, 'destroy'])->name('task-templates.destroy');
 });
 
 // Hari-4 §E4 — approve/reject di status is_review, permission task.approve (F-28).

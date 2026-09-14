@@ -161,6 +161,70 @@ test('edit template TIDAK mengubah instance yang sudah tergenerate (A6/F-46)', f
     expect($template->fresh()->title)->toBe('Judul Baru');
 });
 
+test('template yang belum pernah generate task bisa dihapus (F-190)', function () {
+    $admin = User::factory()->admin()->create();
+    $project = createTemplateTestProject($admin);
+
+    $template = TaskTemplate::create([
+        'organization_id' => $admin->organization_id,
+        'project_id' => $project->id,
+        'title' => 'Template Belum Pernah Jalan',
+        'task_type' => 'daily',
+        'estimated_minutes' => 30,
+        'points' => 5,
+        'priority' => 'normal',
+        'recurrence_config' => [],
+        'default_assignees' => [],
+        'is_active' => true,
+    ]);
+    $template->checklistItems()->create([
+        'organization_id' => $admin->organization_id,
+        'text' => 'Item checklist blueprint',
+        'position' => 0,
+    ]);
+
+    $this->actingAs($admin)->delete(route('task-templates.destroy', [$project->id, $template->id]))->assertRedirect();
+
+    expect(TaskTemplate::find($template->id))->toBeNull();
+});
+
+test('template yang sudah pernah generate task TIDAK bisa dihapus, tetap ada (F-190)', function () {
+    $admin = User::factory()->admin()->create();
+    $project = createTemplateTestProject($admin);
+    $todo = TaskStatus::where('project_id', $project->id)->where('position', 0)->firstOrFail();
+
+    $template = TaskTemplate::create([
+        'organization_id' => $admin->organization_id,
+        'project_id' => $project->id,
+        'title' => 'Template Sudah Jalan',
+        'task_type' => 'daily',
+        'estimated_minutes' => 30,
+        'points' => 5,
+        'priority' => 'normal',
+        'recurrence_config' => [],
+        'default_assignees' => [],
+        'is_active' => true,
+    ]);
+
+    Task::create([
+        'organization_id' => $admin->organization_id,
+        'project_id' => $project->id,
+        'task_template_id' => $template->id,
+        'task_status_id' => $todo->id,
+        'title' => $template->title,
+        'task_type' => 'Tiap hari',
+        'estimated_minutes' => 30,
+        'points' => 5,
+        'due_date' => now()->addDay(),
+        'created_by' => $admin->id,
+    ]);
+
+    $response = $this->actingAs($admin)->delete(route('task-templates.destroy', [$project->id, $template->id]));
+
+    $response->assertSessionHasErrors('template');
+    expect(TaskTemplate::find($template->id))->not->toBeNull();
+});
+
 test('toggle-active membalik is_active tanpa menyentuh instance (A5)', function () {
     $admin = User::factory()->admin()->create();
     $project = createTemplateTestProject($admin);

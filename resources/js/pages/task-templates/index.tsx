@@ -3,21 +3,26 @@
 // KLASIFIKASI : UI
 // TUJUAN      : Daftar template recurring per project (F-46). is_active di-toggle
 //               LANGSUNG dari sini (A5) — mati/hidup TIDAK menyentuh instance
-//               tasks yang sudah lahir sebelumnya.
+//               tasks yang sudah lahir sebelumnya. F-190: Hapus juga langsung
+//               dari sini, HANYA untuk template yang belum pernah generate task.
 // DIPANGGIL   : TaskTemplateController::index()
-// MEMANGGIL   : route('task-templates.create'/'edit'/'toggle-active')
-// DATA MASUK  : project {id,name}, templates[] (urut judul)
-// DATA KELUAR : navigasi create/edit, PATCH toggle-active
+// MEMANGGIL   : route('task-templates.create'/'edit'/'toggle-active'/'destroy')
+// DATA MASUK  : project {id,name}, templates[] (urut judul, + tasks_count)
+// DATA KELUAR : navigasi create/edit, PATCH toggle-active, DELETE destroy
 // RISIKO      : Revisi 2026-08-07 (permintaan Boss): kolom "Jadwal" dulu baca
 //               task_type+recurrence_config lokal (statis, sering basi kalau
 //               Boss pakai interval custom AE-2b) -- sekarang langsung pakai
 //               `schedule_label` dari server (TaskTemplate::scheduleLabel()),
 //               SATU sumber sama dengan yang dipakai GenerateTaskAction.
+//               F-190 (permintaan Boss 2026-09-14): tombol Hapus HANYA aktif
+//               kalau tasks_count===0 (HINT UI saja -- guard sesungguhnya di
+//               server, tasks()->exists()).
 // ==========================================================
 
 import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
 import AppLayout from '@/layouts/app-layout';
+import { confirmAction, showError } from '@/lib/swal';
 import { PRIORITY_QUADRANT_COLOR, PRIORITY_QUADRANT_LABEL, type PriorityQuadrant } from '@/lib/priority-quadrant';
 import { type BreadcrumbItem } from '@/types';
 import { Head, Link, router } from '@inertiajs/react';
@@ -31,6 +36,7 @@ interface TemplateRow {
     // F-175: enum lama dipertahankan di DB (legacy), UI pakai priority_quadrant.
     priority_quadrant: PriorityQuadrant | null;
     is_active: boolean;
+    tasks_count: number;
 }
 
 export default function TaskTemplatesIndex({ project, templates }: { project: { id: number; name: string }; templates: TemplateRow[] }) {
@@ -42,6 +48,21 @@ export default function TaskTemplatesIndex({ project, templates }: { project: { 
 
     const toggleActive = (template: TemplateRow) => {
         router.patch(route('task-templates.toggle-active', [project.id, template.id]), {}, { preserveScroll: true });
+    };
+
+    // BUSINESS RULE F-190: tombol pemanggil sudah di-disable kalau tasks_count>0
+    // (lihat render tabel), confirmAction di sini murni jaring pengaman kedua --
+    // server (TaskTemplateController::destroy()) tetap re-check tasks()->exists()
+    // sendiri, INI BUKAN satu-satunya penjaga.
+    const destroyTemplate = async (template: TemplateRow) => {
+        if (!(await confirmAction(`Hapus template "${template.title}"? Aksi ini tidak bisa dibatalkan.`, { danger: true }))) return;
+
+        router.delete(route('task-templates.destroy', [project.id, template.id]), {
+            preserveScroll: true,
+            onError: (errors) => {
+                if (errors.template) showError(errors.template);
+            },
+        });
     };
 
     return (
@@ -101,6 +122,19 @@ export default function TaskTemplatesIndex({ project, templates }: { project: { 
                                             </Button>
                                             <Button variant="outline" size="sm" onClick={() => toggleActive(template)}>
                                                 {template.is_active ? 'Nonaktifkan' : 'Aktifkan'}
+                                            </Button>
+                                            <Button
+                                                variant="destructive"
+                                                size="sm"
+                                                disabled={template.tasks_count > 0}
+                                                title={
+                                                    template.tasks_count > 0
+                                                        ? 'Template sudah pernah melahirkan task, tidak bisa dihapus. Nonaktifkan saja.'
+                                                        : undefined
+                                                }
+                                                onClick={() => destroyTemplate(template)}
+                                            >
+                                                Hapus
                                             </Button>
                                         </div>
                                     </td>

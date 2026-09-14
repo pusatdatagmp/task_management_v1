@@ -18,9 +18,11 @@
  * RISIKO      : SUMBER : A6 — update() TIDAK PERNAH menyentuh tasks yang sudah
  *               tergenerate dari template ini (instance independen setelah lahir,
  *               F-46). JANGAN tambahkan cascading update ke $taskTemplate->tasks()
- *               di sini. Tidak ada destroy() di controller ini SENGAJA — deaktivasi
- *               lewat toggleActive() (pola sama UserController, F-16-style: jangan
- *               hilangkan blueprint yang sudah pernah melahirkan instance nyata).
+ *               di sini. F-190 (revisi 2026-09-14): destroy() ADA, tapi cuma
+ *               untuk template yang belum pernah melahirkan task (tasks()->exists()
+ *               guard) — yang sudah pernah generate TETAP WAJIB toggleActive()
+ *               (F-16-style: jangan hilangkan blueprint yang sudah melahirkan
+ *               instance nyata). JANGAN longgarkan guard ini tanpa persetujuan Boss.
  *               AE-2b: field automation (anchor_strategy dkk) MURNI CRUD ke
  *               kolom yang sudah ada — normalizeAutomationConfig() TIDAK
  *               mengevaluasi jadwal apa pun, itu tugas Pipeline (AE-2/3).
@@ -34,6 +36,7 @@ use App\Http\Requests\TaskTemplate\UpdateTaskTemplateRequest;
 use App\Models\Project;
 use App\Models\TaskTemplate;
 use Illuminate\Http\RedirectResponse;
+use Illuminate\Validation\ValidationException;
 use Inertia\Inertia;
 use Inertia\Response;
 
@@ -57,7 +60,10 @@ class TaskTemplateController extends Controller
             'project' => $project->only(['id', 'name']),
             // F-172 (permintaan Boss): default 'paling atas = data terbaru' --
             // sebelumnya alfabetis judul.
-            'templates' => $project->taskTemplates()->latest()->get(),
+            // F-190: tasks_count dipakai frontend buat nonaktifkan tombol Hapus
+            // (guard destroy() di controller -- ini murni HINT UI, server tetap
+            // re-check tasks()->exists() sendiri saat submit).
+            'templates' => $project->taskTemplates()->withCount('tasks')->latest()->get(),
         ]);
     }
 
@@ -73,7 +79,8 @@ class TaskTemplateController extends Controller
         return Inertia::render('task-templates/all', [
             // F-172 (permintaan Boss): default 'paling atas = data terbaru' --
             // sebelumnya dikelompokkan per project lalu alfabetis judul.
-            'templates' => TaskTemplate::with('project:id,name')->latest()->get(),
+            // F-190: tasks_count -- lihat catatan sama di index() di atas.
+            'templates' => TaskTemplate::with('project:id,name')->withCount('tasks')->latest()->get(),
             'projects' => Project::orderBy('name')->get(['id', 'name']),
         ]);
     }
@@ -177,6 +184,35 @@ class TaskTemplateController extends Controller
     public function toggleActive(Project $project, TaskTemplate $taskTemplate): RedirectResponse
     {
         $taskTemplate->update(['is_active' => ! $taskTemplate->is_active]);
+
+        return back();
+    }
+
+    /**
+     * BUSINESS RULE F-190 (permintaan Boss 2026-09-14): hard delete HANYA untuk
+     * template yang BELUM PERNAH melahirkan task nyata. Template yang sudah
+     * pernah generate WAJIB pakai toggleActive() di atas (pola F-16-style, lihat
+     * RISIKO header modul) — tasks.task_template_id adalah FK TANPA cascade/
+     * null-on-delete, jadi percobaan hapus paksa akan gagal di level DB juga;
+     * guard ini cuma kasih pesan yang jelas sebelum sampai situ.
+     */
+    public function destroy(Project $project, TaskTemplate $taskTemplate): RedirectResponse
+    {
+        // SUMBER: pola sama ProjectController::update() (guard hapus member
+        // dengan task berjalan) -- ValidationException::withMessages() supaya
+        // errors.template muncul via Inertia shared 'errors' prop, konsisten
+        // dengan cara task-statuses/index.tsx menampilkan guard error.
+        if ($taskTemplate->tasks()->exists()) {
+            throw ValidationException::withMessages([
+                'template' => "Template \"{$taskTemplate->title}\" sudah pernah melahirkan task, tidak bisa dihapus. Nonaktifkan saja.",
+            ]);
+        }
+
+        // SUMBER: task_template_checklist_items.task_template_id juga FK tanpa
+        // cascade (lihat migration-nya) — WAJIB dihapus dulu sebelum template,
+        // urutan sama seperti syncChecklistItems() di atas.
+        $taskTemplate->checklistItems()->delete();
+        $taskTemplate->delete();
 
         return back();
     }
