@@ -52,8 +52,11 @@ class Comment extends Model
         return $this->belongsTo(Task::class);
     }
 
+    // KONTRAK (2026-09-11): withTrashed() -- fitur Hapus Akun (soft delete
+    // User), sama alasan Task::assignees(). Komentar lama tetap tampil
+    // penulisnya walau akunnya sudah dihapus.
     public function user(): BelongsTo
     {
-        return $this->belongsTo(User::class);
+        return $this->belongsTo(User::class)->withTrashed();
     }
 }

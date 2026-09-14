@@ -46,8 +46,12 @@ class PushToken extends Model
         ];
     }
 
+    // KONTRAK (2026-09-11): withTrashed() -- fitur Hapus Akun. Konsisten dengan
+    // relasi User lain (Task::assignees() dst); token push tidak berhenti
+    // ditampilkan begitu user-nya dihapus (job pengirim notif yang menyaring
+    // penerima aktif, bukan relasi ini).
     public function user(): BelongsTo
     {
-        return $this->belongsTo(User::class);
+        return $this->belongsTo(User::class)->withTrashed();
     }
 }

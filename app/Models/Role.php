@@ -60,9 +60,14 @@ class Role extends Model
         return $this->hasMany(User::class);
     }
 
+    // KONTRAK (2026-09-11): withTrashed() -- fitur Hapus Akun, sama alasan
+    // Task::assignees(). CATATAN: users() (HasMany di atas, dipakai
+    // users_count RoleController/UserController) SENGAJA TIDAK ikut
+    // withTrashed() -- itu representasi headcount AKTIF per role, bukan
+    // riwayat, jadi harus tetap mengecualikan akun yang sudah dihapus.
     public function createdBy(): BelongsTo
     {
-        return $this->belongsTo(User::class, 'created_by');
+        return $this->belongsTo(User::class, 'created_by')->withTrashed();
     }
 
     /**

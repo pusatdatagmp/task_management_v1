@@ -137,9 +137,21 @@ Route::middleware(['auth', 'can:settings.manage'])->group(function () {
 Route::middleware(['auth', 'can:user.manage'])->group(function () {
     Route::get('pengaturan/users/create', [UserController::class, 'create'])->name('users.create');
     Route::post('pengaturan/users', [UserController::class, 'store'])->name('users.store');
+    // KONTRAK (2026-09-11): 'pengaturan/users/trash' (listing, GET) diletakkan
+    // SEBELUM 'pengaturan/users/{user}/edit' -- pola sama projects.archived
+    // (baris 179 atas) -- static path harus menang lebih dulu dari wildcard
+    // supaya kata "trash" tidak pernah ditangkap sbg {user}.
+    Route::get('pengaturan/users/trash', [UserController::class, 'trashed'])->name('users.trash');
     Route::get('pengaturan/users/{user}/edit', [UserController::class, 'edit'])->name('users.edit');
     Route::put('pengaturan/users/{user}', [UserController::class, 'update'])->name('users.update');
     Route::patch('pengaturan/users/{user}/toggle-active', [UserController::class, 'toggleActive'])->name('users.toggle-active');
+    // BUSINESS RULE (2026-09-11, keputusan Boss): fitur Hapus Akun (soft delete,
+    // F-16 tetap ditegakkan -- lihat UserController::destroy() RISIKO). restore()
+    // WAJIB ->withTrashed() supaya route model binding {user} bisa menemukan
+    // baris yang deleted_at-nya sudah terisi (default binding Laravel mengecualikan
+    // baris soft-deleted).
+    Route::delete('pengaturan/users/{user}', [UserController::class, 'destroy'])->name('users.destroy');
+    Route::patch('pengaturan/users/{user}/restore', [UserController::class, 'restore'])->name('users.restore')->withTrashed();
 });
 
 // F-170 (revisi Boss atas §E1): CRUD role permission SENDIRI role.manage —

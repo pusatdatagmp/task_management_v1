@@ -58,14 +58,17 @@ class DeadlineExtension extends Model
         return $this->belongsTo(Task::class);
     }
 
+    // KONTRAK (2026-09-11): withTrashed() -- fitur Hapus Akun, sama alasan
+    // Task::assignees(). Riwayat pengajuan/review perpanjangan deadline tetap
+    // tampil nama pengajunya walau akunnya sudah dihapus.
     public function requestedBy(): BelongsTo
     {
-        return $this->belongsTo(User::class, 'requested_by');
+        return $this->belongsTo(User::class, 'requested_by')->withTrashed();
     }
 
     public function reviewedBy(): BelongsTo
     {
-        return $this->belongsTo(User::class, 'reviewed_by');
+        return $this->belongsTo(User::class, 'reviewed_by')->withTrashed();
     }
 
     public function attachments(): HasMany

@@ -158,7 +158,12 @@ class Task extends Model
     {
         // BUSINESS RULE: pivot pakai model TaskUser (bukan default) supaya event
         // attach/detach memicu TaskUserObserver -> log assigned/unassigned (F-22, F-35 #1/#2).
-        return $this->belongsToMany(User::class)->using(TaskUser::class);
+        // KONTRAK (2026-09-11, keputusan Boss): withTrashed() -- fitur Hapus Akun
+        // (UserController::destroy(), soft delete via deleted_at) baru ditambahkan.
+        // TANPA ini, begitu assignee dihapus, namanya lenyap dari task yang sudah
+        // dia kerjakan -- padahal F-16 justru dirancang supaya riwayat KPI (siapa
+        // assignee/approver) tetap utuh walau akunnya sudah tidak aktif.
+        return $this->belongsToMany(User::class)->using(TaskUser::class)->withTrashed();
     }
 
     /**
@@ -177,9 +182,11 @@ class Task extends Model
         return $this->belongsToMany(Tag::class, 'task_tag');
     }
 
+    // KONTRAK (2026-09-11): withTrashed() -- sama alasan assignees() di atas
+    // (fitur Hapus Akun, riwayat KPI/pembuat task tidak boleh lenyap).
     public function createdBy(): BelongsTo
     {
-        return $this->belongsTo(User::class, 'created_by');
+        return $this->belongsTo(User::class, 'created_by')->withTrashed();
     }
 
     /**
@@ -188,12 +195,12 @@ class Task extends Model
      */
     public function proposalReviewedBy(): BelongsTo
     {
-        return $this->belongsTo(User::class, 'proposal_reviewed_by');
+        return $this->belongsTo(User::class, 'proposal_reviewed_by')->withTrashed();
     }
 
     public function approvedBy(): BelongsTo
     {
-        return $this->belongsTo(User::class, 'approved_by');
+        return $this->belongsTo(User::class, 'approved_by')->withTrashed();
     }
 
     public function timeSegments(): HasMany

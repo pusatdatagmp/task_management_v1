@@ -14,14 +14,18 @@
 //               -- role yang cuma punya SALAH SATU permission tetap bisa buka
 //               halaman ini, tapi cuma lihat 1 kolom.
 // DIPANGGIL   : UserController::index()
-// MEMANGGIL   : route('users.create'/'users.edit'/'users.toggle-active'/
-//               'roles.create'/'roles.edit'/'roles.destroy'/'roles.set-default')
+// MEMANGGIL   : route('users.create'/'users.edit'/'users.toggle-active'/'users.destroy'/
+//               'users.trash'/'roles.create'/'roles.edit'/'roles.destroy'/'roles.set-default')
 // DATA MASUK  : users[]|null (null = tidak punya user.manage), roles[]|null
 //               (null = tidak punya role.manage)
-// DATA KELUAR : navigasi create/edit, PATCH toggle-active/set-default, DELETE role
-// RISIKO      : Tombol nonaktifkan/hapus-role HANYA gating tampilan (disabled utk
-//               baris diri sendiri / role sistem / role masih dipakai) — penegakan
-//               asli tetap di UserController::toggleActive()/RoleController::destroy().
+// DATA KELUAR : navigasi create/edit, PATCH toggle-active/set-default, DELETE user/role
+// RISIKO      : Tombol nonaktifkan/hapus HANYA gating tampilan (disabled utk baris
+//               diri sendiri / role sistem / role masih dipakai) — penegakan asli
+//               tetap di UserController::toggleActive()/destroy()/RoleController::destroy().
+//               destroy() (2026-09-11, fitur Hapus Akun) BEDA dari toggleActive() --
+//               soft delete (F-16), user pindah ke halaman Sampah (users.trash),
+//               ditolak backend kalau masih punya task is_work_state aktif (pesan
+//               error tampil lewat Inertia form errors, lihat catch di destroyUser()).
 // ==========================================================
 
 import { Badge } from '@/components/ui/badge';
@@ -29,7 +33,7 @@ import { Button } from '@/components/ui/button';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import { Switch } from '@/components/ui/switch';
 import AppLayout from '@/layouts/app-layout';
-import { confirmAction } from '@/lib/swal';
+import { confirmAction, showError } from '@/lib/swal';
 import { type BreadcrumbItem, type SharedData } from '@/types';
 import { Head, Link, router, usePage } from '@inertiajs/react';
 import { Info } from 'lucide-react';
@@ -68,6 +72,24 @@ export default function UsersIndex({ users, roles, generatedPassword, generatedP
         const action = user.is_active ? 'Nonaktifkan' : 'Aktifkan';
         if (!(await confirmAction(`${action} user "${user.name}"?`, { danger: user.is_active }))) return;
         router.patch(route('users.toggle-active', user.id), {}, { preserveScroll: true });
+    };
+
+    // KONTRAK (2026-09-11, fitur Hapus Akun): beda dari toggleActive() -- soft
+    // delete (F-16), user pindah ke halaman Sampah (users.trash). Tombol ini
+    // TIDAK di-disable pre-emptif (tidak ada info "task aktif" di UserRow) --
+    // penolakan (guard task is_work_state, UserController::destroy()) datang
+    // dari backend sebagai ValidationException, ditangkap onError di bawah dan
+    // ditampilkan lewat showError() (pola swal.ts, bukan alert() native).
+    const destroyUser = async (user: UserRow) => {
+        if (!(await confirmAction(`Hapus user "${user.name}"? User akan dipindah ke Sampah dan tidak muncul lagi di daftar aktif.`, { danger: true })))
+            return;
+
+        router.delete(route('users.destroy', user.id), {
+            preserveScroll: true,
+            onError: (errors) => {
+                if (errors.user) showError(errors.user);
+            },
+        });
     };
 
     const setDefaultRole = (role: RoleRow) => {
@@ -111,6 +133,11 @@ export default function UsersIndex({ users, roles, generatedPassword, generatedP
                         {roles !== null && (
                             <Button variant="outline" asChild>
                                 <Link href={route('roles.create')}>Peran Baru</Link>
+                            </Button>
+                        )}
+                        {users !== null && (
+                            <Button variant="outline" asChild>
+                                <Link href={route('users.trash')}>Sampah</Link>
                             </Button>
                         )}
                         {users !== null && (
@@ -171,6 +198,16 @@ export default function UsersIndex({ users, roles, generatedPassword, generatedP
                                                             title={user.id === auth.user.id ? 'Tidak bisa menonaktifkan akun sendiri' : undefined}
                                                             aria-label={user.is_active ? 'Nonaktifkan user' : 'Aktifkan user'}
                                                         />
+                                                        <Button
+                                                            type="button"
+                                                            variant="outline"
+                                                            size="sm"
+                                                            disabled={user.id === auth.user.id}
+                                                            title={user.id === auth.user.id ? 'Tidak bisa menghapus akun sendiri' : undefined}
+                                                            onClick={() => destroyUser(user)}
+                                                        >
+                                                            Hapus
+                                                        </Button>
                                                     </div>
                                                 </td>
                                             </tr>

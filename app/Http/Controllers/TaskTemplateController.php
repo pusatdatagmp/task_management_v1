@@ -100,6 +100,10 @@ class TaskTemplateController extends Controller
             'task_type' => 'daily',
             'recurrence_config' => [],
             ...$this->normalizeAutomationConfig($request->validated()),
+            // F-181 (audit Boss 2026-09-12): override due_offset_days hasil spread
+            // di atas -- 0 dinormalisasi ke NULL di sini (bukan di validasi/form),
+            // lihat normalizeDueOffsetDays() untuk alasan lengkap.
+            'due_offset_days' => $this->normalizeDueOffsetDays($request->validated('due_offset_days')),
         ]);
 
         $this->syncChecklistItems($template, $request->validated('checklist_items') ?? []);
@@ -126,6 +130,8 @@ class TaskTemplateController extends Controller
         $taskTemplate->update([
             ...$request->safe()->except([...self::AUTOMATION_FIELDS, 'checklist_items']),
             ...$this->normalizeAutomationConfig($request->validated()),
+            // F-181 (audit Boss 2026-09-12): lihat store(), alasan sama.
+            'due_offset_days' => $this->normalizeDueOffsetDays($request->validated('due_offset_days')),
         ]);
 
         // SUMBER: 'checklist_items' bersifat 'sometimes' (opsional) di request —
@@ -205,6 +211,21 @@ class TaskTemplateController extends Controller
             'date_window_config' => $this->normalizeDateWindowConfig($validated['date_window_config'] ?? []),
             'max_active_instances' => $validated['max_active_instances'] ?? null,
         ];
+    }
+
+    /**
+     * BUSINESS RULE F-181 (audit Boss 2026-09-12): 0 dan NULL berarti PERSIS
+     * sama -- "jatuh tempo hari yang sama" (lihat GenerateTaskAction::execute(),
+     * addBusinessDays($date, 0, ...) balikin tanggal yang sama persis dengan
+     * jalur due_offset_days=null). Form dulu menolak 0 lewat validasi min:1 DAN
+     * atribut HTML min={1} -- akibatnya submit diblokir browser SEBELUM request
+     * sampai ke server, tanpa pesan error apa pun ("kok tidak bisa tersimpan").
+     * Validasi sekarang terima 0, tapi DI SINI dinormalisasi ke NULL supaya DB
+     * tidak punya dua representasi berbeda untuk satu makna yang sama.
+     */
+    private function normalizeDueOffsetDays(?int $value): ?int
+    {
+        return $value ?: null;
     }
 
     /**

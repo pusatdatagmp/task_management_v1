@@ -48,9 +48,12 @@ class ActivityLog extends Model
         ];
     }
 
+    // KONTRAK (2026-09-11): withTrashed() -- fitur Hapus Akun. activity_logs
+    // IMMUTABLE (F-23), sumber utama 4/6 metrik KPI (F-51) -- PALING TIDAK
+    // BOLEH kehilangan atribusi pelaku begitu akunnya dihapus.
     public function user(): BelongsTo
     {
-        return $this->belongsTo(User::class);
+        return $this->belongsTo(User::class)->withTrashed();
     }
 
     public function subject(): MorphTo

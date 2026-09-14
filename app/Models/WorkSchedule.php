@@ -64,9 +64,12 @@ class WorkSchedule extends Model
         ];
     }
 
+    // KONTRAK (2026-09-11): withTrashed() -- fitur Hapus Akun, sama alasan
+    // Task::assignees(). Versi jadwal kerja lama (F-40) tetap tampil siapa
+    // pembuatnya walau akunnya sudah dihapus.
     public function creator(): BelongsTo
     {
-        return $this->belongsTo(User::class, 'created_by');
+        return $this->belongsTo(User::class, 'created_by')->withTrashed();
     }
 
     /**

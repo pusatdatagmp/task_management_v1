@@ -134,8 +134,10 @@ class Attachment extends Model
         return $this->belongsTo(DeadlineExtension::class);
     }
 
+    // KONTRAK (2026-09-11): withTrashed() -- fitur Hapus Akun, sama alasan
+    // Task::assignees(). Lampiran lama tetap tampil siapa pengunggahnya.
     public function uploadedBy(): BelongsTo
     {
-        return $this->belongsTo(User::class, 'uploaded_by');
+        return $this->belongsTo(User::class, 'uploaded_by')->withTrashed();
     }
 }

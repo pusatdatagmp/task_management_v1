@@ -50,8 +50,11 @@ class TaskTimeSegment extends Model
         return $this->belongsTo(Task::class);
     }
 
+    // KONTRAK (2026-09-11): withTrashed() -- fitur Hapus Akun. Segmen waktu
+    // JANTUNG realisasi (F-41/F-39 freeze) TIDAK BOLEH kehilangan pemiliknya
+    // di tampilan walau user-nya sudah dihapus.
     public function user(): BelongsTo
     {
-        return $this->belongsTo(User::class);
+        return $this->belongsTo(User::class)->withTrashed();
     }
 }

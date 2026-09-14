@@ -63,7 +63,10 @@ class Project extends Model
      */
     public function owner(): BelongsTo
     {
-        return $this->belongsTo(User::class, 'owner_id');
+        // KONTRAK (2026-09-11): withTrashed() -- fitur Hapus Akun, sama alasan
+        // Task::assignees(). Project lama tetap tampil siapa owner-nya walau
+        // akunnya sudah dihapus.
+        return $this->belongsTo(User::class, 'owner_id')->withTrashed();
     }
 
     /**
@@ -74,10 +77,16 @@ class Project extends Model
      */
     public function owners(): BelongsToMany
     {
+        // KONTRAK (2026-09-11): withTrashed() -- fitur Hapus Akun, sama alasan
+        // Task::assignees(). Owner project lama tetap tampil walau dihapus;
+        // pola SAMA dengan member is_active=false (lihat ProjectController::edit()
+        // RISIKO) -- akun terhapus tetap tercatat sebagai owner sampai admin
+        // eksplisit sync() ulang lewat form edit.
         return $this->belongsToMany(User::class, 'project_owners')
             ->using(ProjectOwner::class)
             ->withPivot('position')
-            ->orderBy('project_owners.position');
+            ->orderBy('project_owners.position')
+            ->withTrashed();
     }
 
     public function members(): BelongsToMany
@@ -85,7 +94,9 @@ class Project extends Model
         // BUSINESS RULE: F-71 — pivot pakai model ProjectUser (bukan default) supaya
         // event attach/detach/sync memicu ProjectUserObserver -> log assigned/unassigned.
         // Sebelum ini, sync member TIDAK tercatat (lubang audit trail F-51).
-        return $this->belongsToMany(User::class)->using(ProjectUser::class);
+        // KONTRAK (2026-09-11): withTrashed() -- fitur Hapus Akun, sama alasan owners()
+        // di atas.
+        return $this->belongsToMany(User::class)->using(ProjectUser::class)->withTrashed();
     }
 
     public function taskStatuses(): HasMany

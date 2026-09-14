@@ -406,15 +406,18 @@ export default function TaskTemplateCreate({ project, members }: TaskTemplateCre
                                 <Input
                                     id="due_offset_days"
                                     type="number"
-                                    min={1}
+                                    // F-181 (audit Boss 2026-09-12): dulu min={1} -- browser MENOLAK
+                                    // submit form kalau isi 0 (constraint validation native, request
+                                    // tidak pernah sampai ke server, jadi "diam" tidak tersimpan tanpa
+                                    // pesan error apa pun). 0 sengaja diizinkan di sini karena SAMA
+                                    // MAKNA dengan kosong -- server yang menormalisasi jadi NULL saat
+                                    // simpan (lihat TaskTemplateController::normalizeDueOffsetDays()).
+                                    min={0}
                                     max={365}
-                                    placeholder="Kosong = jatuh tempo hari yang sama (perilaku lama)"
+                                    placeholder="Kosong atau 0 = jatuh tempo hari yang sama (perilaku lama)"
                                     value={data.due_offset_days}
                                     onChange={(e) => setData('due_offset_days', e.target.value === '' ? '' : Number(e.target.value))}
                                 />
-                                <p className="text-xs text-muted-foreground">
-                                    Optional
-                                </p>
                                 <InputError message={errors.due_offset_days} />
                             </div>
 

@@ -57,13 +57,16 @@ class Meeting extends Model
         return $this->belongsTo(Project::class);
     }
 
+    // KONTRAK (2026-09-11): withTrashed() -- fitur Hapus Akun, sama alasan
+    // Task::assignees(). Riwayat meeting lama tetap tampil pembuat/peserta
+    // walau akunnya sudah dihapus.
     public function creator(): BelongsTo
     {
-        return $this->belongsTo(User::class, 'created_by');
+        return $this->belongsTo(User::class, 'created_by')->withTrashed();
     }
 
     public function participants(): BelongsToMany
     {
-        return $this->belongsToMany(User::class, 'meeting_user');
+        return $this->belongsToMany(User::class, 'meeting_user')->withTrashed();
     }
 }

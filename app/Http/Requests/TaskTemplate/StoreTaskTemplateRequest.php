@@ -61,7 +61,13 @@ class StoreTaskTemplateRequest extends FormRequest
             // Revisi 2026-08-06 item 7: nullable = perilaku LAMA (due_date = hari
             // lahir, sama hari) — nol sampai admin sengaja isi. GenerateTaskAction
             // yang menerjemahkan jadi hari KERJA maju (BusinessHoursCalculator).
-            'due_offset_days' => ['nullable', 'integer', 'min:1', 'max:365'],
+            // F-181 (audit Boss 2026-09-12): min DILONGGARKAN dari 1 ke 0 -- dulu
+            // 0 ditolak validasi PADAHAL secara hasil due_date SAMA PERSIS dengan
+            // NULL (addBusinessDays($date, 0, ...) balikin tanggal yang sama).
+            // Controller (normalizeDueOffsetDays()) yang menormalisasi 0 -> NULL
+            // sebelum simpan, supaya cuma ada SATU representasi di DB untuk makna
+            // "jatuh tempo hari yang sama".
+            'due_offset_days' => ['nullable', 'integer', 'min:0', 'max:365'],
 
             // F-86: default_assignees WAJIB project member SAAT SIMPAN. 'present'
             // (bukan 'nullable') -- kolom DB tidak nullable (array kosong tetap

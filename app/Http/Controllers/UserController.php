@@ -8,21 +8,27 @@
  *               jalur menambah akun tim — self-signup DIMATIKAN
  *               (03-BUSINESS-FLOW §7). Gerbang permission `user.manage`
  *               (routes/admin.php), bukan lagi middleware 'admin' blanket.
- * DIPANGGIL   : routes/admin.php (index/create/store/edit/update/toggleActive)
- * MEMANGGIL   : User, Role, UserService (onboarding — RBAC §C)
+ * DIPANGGIL   : routes/admin.php (index/create/store/edit/update/toggleActive/
+ *               destroy/restore/trashed)
+ * MEMANGGIL   : User, Role, Task, UserService (onboarding — RBAC §C)
  * DATA MASUK  : Form buat/edit user, form onboarding 3-mode (Fase E2)
  * DATA KELUAR : Inertia pages 'users/*', flash session `generatedPassword` (SEKALI)
  * RISIKO      : index() mengirim `users` (gate user.manage) DAN `roles` (gate
  *               role.manage, F-170 — dulu SAMA can:user.manage) supaya halaman ini
  *               bisa menampilkan Pengguna & Peran 2-kolom sekaligus — tiap kolom
  *               null kalau permission-nya tidak dipegang (lihat index()).
- *               SUMBER : F-16 — TIDAK ADA destroy(). Nonaktifkan HANYA lewat
- *               toggleActive() (is_active=false), riwayat task/KPI milik user tetap
- *               utuh. Hard delete user akan menghapus jejak assignee/approver di
- *               riwayat KPI — dilarang keras.
- *               F-92 — password TIDAK PERNAH diketik admin lagi (store()); dibuat
- *               acak oleh UserService, ditampilkan SEKALI via flash session, tidak
- *               disimpan plaintext di mana pun setelah response ini.
+ *               SUMBER : F-16 — hard delete DILARANG (jejak assignee/approver di
+ *               riwayat KPI tidak boleh hilang). destroy() (2026-09-11, keputusan
+ *               Boss: "fitur hapus akun, bukan hanya nonaktif") memakai kolom
+ *               deleted_at + trait SoftDeletes yang SUDAH terpasang di User sejak
+ *               Hari-1 tapi belum pernah dipakai — jadi TETAP patuh F-16 (baris DB
+ *               tidak hilang). toggleActive() (is_active) DIPERTAHANKAN berdampingan
+ *               sebagai suspend cepat/reversibel; destroy() adalah tindakan lebih
+ *               kuat (hilang dari SEMUA listing, perlu restore() eksplisit dari
+ *               halaman Sampah). Supaya soft-delete ini tidak diam-diam menghapus
+ *               atribusi KPI dari TAMPILAN, seluruh relasi belongsTo/belongsToMany
+ *               ke User di model lain (Task, Comment, ActivityLog, dst) sudah
+ *               ditambah withTrashed() — lihat komentar masing-masing model.
  * ==========================================================
  */
 
@@ -32,11 +38,13 @@ use App\Http\Requests\User\OnboardUserRequest;
 use App\Http\Requests\User\UpdateUserRequest;
 use App\Models\Permission;
 use App\Models\Role;
+use App\Models\Task;
 use App\Models\User;
 use App\Services\UserService;
 use Illuminate\Http\RedirectResponse;
 use Illuminate\Support\Facades\Auth;
 use Illuminate\Support\Facades\Hash;
+use Illuminate\Validation\ValidationException;
 use Inertia\Inertia;
 use Inertia\Response;
 
@@ -170,5 +178,74 @@ class UserController extends Controller
         $user->update(['is_active' => ! $user->is_active]);
 
         return back();
+    }
+
+    /**
+     * BUSINESS RULE (2026-09-11, keputusan Boss): "fitur hapus akun, bukan hanya
+     * nonaktif" — soft delete ($user->delete() mengisi deleted_at, BUKAN hard
+     * delete, F-16 tetap ditegakkan). User hilang dari SEMUA listing/dropdown
+     * aktif (beda dari toggleActive() yang cuma memblokir login tapi user tetap
+     * terlihat di daftar) sampai dipulihkan lewat restore().
+     *
+     * GUARD: sama pola ProjectController::guardAgainstRemovingMembersWithActiveTasks
+     * (F-87) — tolak kalau user masih punya task is_work_state aktif (segmen
+     * waktu terbuka, F-38/F-41). Kalau lolos, segmen tidak pernah ditutup dan
+     * actual_minutes tak pernah beku (F-39).
+     */
+    public function destroy(User $user): RedirectResponse
+    {
+        abort_if($user->id === Auth::id(), 403, 'Tidak bisa menghapus akun sendiri.');
+
+        $this->guardAgainstDeletingUserWithActiveTasks($user);
+
+        $user->delete();
+
+        return to_route('users.index');
+    }
+
+    /**
+     * KONTRAK: kebalikan destroy() — user kembali muncul di seluruh listing
+     * aktif. Route dipasang ->withTrashed() (routes/admin.php) supaya route
+     * model binding {user} bisa menemukan baris yang deleted_at-nya terisi.
+     */
+    public function restore(User $user): RedirectResponse
+    {
+        $user->restore();
+
+        return to_route('users.trash');
+    }
+
+    /**
+     * KONTRAK: halaman "Sampah User" (permintaan Boss 2026-09-11) — pola SAMA
+     * ProjectController::archived(), daftar user deleted_at IS NOT NULL saja.
+     */
+    public function trashed(): Response
+    {
+        return Inertia::render('users/trash', [
+            'users' => User::onlyTrashed()
+                ->with('role:id,role_name')
+                ->orderByDesc('deleted_at')
+                ->get(['id', 'name', 'email', 'role_id', 'deleted_at']),
+        ]);
+    }
+
+    /**
+     * SUMBER data: task_status_id + task_user pivot — pola IDENTIK
+     * ProjectController::guardAgainstRemovingMembersWithActiveTasks (F-87), cuma
+     * lintas SEMUA project (bukan satu project) karena hapus akun bersifat global.
+     */
+    private function guardAgainstDeletingUserWithActiveTasks(User $user): void
+    {
+        $hasActiveWork = Task::whereHas('assignees', fn ($query) => $query->where('users.id', $user->id))
+            ->whereHas('taskStatus', fn ($query) => $query->where('is_work_state', true))
+            ->exists();
+
+        if (! $hasActiveWork) {
+            return;
+        }
+
+        throw ValidationException::withMessages([
+            'user' => "User \"{$user->name}\" masih punya task sedang dikerjakan (timer jalan). Selesaikan atau pindahkan assignee dulu sebelum menghapus.",
+        ]);
     }
 }

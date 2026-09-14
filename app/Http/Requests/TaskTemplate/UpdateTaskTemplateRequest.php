@@ -50,7 +50,9 @@ class UpdateTaskTemplateRequest extends FormRequest
             'points' => ['required', 'integer', 'min:0'],
             'is_active' => ['nullable', 'boolean'],
             // Revisi 2026-08-06 item 7 — lihat StoreTaskTemplateRequest.
-            'due_offset_days' => ['nullable', 'integer', 'min:1', 'max:365'],
+            // F-181 (audit Boss 2026-09-12): min:0 (bukan 1) — lihat penjelasan
+            // lengkap di StoreTaskTemplateRequest.
+            'due_offset_days' => ['nullable', 'integer', 'min:0', 'max:365'],
 
             'default_assignees' => ['present', 'array'], // F-86
             'default_assignees.*' => [Rule::exists('project_user', 'user_id')->where('project_id', $project->id)],
