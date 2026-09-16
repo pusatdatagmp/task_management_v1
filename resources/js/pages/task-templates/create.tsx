@@ -17,13 +17,15 @@
 //               F-74: `anchor_day_type` adalah SELECT (bukan 2 field opsional
 //               independen) — structural mencegah day_of_week & day_of_month
 //               terkirim BERSAMAAN atau KEDUANYA kosong untuk calendar_anchored.
-//               Permintaan Boss (2026-09-04): input "Batasi hari boleh generate"
-//               (date_window_weekdays/dom_min/dom_max) & "Kuota maks instance"
-//               (max_active_instances) DICABUT dari form — DateWindowGuard/
-//               QuotaGuard di backend TETAP ADA (tak disentuh), cuma TIDAK ADA
-//               lagi jalan UI untuk mengisinya (guard-nya sudah null-safe,
-//               "kosong = tak ada batasan", jadi aman dihilangkan dari form
-//               tanpa ubah validasi/kolom DB apa pun).
+//               F-190 (permintaan Boss 2026-09-16): input "Batasi hari boleh
+//               generate" (date_window_config.weekdays) DIKEMBALIKAN ke form --
+//               MEMBALIK SEBAGIAN keputusan 2026-09-04 yang mencabutnya (lihat
+//               docs/04-FINDING-REGISTRY.md F-190). DateWindowGuard di backend
+//               TIDAK PERNAH disentuh/berubah sejak awal (F-161 B3) -- checkbox
+//               kosong tetap berarti "kosong = tak ada batasan" (null-safe di
+//               guard). `dom_min`/`dom_max`/`max_active_instances` TETAP di luar
+//               scope F-190 (bukan yang diminta Boss kali ini), guard-nya tetap
+//               ada tapi masih tanpa jalan UI.
 // ==========================================================
 
 import HeadingSmall from '@/components/heading-small';
@@ -122,6 +124,10 @@ export default function TaskTemplateCreate({ project, members }: TaskTemplateCre
         anchor_day_type: 'week' as 'week' | 'month', // F-74: diskriminator RADIO (via Select), bukan 2 field independen
         anchor_day_of_week: 1,
         anchor_day_of_month: 1,
+
+        // F-190: hari yang DIIZINKAN generate (DateWindowGuard, F-161 B3). Kosong
+        // ([]) = tak ada batasan, semua hari lolos -- lihat transform() di bawah.
+        date_window_weekdays: [] as number[],
     });
 
     const [newChecklistText, setNewChecklistText] = useState('');
@@ -167,6 +173,11 @@ export default function TaskTemplateCreate({ project, members }: TaskTemplateCre
                     ? { day_of_week: formData.anchor_day_of_week }
                     : { day_of_month: formData.anchor_day_of_month }
                 : {},
+        // F-190: date_window_weekdays MURNI state UI lokal (bukan kolom DB) --
+        // dibungkus jadi date_window_config.weekdays di sini. Array kosong -> {}
+        // (bukan {weekdays: []}), konsisten dengan normalizeDateWindowConfig()
+        // di server yang membaca "kosong = tak ada batasan".
+        date_window_config: formData.date_window_weekdays.length > 0 ? { weekdays: formData.date_window_weekdays } : {},
         due_offset_days: formData.due_offset_days === '' ? undefined : formData.due_offset_days, // revisi 2026-08-06 item 7
     }));
 
@@ -371,6 +382,40 @@ export default function TaskTemplateCreate({ project, members }: TaskTemplateCre
                                     )}
                                 </p>
 
+                            </div>
+
+                            <div className="grid gap-4 rounded-md border p-4">
+                                {/* F-190: DateWindowGuard (F-161 B3) -- guard generik, berlaku LEPAS
+                                    dari anchor_strategy manapun di atas. Checkbox TIDAK DICENTANG
+                                    sama sekali = tak ada batasan (semua hari lolos), SAMA seperti
+                                    sebelum fitur ini ada -- bukan default "tolak semua hari". */}
+                                <HeadingSmall
+                                    title="Batasi hari boleh generate (opsional)"
+                                    description="Kosongkan semua = tak ada batasan. Centang hari yang DIIZINKAN generate -- selain itu DILEWATI (mis. centang Senin/Rabu/Kamis/Jumat = Selasa & Sabtu tidak generate)."
+                                />
+                                <div className="grid grid-cols-2 gap-2 sm:grid-cols-4">
+                                    {DAY_OPTIONS.map((day) => {
+                                        const value = Number(day.value);
+                                        const checked = data.date_window_weekdays.includes(value);
+                                        return (
+                                            <label key={day.value} className="flex items-center gap-2 text-sm">
+                                                <Checkbox
+                                                    checked={checked}
+                                                    onCheckedChange={(next) =>
+                                                        setData(
+                                                            'date_window_weekdays',
+                                                            next === true
+                                                                ? [...data.date_window_weekdays, value]
+                                                                : data.date_window_weekdays.filter((d) => d !== value),
+                                                        )
+                                                    }
+                                                />
+                                                {day.label}
+                                            </label>
+                                        );
+                                    })}
+                                </div>
+                                <InputError message={errorBag['date_window_config.weekdays']} />
                             </div>
 
                             <div className="grid grid-cols-1 gap-4 sm:grid-cols-2">

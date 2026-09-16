@@ -16,10 +16,10 @@
 //               anchor_day_type (F-74) DITURUNKAN dari anchor_config existing --
 //               ada day_of_month -> 'month', selain itu default 'week' (termasuk
 //               anchor_config kosong, mis. template belum pernah dikonfigurasi C).
-//               Permintaan Boss (2026-09-04): input "Batasi hari boleh generate"/
-//               "Kuota maks instance" DICABUT — pola sama create.tsx, lihat
-//               header modul itu untuk alasan lengkap (Guard tetap ada, cuma
-//               nol jalan UI mengisinya).
+//               F-190 (permintaan Boss 2026-09-16): input "Batasi hari boleh
+//               generate" DIKEMBALIKAN — pola sama create.tsx, lihat header
+//               modul itu untuk alasan lengkap. "Kuota maks instance"
+//               (max_active_instances) TETAP di luar scope F-190, masih dicabut.
 // ==========================================================
 
 import HeadingSmall from '@/components/heading-small';
@@ -60,6 +60,9 @@ interface TemplateData {
     interval_value: number | null;
     interval_unit: 'day' | 'week' | 'month' | null;
     anchor_config: { day_of_week?: number; day_of_month?: number } | null;
+    // F-190: guard generik (DateWindowGuard, F-161 B3), sudah ada di kolom DB
+    // sejak AE-1 -- baru DITAMPILKAN di form lagi sekarang.
+    date_window_config: { weekdays?: number[] } | null;
 }
 
 interface TaskTemplateEditProps {
@@ -137,6 +140,10 @@ export default function TaskTemplateEdit({ project, template, members }: TaskTem
         anchor_day_type: (template.anchor_config?.day_of_month !== undefined ? 'month' : 'week') as 'week' | 'month',
         anchor_day_of_week: template.anchor_config?.day_of_week ?? 1,
         anchor_day_of_month: template.anchor_config?.day_of_month ?? 1,
+
+        // F-190: pre-filled dari date_window_config.weekdays existing, kosong/null
+        // ([]) = tak ada batasan (perilaku default sebelum fitur ini ada).
+        date_window_weekdays: template.date_window_config?.weekdays ?? [],
     });
 
     const [newChecklistText, setNewChecklistText] = useState('');
@@ -171,6 +178,8 @@ export default function TaskTemplateEdit({ project, template, members }: TaskTem
                     ? { day_of_week: formData.anchor_day_of_week }
                     : { day_of_month: formData.anchor_day_of_month }
                 : {},
+        // F-190: lihat create.tsx transform() untuk penjelasan lengkap, logika IDENTIK.
+        date_window_config: formData.date_window_weekdays.length > 0 ? { weekdays: formData.date_window_weekdays } : {},
         due_offset_days: formData.due_offset_days === '' ? undefined : formData.due_offset_days, // revisi 2026-08-06 item 7
     }));
 
@@ -371,6 +380,37 @@ export default function TaskTemplateEdit({ project, template, members }: TaskTem
                                     )}
                                 </p>
 
+                            </div>
+
+                            <div className="grid gap-4 rounded-md border p-4">
+                                {/* F-190: lihat create.tsx untuk penjelasan lengkap, UI IDENTIK. */}
+                                <HeadingSmall
+                                    title="Batasi hari boleh generate (opsional)"
+                                    description="Kosongkan semua = tak ada batasan. Centang hari yang DIIZINKAN generate -- selain itu DILEWATI (mis. centang Senin/Rabu/Kamis/Jumat = Selasa & Sabtu tidak generate)."
+                                />
+                                <div className="grid grid-cols-2 gap-2 sm:grid-cols-4">
+                                    {DAY_OPTIONS.map((day) => {
+                                        const value = Number(day.value);
+                                        const checked = data.date_window_weekdays.includes(value);
+                                        return (
+                                            <label key={day.value} className="flex items-center gap-2 text-sm">
+                                                <Checkbox
+                                                    checked={checked}
+                                                    onCheckedChange={(next) =>
+                                                        setData(
+                                                            'date_window_weekdays',
+                                                            next === true
+                                                                ? [...data.date_window_weekdays, value]
+                                                                : data.date_window_weekdays.filter((d) => d !== value),
+                                                        )
+                                                    }
+                                                />
+                                                {day.label}
+                                            </label>
+                                        );
+                                    })}
+                                </div>
+                                <InputError message={errorBag['date_window_config.weekdays']} />
                             </div>
 
                             <div className="grid grid-cols-1 gap-4 sm:grid-cols-2">

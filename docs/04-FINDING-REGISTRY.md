@@ -1268,3 +1268,11 @@ Rencana kerja 4 fase (Fase 0 koreksi F-170→F-183 di atas, Fase 1 = F-184 Rever
 **F-188** — Reject = tandai `rejected` + alasan wajib, LALU soft-delete (F-16, keputusan Boss: ada jejak audit, bukan hapus permanen). Approve = admin **WAJIB mengisi ulang** `due_date`/`estimated_minutes`/`points` (bukan re-post nilai member apa adanya) — cegah member menulis estimasi longgar untuk aman dari penalti KPI (`Task::isOnTime()`, F-109). Admin approve/reject reuse permission `task.approve` yang sudah ada (bukan permission approve baru terpisah).
 
 **F-189** — Scope-out sengaja dari v1 fitur ini (di luar yang diminta Boss, bisa nyusul kalau diminta): member tidak bisa assign rekan lain (assignee dikunci ke diri sendiri di server), tanpa parent_task_id di form pengajuan. `tags` DITAMBAH 2026-09-04 (StoreTaskProposalRequest, pola identik StoreTaskRequest). `checklist_items` DITAMBAH 2026-09-04 (permintaan Boss — "subtask" ringan F-123 di form pengajuan, pola identik TaskController::store()). Sisa scope-out: parent_task_id/assignees saja.
+
+---
+
+## CATATAN — 2026-09-16 — F-190: kembalikan input "Batasi hari boleh generate" ke form Template Recurring
+
+**Konteks:** Boss lapor gejala nyata — template harian generate Senin/Rabu/Kamis/Jumat, TIDAK generate Selasa/Sabtu, padahal Boss tidak sadar sudah pernah minta field ini DICABUT dari form (2026-09-04, lihat header lama `create.tsx`/`edit.tsx`). Ini **MEMBALIK SEBAGIAN** keputusan 2026-09-04 secara sadar, dikonfirmasi lewat audit kode: `DateWindowGuard` (F-161 B3) dan validasinya (`date_window_config.weekdays`) **TIDAK PERNAH dihapus dari backend** — 2026-09-04 hanya mencabut jalan UI-nya. F-190 murni mengembalikan UI itu, nol perubahan skema DB/guard/validasi.
+
+**F-190** — Checkbox 7-hari ditambahkan lagi di `task-templates/create.tsx` & `edit.tsx`, state lokal `date_window_weekdays: number[]` dibungkus jadi `date_window_config.weekdays` di `transform()` (pola identik `anchor_config`). Checkbox kosong semua = array kosong = `{}` terkirim = "kosong = tak ada batasan" (kontrak asli `DateWindowGuard`, tidak berubah). `dom_min`/`dom_max`/`max_active_instances` ("Kuota maks instance") SENGAJA TIDAK ikut dikembalikan — di luar scope permintaan Boss kali ini, guard-nya tetap ada tanpa jalan UI seperti sebelumnya.
