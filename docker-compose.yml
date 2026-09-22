@@ -29,8 +29,14 @@ services:
 
     restart: unless-stopped
 
+    # RISIKO: tanpa "127.0.0.1:" di depan, Docker bind port ini ke SEMUA
+    # interface (0.0.0.0) dan bisa diakses langsung dari LAN/WAN -- bahkan
+    # menembus aturan `ufw deny` karena Docker menulis rule iptables sendiri
+    # di luar chain yang dikontrol ufw. Cloudflare Tunnel menjangkau nginx
+    # lewat nama container di docker network internal, BUKAN lewat port ini
+    # -- jadi port host cukup untuk akses debug lokal di server saja.
     ports:
-      - "8081:80"
+      - "127.0.0.1:8081:80"
 
     volumes:
       - .:/var/www/html
@@ -126,11 +132,22 @@ services:
       timeout: 5s
       retries: 10
 
+  cloudflared:
+    image: cloudflare/cloudflared:latest
+    container_name: task-management-cloudflared
+    restart: unless-stopped
+    # SUMBER : CLOUDFLARE_TUNNEL_TOKEN di .env (dashboard Zero Trust > Networks > Tunnels).
+    # RISIKO : F-hardcode-secret -- jangan pernah taruh token literal di sini lagi,
+    #          file ini di-track git dan token akan tinggal permanen di history.
+    command: tunnel --no-autoupdate run --token ${CLOUDFLARE_TUNNEL_TOKEN}
+    networks:
+      - task-management
+    depends_on:
+      - nginx
 
 networks:
   task-management:
     driver: bridge
-
 
 volumes:
   mysql_data:

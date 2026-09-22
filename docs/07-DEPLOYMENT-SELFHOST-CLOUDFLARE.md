@@ -1,13 +1,17 @@
-# 07 — DEPLOYMENT SELF-HOST: PC Rumah + Cloudflare Tunnel + Domain Rumahweb
+# 07 — DEPLOYMENT SELF-HOST: PC Rumah + Docker + Cloudflare Tunnel
 
 > Ditulis untuk Boss, bukan programmer. Skenario ini **beda** dari `06-DEPLOYMENT.md`
-> (yang ditulis untuk VPS/hosting biasa) — di sini server-nya PC milik sendiri di
-> rumah, tanpa IP publik tetap, diekspos ke internet lewat Cloudflare Tunnel.
+> (yang ditulis untuk VPS/hosting native tanpa Docker) — di sini server-nya PC
+> milik sendiri di rumah, tanpa IP publik tetap, seluruh aplikasi jalan di
+> **Docker container**, diekspos ke internet lewat Cloudflare Tunnel.
 > Domain (`deevatech.my.id`) tetap terdaftar di rumahweb sebagai registrar.
 >
-> Untuk hal yang **sama** dengan deployment biasa (isi `.env` produksi, aturan
-> `migrate --force`, seeder, backup, checklist keamanan) — **rujuk `06-DEPLOYMENT.md`**,
-> tidak diulang di sini supaya tidak ada dua sumber kebenaran yang bisa beda isi.
+> **REVISI 2026-09-22:** dokumen ini sebelumnya menjelaskan instalasi native
+> (PHP-FPM + Nginx + Supervisor langsung di OS). Boss memutuskan pindah ke
+> **full Docker** — alasan utama: PC yang sama akan menjalankan **dua aplikasi**
+> (task-management ini + sistem absensi), dan Docker mengisolasi versi
+> PHP/dependency tiap app supaya tidak rebutan/bentrok di level OS. Langkah
+> native yang lama **tidak berlaku lagi** untuk task-management.
 
 ---
 
@@ -15,213 +19,185 @@
 
 | Keputusan | Pilihan | Kenapa |
 |---|---|---|
-| OS server | Ubuntu Server 22.04/24.04 LTS | Standar ekosistem Laravel, lebih ringan & stabil untuk servis 24/7 dibanding Windows |
+| OS server | Ubuntu Server 22.04/24.04 LTS | Standar ekosistem Docker/Laravel, ringan & stabil untuk servis 24/7 |
+| Cara jalankan aplikasi | Docker + Docker Compose | PC yang sama akan menjalankan task-management **dan** absensi — Docker isolasi dependency tiap app, tidak bentrok versi PHP/library di level OS |
 | Cara ekspos ke internet | Cloudflare Tunnel | PC di rumah tidak punya IP publik tetap & tidak perlu buka port router (NAT) |
 | Setup DNS domain | **Full setup** — nameserver `deevatech.my.id` pindah ke Cloudflare | Partial/CNAME setup di Cloudflare **hanya tersedia di plan Business/Enterprise**, bukan Free. Di plan Free, cuma ada opsi pindah nameserver seluruh domain |
+| Tunnel untuk multi-app | **Satu tunnel terpisah per aplikasi** (bukan satu tunnel gabungan) | task-management dan absensi masing-masing punya container `cloudflared` + token sendiri. Konsekuensinya masing-masing app compose stack **tidak perlu** saling share docker network — benar-benar independen, tapi berarti 2 tunnel jalan terus & 2 tempat setting token untuk dikelola |
 
-🔴 **Konsekuensi keputusan DNS di atas:** SEMUA record DNS `deevatech.my.id` yang aktif sekarang di rumahweb (website, email MX/SPF/DKIM/DMARC, subdomain lain) harus direkreasi di Cloudflare **sebelum** nameserver diganti — kalau ada yang kelewat, layanan itu mati begitu propagasi selesai. Lihat §6.
+🔴 **Konsekuensi keputusan DNS di atas:** SEMUA record DNS `deevatech.my.id` yang aktif sekarang di rumahweb (website, email MX/SPF/DKIM/DMARC, subdomain lain) harus direkreasi di Cloudflare **sebelum** nameserver diganti — kalau ada yang kelewat, layanan itu mati begitu propagasi selesai. Lihat §7.
 
 ---
 
-## 1. STACK YANG DIINSTAL DI PC SERVER
+## 1. PRASYARAT DI PC SERVER
 
-| Software | Versi | Fungsi |
-|---|---|---|
-| Ubuntu Server | 22.04/24.04 LTS | OS dasar |
-| PHP-FPM | 8.3 | Jalankan kode Laravel |
-| MySQL | 8.0 | Database (native, bukan MariaDB — lihat `06-DEPLOYMENT.md` §1) |
-| Nginx | terbaru repo Ubuntu | Web server + reverse proxy ke PHP-FPM & Reverb |
-| Node.js | 20 LTS | `npm run build` sekali saat deploy (bukan proses yang jalan terus) |
-| Composer | 2.x | Install dependency PHP |
-| Supervisor | terbaru repo Ubuntu | Jaga proses Reverb & queue worker tetap hidup, auto-restart kalau crash |
-| cloudflared | terbaru repo Cloudflare | Jembatan Tunnel dari PC ke jaringan Cloudflare |
+| Software | Fungsi |
+|---|---|
+| Ubuntu Server 22.04/24.04 LTS | OS dasar |
+| Docker Engine + Docker Compose plugin | Menjalankan seluruh stack (app, nginx, mysql, reverb, queue, scheduler, cloudflared) sebagai container |
+| Git | Clone & update source code |
 
 ```bash
 sudo apt update && sudo apt upgrade -y
+sudo apt install -y git
 
-sudo add-apt-repository ppa:ondrej/php -y
-sudo apt update
-sudo apt install -y php8.3-fpm php8.3-cli php8.3-mysql php8.3-mbstring \
-  php8.3-xml php8.3-curl php8.3-zip php8.3-bcmath php8.3-gd php8.3-intl \
-  php8.3-common php8.3-opcache
-
-curl -sS https://getcomposer.org/installer | php
-sudo mv composer.phar /usr/local/bin/composer
-
-sudo apt install -y mysql-server
-sudo mysql_secure_installation
-
-sudo apt install -y nginx
-
-curl -fsSL https://deb.nodesource.com/setup_20.x | sudo -E bash -
-sudo apt install -y nodejs
-
-sudo apt install -y supervisor git
+# Docker Engine resmi (bukan docker.io bawaan Ubuntu -- versi lebih baru)
+curl -fsSL https://get.docker.com | sudo sh
+sudo usermod -aG docker $USER   # logout/login ulang supaya berlaku
 ```
+
+**Catatan:** Node.js/npm dan PHP/Composer **tidak perlu diinstal di host** — semuanya jalan di dalam container atau lewat image sekali-pakai (lihat §3). Ini yang membuat PC bisa menjalankan task-management (PHP 8.2) dan absensi (versi PHP berapa pun) tanpa konflik di level OS.
 
 ---
 
 ## 2. STRUKTUR FOLDER
 
 ```bash
-sudo mkdir -p /var/www/task-management
-sudo chown -R $USER:www-data /var/www/task-management
-cd /var/www/task-management
+sudo mkdir -p /opt/apps/task-management
+sudo chown -R $USER:$USER /opt/apps/task-management
+cd /opt/apps/task-management
 git clone <url-repo-anda> .
 ```
 
-Deploy dipakai **satu folder tunggal** (bukan pola `releases/` bergaya Forge/Envoyer) — cukup untuk tim ±10 orang, sesuai prinsip "fungsionalitas dulu, optimasi kemudian". Kalau nanti butuh rollback instan tanpa downtime, itu perubahan arsitektur terpisah yang perlu didiskusikan dulu.
+Kalau absensi juga dideploy di PC yang sama, taruh di folder **sejajar**, bukan di dalam folder ini — masing-masing app adalah docker-compose stack independen:
 
-Setelah clone, ikuti **`06-DEPLOYMENT.md` §2–§4** untuk: isi `.env` produksi, `composer install`, `npm run build`, migrate, dan seeder. Tambahan khusus setup ini yang **tidak ada** di `06-DEPLOYMENT.md` karena project ini pakai Reverb (WebSocket komentar realtime):
+```
+/opt/apps/task-management/   <- repo ini
+/opt/apps/absensi/           <- repo absensi, compose stack terpisah
+```
+
+---
+
+## 3. SETUP ENV & BUILD PERTAMA KALI
+
+```bash
+cd /opt/apps/task-management
+cp .env.example .env
+nano .env
+```
+
+Isi/ubah nilai berikut di `.env` (lihat komentar terkait di `.env.example` untuk baris persisnya):
 
 ```env
+APP_ENV=production
+APP_DEBUG=false
+APP_TIMEZONE=Asia/Jakarta
 APP_URL=https://app.deevatech.my.id
 
+# HARUS sama dengan env service `mysql` di docker-compose.yml
+DB_CONNECTION=mysql
+DB_HOST=mysql
+DB_PORT=3306
+DB_DATABASE=task_management
+DB_USERNAME=laravel
+DB_PASSWORD=laravel_password
+
+# Nilai yang dilihat BROWSER lewat Cloudflare (443/https). Proses Reverb
+# sendiri tetap listen di 0.0.0.0:8080 di dalam docker network -- nginx yang
+# menjembatani dua alamat ini (lihat docker/nginx/default.conf, sudah ada).
 REVERB_HOST=app.deevatech.my.id
 REVERB_PORT=443
 REVERB_SCHEME=https
 VITE_REVERB_HOST=app.deevatech.my.id
 VITE_REVERB_PORT=443
 VITE_REVERB_SCHEME=https
+
+# Diisi setelah bikin tunnel di §5
+CLOUDFLARE_TUNNEL_TOKEN=
 ```
 
-> Nilai di atas adalah alamat yang dilihat **browser** lewat Cloudflare (443/https).
-> Proses Reverb sendiri tetap listen di `127.0.0.1:8080` secara lokal — Nginx yang
-> menjembatani dua alamat ini (lihat §3).
+🔴 **`DB_PASSWORD` dan `MYSQL_ROOT_PASSWORD` bawaan di `docker-compose.yml` (`laravel_password` / `root_password`) adalah nilai contoh dari development.** Ganti ke password kuat sebelum expose ke internet — ubah di **kedua tempat** (`.env` dan blok `environment:` service `mysql` di `docker-compose.yml`, keduanya harus tetap sama).
+
+Build & jalankan:
 
 ```bash
-php artisan reverb:install    # generate APP_ID/KEY/SECRET sendiri, JANGAN pakai contoh
+docker compose build
+docker compose up -d mysql
+docker compose ps   # tunggu mysql sampai status "healthy"
+
+docker compose up -d app nginx scheduler queue-worker reverb
+
+# vendor/ dipasang lewat bind mount host -- install sekali di sini supaya
+# cocok dengan environment container (bukan cuma andalkan hasil build image)
+docker compose exec app composer install --no-dev --optimize-autoloader --no-interaction
+
+docker compose exec app php artisan key:generate
+docker compose exec app php artisan reverb:install    # generate APP_ID/KEY/SECRET sendiri, JANGAN pakai contoh
+docker compose exec app php artisan migrate --force
+docker compose exec app php artisan storage:link
+docker compose exec app php artisan config:cache
+docker compose exec app php artisan route:cache
+docker compose exec app php artisan view:cache
+
+# permission storage/bootstrap-cache -- container jalan sebagai www-data,
+# tapi file datang dari bind mount host yang dimiliki user biasa
 sudo chown -R www-data:www-data storage bootstrap/cache
 sudo chmod -R 775 storage bootstrap/cache
 ```
 
----
-
-## 3. NGINX — satu domain, dua backend
-
-`/etc/nginx/sites-available/task-management`:
-
-```nginx
-server {
-    listen 80;
-    server_name app.deevatech.my.id;
-    root /var/www/task-management/public;
-
-    add_header X-Frame-Options "SAMEORIGIN";
-    add_header X-Content-Type-Options "nosniff";
-
-    index index.php;
-    charset utf-8;
-
-    location / {
-        try_files $uri $uri/ /index.php?$query_string;
-    }
-
-    # SUMBER : path default WebSocket Laravel Echo/Reverb.
-    # DIPAKAI: proxy ke proses Reverb (port 8080) supaya browser cukup
-    #          konek ke satu domain publik, tidak perlu port terpisah.
-    location /app {
-        proxy_pass http://127.0.0.1:8080;
-        proxy_http_version 1.1;
-        proxy_set_header Upgrade $http_upgrade;
-        proxy_set_header Connection "Upgrade";
-        proxy_set_header Host $host;
-        proxy_set_header X-Real-IP $remote_addr;
-    }
-
-    location = /favicon.ico { access_log off; log_not_found off; }
-    location = /robots.txt  { access_log off; log_not_found off; }
-
-    error_page 404 /index.php;
-
-    location ~ \.php$ {
-        fastcgi_pass unix:/var/run/php/php8.3-fpm.sock;
-        fastcgi_param SCRIPT_FILENAME $realpath_root$fastcgi_script_name;
-        include fastcgi_params;
-    }
-
-    location ~ /\.(?!well-known).* {
-        deny all;
-    }
-}
-```
+**Build asset frontend (Vite/React)** — container `app` cuma image PHP-FPM, tidak ada Node. Pakai image Node sekali-pakai (bukan container permanen):
 
 ```bash
-sudo ln -s /etc/nginx/sites-available/task-management /etc/nginx/sites-enabled/
-sudo nginx -t && sudo systemctl reload nginx
+docker run --rm -v "$(pwd)":/var/www/html -w /var/www/html node:20 sh -c "npm ci && npm run build"
 ```
 
-🔴 Nginx cukup `listen 80` di `127.0.0.1` — **jangan** buka port 80/443 ke router/internet. Cloudflare Tunnel yang jadi satu-satunya pintu masuk; membuka port tambahan di router hanya menambah celah serangan tanpa manfaat (lihat §7).
+Jalankan ulang perintah ini setiap kali ada perubahan kode frontend saat deploy berikutnya.
 
 ---
 
-## 4. PROSES YANG HARUS SELALU HIDUP: Reverb & Queue Worker
-
-`/etc/supervisor/conf.d/task-management.conf`:
-
-```ini
-[program:tm-reverb]
-command=php /var/www/task-management/artisan reverb:start
-autostart=true
-autorestart=true
-user=www-data
-redirect_stderr=true
-stdout_logfile=/var/www/task-management/storage/logs/reverb.log
-
-[program:tm-queue]
-command=php /var/www/task-management/artisan queue:work --sleep=3 --tries=3
-autostart=true
-autorestart=true
-user=www-data
-numprocs=1
-redirect_stderr=true
-stdout_logfile=/var/www/task-management/storage/logs/queue.log
-```
+## 4. UPDATE KODE SAAT DEPLOY BERIKUTNYA
 
 ```bash
-sudo supervisorctl reread && sudo supervisorctl update && sudo supervisorctl start all
+cd /opt/apps/task-management
+git pull
+docker compose exec app composer install --no-dev --optimize-autoloader --no-interaction
+docker run --rm -v "$(pwd)":/var/www/html -w /var/www/html node:20 sh -c "npm ci && npm run build"
+docker compose exec app php artisan migrate --force
+docker compose exec app php artisan config:cache
+docker compose exec app php artisan route:cache
+docker compose exec app php artisan view:cache
+docker compose restart app scheduler queue-worker reverb
 ```
-
-**Kenapa perlu Supervisor:** `QUEUE_CONNECTION=database` di project ini berarti ada proses `queue:work` yang harus jalan terus-menerus di background memproses job (notifikasi, dsb). Kalau proses ini crash atau PC restart, tanpa Supervisor proses itu **tidak bangkit sendiri** — job menumpuk diam-diam tanpa error yang terlihat.
-
-Untuk cron scheduler (notifikasi due-soon/overdue), ikuti `06-DEPLOYMENT.md` §6 — sama persis, tidak berubah untuk setup ini.
 
 ---
 
-## 5. CLOUDFLARE TUNNEL
+## 5. CLOUDFLARE TUNNEL (dashboard, bukan CLI di server)
 
-```bash
-curl -L https://pkg.cloudflare.com/cloudflare-main.gpg | sudo gpg --dearmor -o /usr/share/keyrings/cloudflare-main.gpg
-echo "deb [signed-by=/usr/share/keyrings/cloudflare-main.gpg] https://pkg.cloudflare.com/cloudflared $(lsb_release -cs) main" | sudo tee /etc/apt/sources.list.d/cloudflared.list
-sudo apt update && sudo apt install cloudflared
+Container `cloudflared` di `docker-compose.yml` pakai mode **token dari dashboard** (bukan file `config.yml` lokal) — routing hostname → service diatur di Cloudflare, bukan di server.
 
-cloudflared tunnel login          # buka link yang muncul di browser, pilih zona deevatech.my.id
-cloudflared tunnel create task-management
-```
+1. Login **Cloudflare Zero Trust dashboard** → **Networks → Tunnels → Create a tunnel**.
+2. Pilih connector type **Docker**. Cloudflare menampilkan token panjang di command contoh — **copy tokennya saja**, bukan seluruh command.
+3. Tempel token itu ke `.env` project ini: `CLOUDFLARE_TUNNEL_TOKEN=<token>`.
+4. Masih di dashboard, tab **Public Hostname** pada tunnel yang sama:
+   - Subdomain: `app`, Domain: `deevatech.my.id`
+   - Service type: `HTTP`, URL: `nginx:80`
+   
+   *(`nginx:80` merujuk ke nama container `nginx` di dalam docker network `task-management` — bukan port host `127.0.0.1:8081` yang cuma untuk debug lokal.)*
+5. Jalankan container: `docker compose up -d cloudflared`
+6. `docker compose logs -f cloudflared` — tunggu sampai baris `Registered tunnel connection`.
 
-`~/.cloudflared/config.yml`:
-
-```yaml
-tunnel: <TUNNEL-ID-dari-perintah-create>
-credentials-file: /root/.cloudflared/<TUNNEL-ID>.json
-
-ingress:
-  - hostname: app.deevatech.my.id
-    service: http://localhost:80
-  - service: http_status:404
-```
-
-```bash
-cloudflared tunnel route dns task-management app.deevatech.my.id
-sudo cloudflared service install
-sudo systemctl enable --now cloudflared
-```
-
-🔴 `cloudflared tunnel login` dan `route dns` di atas **hanya berhasil setelah** `deevatech.my.id` aktif sebagai zona penuh di akun Cloudflare (nameserver sudah pindah — lihat §6). Kalau dijalankan sebelum itu, akan gagal karena Cloudflare belum mengenali domain tersebut.
+🔴 **Public Hostname (langkah 4) hanya bisa disimpan setelah** `deevatech.my.id` aktif sebagai zona penuh di akun Cloudflare (nameserver sudah pindah — lihat §7).
 
 ---
 
-## 6. MIGRASI DNS DOMAIN KE CLOUDFLARE (dieksekusi Boss — menyentuh domain live)
+## 6. DEPLOY ABSENSI DI PC YANG SAMA — POLA COEXISTENCE
+
+Sesuai keputusan §0, absensi adalah **docker-compose stack terpisah**, punya **tunnel & token sendiri**. Supaya tidak bentrok dengan stack task-management ini di satu PC:
+
+| Hal | task-management (repo ini) | absensi (harus beda) |
+|---|---|---|
+| Nama network compose | `task-management` | `absensi` (jangan reuse nama sama) |
+| Prefix `container_name` | `task-management-*` | `absensi-*` |
+| Port nginx ke host | `127.0.0.1:8081:80` | port lain, mis. `127.0.0.1:8082:80` |
+| Volume MySQL | `mysql_data` (scoped ke project ini) | volume/nama beda, jangan pakai nama sama persis di compose project berbeda |
+| Container `cloudflared` | milik task-management, token sendiri | container `cloudflared` sendiri di compose stack absensi, token tunnel sendiri dari dashboard |
+| Public hostname | `app.deevatech.my.id` → tunnel task-management → `nginx:80` (network `task-management`) | mis. `absensi.deevatech.my.id` → tunnel absensi → `nginx:80` (network `absensi`) |
+
+Karena masing-masing tunnel connect ke container lewat **docker network internal stack-nya sendiri** (bukan lewat port host), dua stack ini **tidak perlu** saling terhubung sama sekali — cukup jalan berdampingan di Docker Engine yang sama. Kalau nanti absensi juga Laravel + Docker, folder-nya cukup mengikuti struktur `docker-compose.yml` repo ini sebagai referensi, dengan penyesuaian nama di atas.
+
+---
+
+## 7. MIGRASI DNS DOMAIN KE CLOUDFLARE (dieksekusi Boss — menyentuh domain live)
 
 Langkah ini **tidak bisa diotomasi dari sini** karena menyentuh akun rumahweb & Cloudflare milik Boss langsung, dan berisiko mematikan email/website eksisting kalau ada langkah yang salah/kelewat.
 
@@ -231,13 +207,13 @@ Langkah ini **tidak bisa diotomasi dari sini** karena menyentuh akun rumahweb & 
 4. Cloudflare akan memberi 2 nameserver baru. Catat.
 5. Login panel domain di rumahweb → ganti nameserver domain ke 2 nameserver Cloudflare tersebut.
 6. Tunggu propagasi (biasanya 1–24 jam; Cloudflare kirim email begitu zona aktif).
-7. Setelah aktif, lanjut ke §5 (`cloudflared tunnel route dns`).
+7. Setelah aktif, lanjut ke §5 (Public Hostname baru bisa disimpan).
 
 🔴 **Sebelum eksekusi langkah ini, konfirmasi dulu:** apakah saat ini ada website atau email aktif (`@deevatech.my.id`) yang jalan di rumahweb? Kalau ada, daftar lengkap record-nya harus dipastikan aman dulu sebelum nameserver diganti.
 
 ---
 
-## 7. FIREWALL PC SERVER
+## 8. FIREWALL PC SERVER
 
 ```bash
 sudo ufw allow OpenSSH
@@ -246,21 +222,24 @@ sudo ufw enable
 
 Tidak perlu allow port 80/443 — Cloudflare Tunnel bekerja lewat koneksi **outbound** dari PC ke jaringan Cloudflare, jadi PC bisa sepenuhnya di belakang NAT rumah tanpa port forwarding apa pun di router.
 
+🔴 **Docker menulis rule iptables sendiri dan bisa melewati `ufw`.** Kalau ada `ports:` di compose yang di-bind tanpa `127.0.0.1:` di depan (mis. `"8081:80"` alih-alih `"127.0.0.1:8081:80"`), port itu **tetap bisa diakses dari LAN/WAN meski `ufw deny` aktif** — `ufw` tidak mengontrol chain yang dipakai Docker. `docker-compose.yml` di repo ini sudah di-bind ke `127.0.0.1` untuk port nginx; kalau menambah service baru dengan `ports:`, pastikan pola yang sama diikuti kecuali memang sengaja mau diakses dari jaringan lain.
+
 ---
 
-## 8. CHECKLIST VERIFIKASI SETELAH SETUP (F-73/F-75 — bukti nyata, bukan asumsi)
+## 9. CHECKLIST VERIFIKASI SETELAH SETUP (F-73/F-75 — bukti nyata, bukan asumsi)
 
 - [ ] `https://app.deevatech.my.id` bisa dibuka, sertifikat SSL valid (terbit dari Cloudflare)
 - [ ] Login berhasil; buka detail task → tambah komentar dari 2 browser berbeda → realtime muncul tanpa refresh (bukti Reverb jalan lewat Tunnel)
-- [ ] `sudo supervisorctl status` → `tm-reverb` dan `tm-queue` berstatus RUNNING
-- [ ] `sudo systemctl status cloudflared` → active (running)
-- [ ] Reboot PC penuh sekali → setelah nyala, cek ulang 3 poin di atas tanpa campur tangan manual (bukti semua service auto-start)
-- [ ] Cabut/matikan koneksi WAN router sesaat → pastikan tidak ada port yang ter-expose langsung ke internet selain lewat Tunnel
+- [ ] `docker compose ps` → semua service `Up`/`healthy`, tidak ada yang `Restarting`
+- [ ] `docker compose logs cloudflared --tail=50` → ada baris `Registered tunnel connection`, tidak ada error berulang
+- [ ] Reboot PC penuh sekali → setelah nyala, `docker compose ps` menunjukkan semua service otomatis `Up` lagi tanpa campur tangan manual (butuh Docker daemon `enable` saat boot — default aktif setelah instalasi `get.docker.com`)
+- [ ] Dari device lain di LAN yang sama, coba akses `http://<ip-pc-server>:8081` → **harus GAGAL connect** (bukti port nginx benar-benar cuma listen di `127.0.0.1`, bukan ke internet lewat jalur lain selain Tunnel)
 
-## 9. RISIKO OPERASIONAL YANG PERLU DISADARI (bukan bug, tapi konsekuensi arsitektur)
+## 10. RISIKO OPERASIONAL YANG PERLU DISADARI (bukan bug, tapi konsekuensi arsitektur)
 
 | Risiko | Dampak | Mitigasi |
 |---|---|---|
 | PC rumahan di ISP residensial: listrik/internet mati | Aplikasi down total untuk seluruh tim sampai PC/internet nyala lagi | UPS kecil untuk PC + router/modem, minimal cukup untuk shutdown aman |
 | IP rumah dinamis (bukan IP publik tetap) | **Tidak masalah** — Tunnel tidak bergantung pada IP publik statis, jadi ini bukan risiko nyata di arsitektur ini | — |
 | Nameserver domain sepenuhnya di Cloudflare | Kalau perlu ubah DNS apa pun di masa depan (tambah subdomain lain, email baru), dilakukan di dashboard Cloudflare, **bukan** lagi di panel rumahweb | Ingat titik kendali DNS sudah pindah — jangan cari-cari di rumahweb saat butuh ubah DNS nanti |
+| 2 aplikasi (task-management + absensi) rebutan resource CPU/RAM di 1 PC | Kalau PC spek pas-pasan, salah satu/keduanya bisa lambat saat sama-sama load tinggi | Pantau `docker stats`; kalau jadi masalah nyata, itu keputusan upgrade hardware/pisah server — bukan sesuatu yang bisa diakali di level compose |
