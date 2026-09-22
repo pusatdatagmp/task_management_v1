@@ -82,7 +82,7 @@ Isi/ubah nilai berikut di `.env` (lihat komentar terkait di `.env.example` untuk
 APP_ENV=production
 APP_DEBUG=false
 APP_TIMEZONE=Asia/Jakarta
-APP_URL=https://app.deevatech.my.id
+APP_URL=https://task.deevatech.my.id
 
 # HARUS sama dengan env service `mysql` di docker-compose.yml
 DB_CONNECTION=mysql
@@ -95,10 +95,10 @@ DB_PASSWORD=laravel_password
 # Nilai yang dilihat BROWSER lewat Cloudflare (443/https). Proses Reverb
 # sendiri tetap listen di 0.0.0.0:8080 di dalam docker network -- nginx yang
 # menjembatani dua alamat ini (lihat docker/nginx/default.conf, sudah ada).
-REVERB_HOST=app.deevatech.my.id
+REVERB_HOST=task.deevatech.my.id
 REVERB_PORT=443
 REVERB_SCHEME=https
-VITE_REVERB_HOST=app.deevatech.my.id
+VITE_REVERB_HOST=task.deevatech.my.id
 VITE_REVERB_PORT=443
 VITE_REVERB_SCHEME=https
 
@@ -169,7 +169,7 @@ Container `cloudflared` di `docker-compose.yml` pakai mode **token dari dashboar
 2. Pilih connector type **Docker**. Cloudflare menampilkan token panjang di command contoh — **copy tokennya saja**, bukan seluruh command.
 3. Tempel token itu ke `.env` project ini: `CLOUDFLARE_TUNNEL_TOKEN=<token>`.
 4. Masih di dashboard, tab **Public Hostname** pada tunnel yang sama:
-   - Subdomain: `app`, Domain: `deevatech.my.id`
+   - Subdomain: `task`, Domain: `deevatech.my.id`
    - Service type: `HTTP`, URL: `nginx:80`
    
    *(`nginx:80` merujuk ke nama container `nginx` di dalam docker network `task-management` — bukan port host `127.0.0.1:8081` yang cuma untuk debug lokal.)*
@@ -191,7 +191,7 @@ Sesuai keputusan §0, absensi adalah **docker-compose stack terpisah**, punya **
 | Port nginx ke host | `127.0.0.1:8081:80` | port lain, mis. `127.0.0.1:8082:80` |
 | Volume MySQL | `mysql_data` (scoped ke project ini) | volume/nama beda, jangan pakai nama sama persis di compose project berbeda |
 | Container `cloudflared` | milik task-management, token sendiri | container `cloudflared` sendiri di compose stack absensi, token tunnel sendiri dari dashboard |
-| Public hostname | `app.deevatech.my.id` → tunnel task-management → `nginx:80` (network `task-management`) | mis. `absensi.deevatech.my.id` → tunnel absensi → `nginx:80` (network `absensi`) |
+| Public hostname | `task.deevatech.my.id` → tunnel task-management → `nginx:80` (network `task-management`) | mis. `absensi.deevatech.my.id` → tunnel absensi → `nginx:80` (network `absensi`) |
 
 Karena masing-masing tunnel connect ke container lewat **docker network internal stack-nya sendiri** (bukan lewat port host), dua stack ini **tidak perlu** saling terhubung sama sekali — cukup jalan berdampingan di Docker Engine yang sama. Kalau nanti absensi juga Laravel + Docker, folder-nya cukup mengikuti struktur `docker-compose.yml` repo ini sebagai referensi, dengan penyesuaian nama di atas.
 
@@ -228,7 +228,7 @@ Tidak perlu allow port 80/443 — Cloudflare Tunnel bekerja lewat koneksi **outb
 
 ## 9. CHECKLIST VERIFIKASI SETELAH SETUP (F-73/F-75 — bukti nyata, bukan asumsi)
 
-- [ ] `https://app.deevatech.my.id` bisa dibuka, sertifikat SSL valid (terbit dari Cloudflare)
+- [ ] `https://task.deevatech.my.id` bisa dibuka, sertifikat SSL valid (terbit dari Cloudflare)
 - [ ] Login berhasil; buka detail task → tambah komentar dari 2 browser berbeda → realtime muncul tanpa refresh (bukti Reverb jalan lewat Tunnel)
 - [ ] `docker compose ps` → semua service `Up`/`healthy`, tidak ada yang `Restarting`
 - [ ] `docker compose logs cloudflared --tail=50` → ada baris `Registered tunnel connection`, tidak ada error berulang
